@@ -184,7 +184,7 @@ export function resolveLockedPiece(state: SideState): SideTick {
 }
 
 export function spawnNextPiece(state: SideState, seed: number): SideTick {
-  if (state.active !== null || state.topOut || state.phase === 'game-over') return tick(state);
+  if (state.phase !== 'garbage-drop' || state.active !== null || state.topOut) return tick(state);
 
   const active = spawnPiece(state.next[0]);
   const resetCounters = {

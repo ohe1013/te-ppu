@@ -107,6 +107,16 @@ describe('side creation and spawning', () => {
     expect(blocked).toMatchObject({ active: null, phase: 'garbage-drop', topOut: false });
     expect(blocked.next).toEqual(initial.next);
   });
+
+  it.each(['clear-and-attack', 'offset'] as const)(
+    'does not spawn early from the %s checkpoint',
+    (phase) => {
+      const initial = createSideState(31);
+      const checkpoint: SideState = { ...initial, active: null, phase };
+
+      expect(spawnNextPiece(checkpoint, 31).state).toBe(checkpoint);
+    },
+  );
 });
 
 describe('fixed-tick descent', () => {
