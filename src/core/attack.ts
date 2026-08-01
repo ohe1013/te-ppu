@@ -53,7 +53,7 @@ function streamFor(recipient: SideId): RandomStream {
 export function dropGarbageBatch(
   side: SideState,
   seed: number,
-  recipient: SideId = 'player',
+  recipient: SideId,
 ): { readonly side: SideState; readonly events: readonly GameEvent[] } {
   let board = side.board;
   let drawIndex = side.garbageDrawIndex;

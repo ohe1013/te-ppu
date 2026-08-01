@@ -3,6 +3,7 @@ import { dropGarbageBatch, resolveAttackExchange } from '../../src/core/attack';
 import { emptyBoard, occupiedCells } from '../../src/core/board';
 import { createSideState } from '../../src/core/field';
 import { BOARD_ROWS, BOARD_WIDTH, type Board, type SideState } from '../../src/core/model';
+import { randomInt, RandomStream } from '../../src/core/random';
 
 function boardWithCell(board: Board, x: number, y: number): Board {
   const cells = [...board.cells];
@@ -71,10 +72,21 @@ describe('simultaneous attack offset', () => {
 });
 
 describe('seeded garbage batches', () => {
+  it('requires the recipient stream at the API boundary', () => {
+    if (false) {
+      // @ts-expect-error garbage recipient must be explicit
+      dropGarbageBatch(waitingForGarbage(1), 0);
+    }
+
+    expect(true).toBe(true);
+  });
+
   it('uses the player recipient stream and advances only that side draw index', () => {
     const side = waitingForGarbage(4);
-    const result = dropGarbageBatch(side, 0);
+    const result = dropGarbageBatch(side, 0, 'player');
 
+    expect([0, 1, 2, 3].map((index) => randomInt(0, RandomStream.GARBAGE_TO_PLAYER, index, BOARD_WIDTH)))
+      .toEqual([3, 2, 4, 3]);
     expect(occupiedCells(result.side.board)).toEqual([
       { x: 3, y: BOARD_ROWS - 2, kind: 'O' },
       { x: 2, y: BOARD_ROWS - 1, kind: 'O' },
@@ -93,6 +105,26 @@ describe('seeded garbage batches', () => {
     expect(side.garbageDrawIndex).toBe(0);
   });
 
+  it('uses the opponent stream and attributes its landing events to the opponent', () => {
+    const side = waitingForGarbage(4);
+    const result = dropGarbageBatch(side, 0, 'opponent');
+
+    expect([0, 1, 2, 3].map((index) => randomInt(0, RandomStream.GARBAGE_TO_OPPONENT, index, BOARD_WIDTH)))
+      .toEqual([5, 2, 9, 2]);
+    expect(occupiedCells(result.side.board)).toEqual([
+      { x: 2, y: BOARD_ROWS - 2, kind: 'O' },
+      { x: 2, y: BOARD_ROWS - 1, kind: 'O' },
+      { x: 5, y: BOARD_ROWS - 1, kind: 'O' },
+      { x: 9, y: BOARD_ROWS - 1, kind: 'O' },
+    ]);
+    expect(result.events).toEqual([
+      { type: 'garbage-landed', side: 'opponent', amount: 1 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1 },
+    ]);
+  });
+
   it('leaves a garbage-completed row in place until normal locking clears it', () => {
     let board = emptyBoard();
     for (let x = 0; x < BOARD_WIDTH; x += 1) {
@@ -100,7 +132,7 @@ describe('seeded garbage batches', () => {
     }
     const side = waitingForGarbage(1, board);
 
-    const result = dropGarbageBatch(side, 0);
+    const result = dropGarbageBatch(side, 0, 'player');
 
     expect(result.side.board.cells.slice((BOARD_ROWS - 1) * BOARD_WIDTH).every(Boolean)).toBe(true);
     expect(result.events).toEqual([{ type: 'garbage-landed', side: 'player', amount: 1 }]);
@@ -108,7 +140,7 @@ describe('seeded garbage batches', () => {
 
   it('accepts an unbounded batch and stops only when a sequential drop overflows', () => {
     const side = waitingForGarbage(1_000);
-    const result = dropGarbageBatch(side, 9);
+    const result = dropGarbageBatch(side, 9, 'player');
 
     expect(result.events).toHaveLength(182);
     expect(result.side.topOut).toBe(true);
@@ -118,7 +150,7 @@ describe('seeded garbage batches', () => {
 
   it('stops at overflow, marks top-out, and reports the terminal event', () => {
     const side = waitingForGarbage(2, boardWithCell(emptyBoard(), 3, 0));
-    const result = dropGarbageBatch(side, 0);
+    const result = dropGarbageBatch(side, 0, 'player');
 
     expect(result.side.topOut).toBe(true);
     expect(result.side.phase).toBe('top-out');
