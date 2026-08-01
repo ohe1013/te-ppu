@@ -9,10 +9,10 @@ import {
   type GameCommand,
   type GameEvent,
   type Inventory,
-  type PieceToken,
   type SideState,
 } from './model';
-import { ghostY, pieceKindAt, spawnPiece, tryRotateClockwise } from './pieces';
+import { makePieceToken } from './items';
+import { ghostY, spawnPiece, tryRotateClockwise } from './pieces';
 
 export type SideTick = {
   readonly state: SideState;
@@ -26,10 +26,6 @@ const NO_APPEARED_ITEMS: AppearedItems = {
   freeze: false,
   'queue-swap': false,
 };
-
-function pieceTokenAt(seed: number, serial: number): PieceToken {
-  return { serial, kind: pieceKindAt(seed, serial), marker: null };
-}
 
 function tick(state: SideState, locked = false): SideTick {
   return { state, events: [], locked };
@@ -51,13 +47,15 @@ function resetLockAfterGroundedAction(
 }
 
 export function createSideState(seed: number): SideState {
-  const current = pieceTokenAt(seed, 0);
+  const current = makePieceToken(seed, 0, { ...NO_APPEARED_ITEMS });
+  const firstPreview = makePieceToken(seed, 1, current.appeared);
+  const secondPreview = makePieceToken(seed, 2, firstPreview.appeared);
   return {
     board: emptyBoard(),
-    active: spawnPiece(current),
-    next: [pieceTokenAt(seed, 1), pieceTokenAt(seed, 2)],
+    active: spawnPiece(current.token),
+    next: [firstPreview.token, secondPreview.token],
     nextSerial: 3,
-    appeared: { ...NO_APPEARED_ITEMS },
+    appeared: secondPreview.appeared,
     inventory: { ...EMPTY_INVENTORY },
     combo: 0,
     incoming: 0,
@@ -205,11 +203,13 @@ export function spawnNextPiece(state: SideState, seed: number): SideTick {
     });
   }
 
+  const generated = makePieceToken(seed, state.nextSerial, state.appeared);
   return tick({
     ...state,
     active,
-    next: [state.next[1], pieceTokenAt(seed, state.nextSerial)],
+    next: [state.next[1], generated.token],
     nextSerial: state.nextSerial + 1,
+    appeared: generated.appeared,
     phase: 'active',
     topOut: false,
     ...resetCounters,
