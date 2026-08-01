@@ -134,7 +134,7 @@ describe('fixed-tick descent', () => {
 
   it('moves every third held soft-drop tick and release discards partial progress', () => {
     let side = withActive(createSideState(0), activeT());
-    side = applySideCommands(side, [{ type: 'soft-drop', active: true }]).state;
+    side = applySideCommands(side, [{ type: 'soft-drop', active: true }], 'player').state;
 
     side = advanceSideTick(side).state;
     side = advanceSideTick(side).state;
@@ -146,7 +146,7 @@ describe('fixed-tick descent', () => {
     expect(side.softDropTicks).toBe(0);
 
     side = advanceSideTick(side).state;
-    side = applySideCommands(side, [{ type: 'soft-drop', active: false }]).state;
+    side = applySideCommands(side, [{ type: 'soft-drop', active: false }], 'player').state;
     expect(side.softDropTicks).toBe(0);
     for (let tick = 0; tick < 6; tick += 1) side = advanceSideTick(side).state;
     expect(side.active?.y).toBe(3);
@@ -154,7 +154,7 @@ describe('fixed-tick descent', () => {
 
   it('applies both scheduled descents when gravity and held soft drop are due together', () => {
     let side = withActive(createSideState(0), activeT());
-    side = applySideCommands(side, [{ type: 'soft-drop', active: true }]).state;
+    side = applySideCommands(side, [{ type: 'soft-drop', active: true }], 'player').state;
 
     for (let tick = 0; tick < 48; tick += 1) side = advanceSideTick(side).state;
 
@@ -182,7 +182,7 @@ describe('commands and locking', () => {
       { type: 'move', dx: 1 },
       { type: 'move', dx: 1 },
       { type: 'rotate-clockwise' },
-    ]).state;
+    ], 'player').state;
 
     expect(result.active).toMatchObject({ x: 5, rotation: 1 });
     expect(side.active).toEqual(activeT());
@@ -192,14 +192,14 @@ describe('commands and locking', () => {
     const blocked = withActive(createSideState(0), activeT(0, 2));
     const locked: SideState = { ...blocked, phase: 'lock' };
 
-    expect(applySideCommands(blocked, [{ type: 'move', dx: -1 }]).state).toBe(blocked);
-    expect(applySideCommands(locked, [{ type: 'move', dx: 1 }]).state).toBe(locked);
+    expect(applySideCommands(blocked, [{ type: 'move', dx: -1 }], 'player').state).toBe(blocked);
+    expect(applySideCommands(locked, [{ type: 'move', dx: 1 }], 'player').state).toBe(locked);
   });
 
   it('hard drops to the ghost row and enters lock immediately', () => {
     const side = withActive(createSideState(0), activeT());
 
-    const result = applySideCommands(side, [{ type: 'hard-drop' }]);
+    const result = applySideCommands(side, [{ type: 'hard-drop' }], 'player');
 
     expect(result.locked).toBe(true);
     expect(result.state.phase).toBe('lock');
@@ -227,13 +227,13 @@ describe('commands and locking', () => {
       const command = reset % 2 === 0
         ? { type: 'rotate-clockwise' } as const
         : { type: 'move', dx: reset % 4 === 1 ? -1 : 1 } as const;
-      side = applySideCommands(side, [command]).state;
+      side = applySideCommands(side, [command], 'player').state;
       expect(side.lockTicks).toBe(0);
     }
     expect(side.lockResets).toBe(15);
 
     for (let tick = 0; tick < 7; tick += 1) side = advanceSideTick(side).state;
-    side = applySideCommands(side, [{ type: 'move', dx: -1 }]).state;
+    side = applySideCommands(side, [{ type: 'move', dx: -1 }], 'player').state;
     expect(side.lockTicks).toBe(7);
     expect(side.lockResets).toBe(15);
   });
@@ -242,13 +242,14 @@ describe('commands and locking', () => {
     const groundedAtWall = withActive(createSideState(0), activeT(0, 22));
     const elapsed: SideState = { ...groundedAtWall, lockTicks: 12, lockResets: 4 };
 
-    expect(applySideCommands(elapsed, [{ type: 'move', dx: -1 }]).state).toBe(elapsed);
+    expect(applySideCommands(elapsed, [{ type: 'move', dx: -1 }], 'player').state).toBe(elapsed);
   });
 
   it('commits a locked piece and stops at the clear-and-attack checkpoint', () => {
     const dropped = applySideCommands(
       withActive(createSideState(0), activeT()),
       [{ type: 'hard-drop' }],
+      'player',
     ).state;
 
     const resolved = resolveLockedPiece(dropped);

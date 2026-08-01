@@ -9,15 +9,17 @@ import {
   type GameCommand,
   type GameEvent,
   type Inventory,
+  type SideId,
   type SideState,
 } from './model';
-import { makePieceToken } from './items';
+import { makePieceToken, useQueueSwap, useRowClear } from './items';
 import { ghostY, spawnPiece, tryRotateClockwise } from './pieces';
 
 export type SideTick = {
   readonly state: SideState;
   readonly events: readonly GameEvent[];
   readonly locked: boolean;
+  readonly outgoingAttack: number;
 };
 
 const EMPTY_INVENTORY: Inventory = { rowClear: 0, freeze: 0, queueSwap: 0 };
@@ -27,8 +29,13 @@ const NO_APPEARED_ITEMS: AppearedItems = {
   'queue-swap': false,
 };
 
-function tick(state: SideState, locked = false): SideTick {
-  return { state, events: [], locked };
+function tick(
+  state: SideState,
+  locked = false,
+  outgoingAttack = 0,
+  events: readonly GameEvent[] = [],
+): SideTick {
+  return { state, events, locked, outgoingAttack };
 }
 
 function grounded(state: SideState, active: ActivePiece): boolean {
@@ -71,7 +78,7 @@ export function createSideState(seed: number): SideState {
   };
 }
 
-function applyCommand(state: SideState, command: GameCommand): SideTick {
+function applyCommand(state: SideState, command: GameCommand, side: SideId): SideTick {
   if (state.phase !== 'active' || state.active === null) return tick(state);
 
   if (command.type === 'soft-drop') {
@@ -111,20 +118,32 @@ function applyCommand(state: SideState, command: GameCommand): SideTick {
     }, true);
   }
 
+  if (command.type === 'use-row-clear') {
+    const action = useRowClear(state, command.row, side);
+    return tick(action.state, false, action.outgoingAttack, action.events);
+  }
+
+  if (command.type === 'use-queue-swap') {
+    const action = useQueueSwap(state, side);
+    return tick(action.state, false, action.outgoingAttack, action.events);
+  }
+
   return tick(state);
 }
 
 export function applySideCommands(
   state: SideState,
   commands: readonly GameCommand[],
+  side: SideId,
 ): SideTick {
   let current = tick(state);
   for (const command of commands) {
-    const next = applyCommand(current.state, command);
+    const next = applyCommand(current.state, command, side);
     current = {
       state: next.state,
       events: [...current.events, ...next.events],
       locked: current.locked || next.locked,
+      outgoingAttack: current.outgoingAttack + next.outgoingAttack,
     };
   }
   return current;
