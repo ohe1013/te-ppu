@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   planItemCommands,
+  projectRowClearObservation,
   shouldUseQueueSwap,
   shouldUseTacticalRowClear,
 } from '../../src/ai/items';
@@ -273,6 +274,75 @@ describe('floor-specific AI item policies', () => {
       inventory: { rowClear: 1 },
     }), FLOOR_3)).toEqual([{ type: 'use-row-clear', row: 19 }]);
   });
+
+  it('projects the same minimum active lift and one-line incoming offset as the real core', () => {
+    let state = createMatch({ matchSeed: 53, countdownTicks: 0 });
+    const cells = [...state.sides.opponent.board.cells];
+    cells[5 * BOARD_WIDTH + 4] = { kind: 'J' };
+    cells[10 * BOARD_WIDTH] = { kind: 'L' };
+    state = patchSide(state, 'opponent', {
+      board: { cells },
+      active: {
+        token: { serial: 90, kind: 'O', marker: null },
+        x: 3,
+        y: 6,
+        rotation: 0,
+      },
+      incoming: 2,
+      inventory: acquireMarkers(state.sides.opponent.inventory, ['row-clear']),
+    });
+    const before = createAiObservation(state, 'opponent');
+    const projected = projectRowClearObservation(before, 6);
+    const stepped = stepMatch(state, [{
+      tick: 1,
+      side: 'opponent',
+      command: { type: 'use-row-clear', row: 6 },
+    }]);
+    const actual = createAiObservation(stepped.state, 'opponent');
+
+    expect(actual.self).toMatchObject({
+      active: expect.objectContaining({ y: 0 }),
+      incoming: 1,
+      phase: 'active',
+      topOut: false,
+    });
+    expect(projected.self).toMatchObject({
+      active: expect.objectContaining({ y: 0 }),
+      incoming: 1,
+      phase: 'active',
+      topOut: false,
+    });
+    expect(projected.self.board).toEqual(actual.self.board);
+    expect(projected.self.ghostY).toBe(actual.self.ghostY);
+  });
+
+  it('keeps a lift-surviving tactical row scoreable and selects its lower-row tie', () => {
+    let state = createMatch({ matchSeed: 53, countdownTicks: 0 });
+    const cells = [...state.sides.opponent.board.cells];
+    cells[5 * BOARD_WIDTH + 4] = { kind: 'J' };
+    cells[10 * BOARD_WIDTH] = { kind: 'L' };
+    state = patchSide(state, 'opponent', {
+      board: { cells },
+      active: {
+        token: { serial: 90, kind: 'O', marker: null },
+        x: 3,
+        y: 6,
+        rotation: 0,
+      },
+      incoming: 1,
+      inventory: acquireMarkers(state.sides.opponent.inventory, ['row-clear']),
+    });
+    const zeroWeights = {
+      ...FLOOR_3,
+      weights: Object.fromEntries(
+        Object.keys(FLOOR_3.weights).map((name) => [name, 0]),
+      ) as typeof FLOOR_3.weights,
+    };
+
+    expect(planItemCommands(createAiObservation(state, 'opponent'), zeroWeights)).toEqual([
+      { type: 'use-row-clear', row: 6 },
+    ]);
+  }, 10_000);
 
   it('applies exact floor 2 and floor 3 queue-swap score-gap boundaries', () => {
     expect(shouldUseQueueSwap(FLOOR_2, 10, 12.999)).toBe(false);

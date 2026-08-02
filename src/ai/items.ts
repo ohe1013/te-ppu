@@ -1,6 +1,8 @@
 import {
   BOARD_WIDTH,
   HIDDEN_ROWS,
+  canPlace,
+  cellsFor,
   ghostY,
   type ActivePiece,
   type AiObservation,
@@ -69,10 +71,23 @@ function floor2Row(board: BoardView, rows: readonly number[]): number {
   })[0]!;
 }
 
-function observationAfterDelete(view: AiObservation, row: number): AiObservation {
+export function projectRowClearObservation(
+  view: AiObservation,
+  row: number,
+): AiObservation {
+  if (
+    !Number.isInteger(row)
+    || row < 0
+    || row >= VISIBLE_ROWS
+    || occupiedInRow(view.self.board, row) === 0
+  ) return view;
+
   const board = deleteVisibleRow(view.self.board, row);
   const active = view.self.active;
+  let projectedActive: ActivePiece | null = null;
   let projectedGhost: number | null = null;
+  let phase = view.self.phase;
+  let topOut = view.self.topOut;
   if (active !== null) {
     const internalBoard: Board = {
       cells: [
@@ -86,11 +101,43 @@ function observationAfterDelete(view: AiObservation, row: number): AiObservation
       y: active.y + HIDDEN_ROWS,
       rotation: active.rotation,
     };
-    projectedGhost = ghostY(internalBoard, internalActive) - HIDDEN_ROWS;
+    projectedActive = internalActive;
+    if (!canPlace(internalBoard, projectedActive)) {
+      const maximumLift = Math.min(...cellsFor(internalActive).map(({ y }) => y));
+      projectedActive = null;
+      for (let lift = 1; lift <= maximumLift; lift += 1) {
+        const candidate = { ...internalActive, y: internalActive.y - lift };
+        if (canPlace(internalBoard, candidate)) {
+          projectedActive = candidate;
+          break;
+        }
+      }
+    }
+    if (projectedActive === null) {
+      phase = 'top-out';
+      topOut = true;
+    } else {
+      projectedGhost = ghostY(internalBoard, projectedActive) - HIDDEN_ROWS;
+    }
   }
   return {
     ...view,
-    self: { ...view.self, board, ghostY: projectedGhost },
+    self: {
+      ...view.self,
+      board,
+      active: projectedActive === null
+        ? null
+        : {
+            token: { ...active!.token },
+            x: projectedActive.x,
+            y: projectedActive.y - HIDDEN_ROWS,
+            rotation: projectedActive.rotation,
+          },
+      ghostY: projectedGhost,
+      incoming: Math.max(0, view.self.incoming - 1),
+      phase,
+      topOut,
+    },
   };
 }
 
@@ -119,7 +166,7 @@ function tacticalRow(
   const ranked = rows
     .map((row) => ({
       row,
-      score: bestVisibleScore(observationAfterDelete(view, row), profile),
+      score: bestVisibleScore(projectRowClearObservation(view, row), profile),
     }))
     .sort((left, right) => {
       if (left.score !== right.score) return left.score > right.score ? -1 : 1;
