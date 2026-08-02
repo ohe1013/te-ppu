@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GameCommand } from '../../core/index';
 import { RotateButton } from './RotateButton';
@@ -37,6 +38,52 @@ describe('RotateButton', () => {
     fireEvent.click(button, { detail: 0 });
     expect(onCommand).toHaveBeenCalledOnce();
     expect(onCommand).toHaveBeenCalledWith({ type: 'rotate-clockwise' });
+  });
+
+  it('sends one rotation for a held Enter key and allows later activations', async () => {
+    const user = userEvent.setup();
+    const onCommand = vi.fn<(command: GameCommand) => void>();
+    render(<RotateButton onCommand={onCommand} />);
+    const button = screen.getByRole('button');
+    button.focus();
+
+    await user.keyboard('{Enter>5/}');
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
+    await user.keyboard('{Enter}');
+    expect(onCommand).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(button, { detail: 0 });
+    expect(onCommand).toHaveBeenCalledTimes(3);
+  });
+
+  it('sends one rotation for a held Space key', async () => {
+    const user = userEvent.setup();
+    const onCommand = vi.fn<(command: GameCommand) => void>();
+    render(<RotateButton onCommand={onCommand} />);
+    const button = screen.getByRole('button');
+    button.focus();
+
+    await user.keyboard('[Space>5/]');
+
+    expect(onCommand).toHaveBeenCalledOnce();
+    expect(onCommand).toHaveBeenCalledWith({ type: 'rotate-clockwise' });
+  });
+
+  it('releases a held keyboard activation when focus leaves the button', async () => {
+    const firstUser = userEvent.setup();
+    const secondUser = userEvent.setup();
+    const onCommand = vi.fn<(command: GameCommand) => void>();
+    render(<RotateButton onCommand={onCommand} />);
+    const button = screen.getByRole('button');
+    button.focus();
+
+    await firstUser.keyboard('{Enter>}');
+    button.blur();
+    button.focus();
+    await secondUser.keyboard('{Enter}');
+
+    expect(onCommand).toHaveBeenCalledTimes(2);
   });
 
   it('ignores non-primary pointers and mouse buttons but allows a new primary press', () => {

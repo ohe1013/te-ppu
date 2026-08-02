@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -9,7 +11,14 @@ export interface RotateButtonProps {
   readonly onCommand: (command: GameCommand) => void;
 }
 
+type ActivationKey = 'Enter' | ' ';
+
+function isActivationKey(key: string): key is ActivationKey {
+  return key === 'Enter' || key === ' ';
+}
+
 export function RotateButton({ onCommand }: RotateButtonProps) {
+  const heldActivationKeys = useRef(new Set<ActivationKey>());
   const rotate = () => onCommand({ type: 'rotate-clockwise' });
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -23,12 +32,33 @@ export function RotateButton({ onCommand }: RotateButtonProps) {
     rotate();
   };
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!isActivationKey(event.key)) return;
+    if (event.repeat || heldActivationKeys.current.has(event.key)) {
+      event.preventDefault();
+      return;
+    }
+    heldActivationKeys.current.add(event.key);
+  };
+
+  const handleKeyUp = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!isActivationKey(event.key)) return;
+    heldActivationKeys.current.delete(event.key);
+  };
+
+  const handleBlur = () => {
+    heldActivationKeys.current.clear();
+  };
+
   return (
     <button
       aria-label="시계 방향 회전"
       className="rotate-control"
       type="button"
+      onBlur={handleBlur}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
       onPointerDown={handlePointerDown}
     >
       <span aria-hidden="true">↻</span>
