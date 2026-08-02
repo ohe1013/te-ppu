@@ -32,6 +32,8 @@ npm run check:dependency-audit
 
 The command consumes fresh npm audit JSON and the current `package-lock.json`. It exits successfully only when every current vulnerable package matches the reviewed advisory fields, dependency paths, and exact locked versions. It prints every accepted record as `KNOWN_EXCEPTION` and ends with `status=PENDING_UPSTREAM`; success never means zero vulnerabilities.
 
+Malformed npm audit v2 data or baseline policy metadata is an input error (exit 2), not an empty or unchanged audit. The baseline requires the exact status `PENDING_UPSTREAM`, exact scope `private-prototype-only`, and real calendar dates in `YYYY-MM-DD` form.
+
 The checker fails on:
 
 - a new vulnerable package or advisory;

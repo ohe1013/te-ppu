@@ -4,7 +4,7 @@
     "owner": "fixture-maintainers",
     "reviewedOn": "1999-12-01",
     "expiresOn": "2000-01-01",
-    "scope": "private-prototype",
+    "scope": "private-prototype-only",
     "status": "PENDING_UPSTREAM"
   },
   "vulnerabilities": {

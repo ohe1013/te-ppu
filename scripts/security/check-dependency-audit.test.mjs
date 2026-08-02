@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -8,15 +16,17 @@ const fixturePath = (name) => fileURLToPath(new URL(`./fixtures/dependency-audit
 
 function runChecker({
   audit = 'audit-unchanged.json',
+  auditPath = fixturePath(audit),
   baseline = 'baseline.json',
+  baselinePath = fixturePath(baseline),
   lock = 'package-lock.json',
 } = {}) {
   const result = spawnSync(
     process.execPath,
     [
       checkerPath,
-      '--audit', fixturePath(audit),
-      '--baseline', fixturePath(baseline),
+      '--audit', auditPath,
+      '--baseline', baselinePath,
       '--lock', fixturePath(lock),
     ],
     { encoding: 'utf8' },
@@ -26,6 +36,28 @@ function runChecker({
     ...result,
     output: `${result.stdout}${result.stderr}`,
   };
+}
+
+const validAudit = JSON.parse(readFileSync(fixturePath('audit-unchanged.json'), 'utf8'));
+const validBaseline = JSON.parse(readFileSync(fixturePath('baseline.json'), 'utf8'));
+
+function mutated(value, change) {
+  const copy = structuredClone(value);
+  change(copy);
+  return copy;
+}
+
+function runCheckerWithJson({ audit = validAudit, baseline = validBaseline }) {
+  const directory = mkdtempSync(join(tmpdir(), 'te-ppu-dependency-audit-'));
+  const auditPath = join(directory, 'audit.json');
+  const baselinePath = join(directory, 'baseline.json');
+  writeFileSync(auditPath, JSON.stringify(audit));
+  writeFileSync(baselinePath, JSON.stringify(baseline));
+  try {
+    return runChecker({ auditPath, baselinePath });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 test('accepts the exact reviewed audit while reporting known exceptions', () => {
@@ -84,3 +116,164 @@ test('rejects an expired exception even when the audit is unchanged', () => {
   assert.match(result.output, /EXCEPTION_EXPIRED owner=fixture-maintainers expiresOn=2000-01-01/);
   assert.match(result.output, /DEPENDENCY_AUDIT_REVIEW_REQUIRED new=0 changed=0 versionChanged=0 expired=1/);
 });
+
+const auditShapeCases = [
+  {
+    name: 'an array vulnerabilities collection',
+    change: (audit) => { audit.vulnerabilities = []; },
+    message: /audit vulnerabilities must be an object/,
+  },
+  {
+    name: 'a null vulnerability record',
+    change: (audit) => { audit.vulnerabilities.alpha = null; },
+    message: /audit vulnerability alpha must be an object/,
+  },
+  {
+    name: 'a missing vulnerability name',
+    change: (audit) => { delete audit.vulnerabilities.alpha.name; },
+    message: /audit vulnerability alpha\.name/,
+  },
+  {
+    name: 'a non-string severity',
+    change: (audit) => { audit.vulnerabilities.alpha.severity = 9; },
+    message: /audit vulnerability alpha\.severity/,
+  },
+  {
+    name: 'a non-boolean isDirect',
+    change: (audit) => { audit.vulnerabilities.alpha.isDirect = 'false'; },
+    message: /audit vulnerability alpha\.isDirect/,
+  },
+  {
+    name: 'a null aggregate range',
+    change: (audit) => { audit.vulnerabilities.alpha.range = null; },
+    message: /audit vulnerability alpha\.range/,
+  },
+  {
+    name: 'a missing via array',
+    change: (audit) => { delete audit.vulnerabilities.alpha.via; },
+    message: /audit vulnerability alpha\.via must be an array/,
+  },
+  {
+    name: 'a null via array',
+    change: (audit) => { audit.vulnerabilities.alpha.via = null; },
+    message: /audit vulnerability alpha\.via must be an array/,
+  },
+  {
+    name: 'an empty dependency name in via',
+    change: (audit) => { audit.vulnerabilities.beta.via = ['']; },
+    message: /audit vulnerability beta\.via\[0\]/,
+  },
+  {
+    name: 'an incomplete advisory object in via',
+    change: (audit) => { delete audit.vulnerabilities.alpha.via[0].title; },
+    message: /audit vulnerability alpha\.via\[0\]\.title/,
+  },
+  {
+    name: 'a non-array advisory cwe',
+    change: (audit) => { audit.vulnerabilities.alpha.via[0].cwe = 'CWE-100'; },
+    message: /audit vulnerability alpha\.via\[0\]\.cwe/,
+  },
+  {
+    name: 'an incomplete advisory cvss object',
+    change: (audit) => { delete audit.vulnerabilities.alpha.via[0].cvss.vectorString; },
+    message: /audit vulnerability alpha\.via\[0\]\.cvss\.vectorString/,
+  },
+  {
+    name: 'a missing effects array',
+    change: (audit) => { delete audit.vulnerabilities.alpha.effects; },
+    message: /audit vulnerability alpha\.effects must be an array/,
+  },
+  {
+    name: 'a non-array effects value',
+    change: (audit) => { audit.vulnerabilities.alpha.effects = 'tool'; },
+    message: /audit vulnerability alpha\.effects must be an array/,
+  },
+  {
+    name: 'a non-string effects entry',
+    change: (audit) => { audit.vulnerabilities.alpha.effects = [null]; },
+    message: /audit vulnerability alpha\.effects\[0\]/,
+  },
+  {
+    name: 'a missing nodes array',
+    change: (audit) => { delete audit.vulnerabilities.alpha.nodes; },
+    message: /audit vulnerability alpha\.nodes must be an array/,
+  },
+  {
+    name: 'a non-array nodes value',
+    change: (audit) => { audit.vulnerabilities.alpha.nodes = 'node_modules/alpha'; },
+    message: /audit vulnerability alpha\.nodes must be an array/,
+  },
+  {
+    name: 'a non-string nodes entry',
+    change: (audit) => { audit.vulnerabilities.alpha.nodes = [42]; },
+    message: /audit vulnerability alpha\.nodes\[0\]/,
+  },
+  {
+    name: 'a missing fixAvailable',
+    change: (audit) => { delete audit.vulnerabilities.alpha.fixAvailable; },
+    message: /audit vulnerability alpha\.fixAvailable/,
+  },
+  {
+    name: 'a null fixAvailable',
+    change: (audit) => { audit.vulnerabilities.alpha.fixAvailable = null; },
+    message: /audit vulnerability alpha\.fixAvailable/,
+  },
+  {
+    name: 'a string fixAvailable',
+    change: (audit) => { audit.vulnerabilities.alpha.fixAvailable = 'false'; },
+    message: /audit vulnerability alpha\.fixAvailable/,
+  },
+  {
+    name: 'an incomplete fixAvailable object',
+    change: (audit) => {
+      audit.vulnerabilities.alpha.fixAvailable = { name: 'alpha', version: '2.0.0' };
+    },
+    message: /audit vulnerability alpha\.fixAvailable\.isSemVerMajor/,
+  },
+];
+
+for (const fixture of auditShapeCases) {
+  test(`rejects ${fixture.name} before normalization`, () => {
+    const result = runCheckerWithJson({ audit: mutated(validAudit, fixture.change) });
+
+    assert.equal(result.status, 2, result.output);
+    assert.match(result.output, fixture.message);
+  });
+}
+
+const baselinePolicyCases = [
+  {
+    name: 'a non-pending status',
+    change: (baseline) => { baseline.policy.status = 'REVIEWED'; },
+    message: /baseline policy\.status must be PENDING_UPSTREAM/,
+  },
+  {
+    name: 'a non-prototype-only scope',
+    change: (baseline) => { baseline.policy.scope = 'private-prototype'; },
+    message: /baseline policy\.scope must be private-prototype-only/,
+  },
+  {
+    name: 'an impossible reviewedOn date',
+    change: (baseline) => { baseline.policy.reviewedOn = '2026-02-30'; },
+    message: /baseline policy\.reviewedOn must be a real YYYY-MM-DD date/,
+  },
+  {
+    name: 'a non-padded reviewedOn date',
+    change: (baseline) => { baseline.policy.reviewedOn = '2026-8-2'; },
+    message: /baseline policy\.reviewedOn must be a real YYYY-MM-DD date/,
+  },
+  {
+    name: 'an impossible expiresOn date',
+    change: (baseline) => { baseline.policy.expiresOn = '2026-02-30'; },
+    message: /baseline policy\.expiresOn must be a real YYYY-MM-DD date/,
+  },
+];
+
+for (const fixture of baselinePolicyCases) {
+  test(`rejects ${fixture.name} in the exception policy`, () => {
+    const result = runCheckerWithJson({ baseline: mutated(validBaseline, fixture.change) });
+
+    assert.equal(result.status, 2, result.output);
+    assert.match(result.output, fixture.message);
+  });
+}

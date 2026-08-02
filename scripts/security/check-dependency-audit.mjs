@@ -3,6 +3,94 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REVIEWED_FIELDS = ['severity', 'isDirect', 'via', 'effects', 'fixAvailable'];
+const AUDIT_SEVERITIES = new Set(['info', 'low', 'moderate', 'high', 'critical']);
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function requireNonEmptyString(value, path) {
+  if (!isNonEmptyString(value)) throw new Error(`${path} must be a non-empty string`);
+}
+
+function requireSeverity(value, path) {
+  if (typeof value !== 'string' || !AUDIT_SEVERITIES.has(value)) {
+    throw new Error(`${path} must be a valid npm audit severity`);
+  }
+}
+
+function requireStringArray(value, path, { allowEmpty = true } = {}) {
+  if (!Array.isArray(value)) throw new Error(`${path} must be an array`);
+  if (!allowEmpty && value.length === 0) throw new Error(`${path} must not be empty`);
+  value.forEach((entry, index) => requireNonEmptyString(entry, `${path}[${index}]`));
+}
+
+function validateAdvisory(advisory, path) {
+  if (!isObject(advisory)) throw new Error(`${path} must be a non-empty dependency name or advisory object`);
+  if (!Number.isInteger(advisory.source) || advisory.source < 0) {
+    throw new Error(`${path}.source must be a non-negative integer`);
+  }
+  requireNonEmptyString(advisory.name, `${path}.name`);
+  requireNonEmptyString(advisory.dependency, `${path}.dependency`);
+  requireNonEmptyString(advisory.title, `${path}.title`);
+  requireNonEmptyString(advisory.url, `${path}.url`);
+  requireSeverity(advisory.severity, `${path}.severity`);
+  requireStringArray(advisory.cwe, `${path}.cwe`);
+  if (!isObject(advisory.cvss)) throw new Error(`${path}.cvss must be an object`);
+  if (typeof advisory.cvss.score !== 'number' || !Number.isFinite(advisory.cvss.score)) {
+    throw new Error(`${path}.cvss.score must be a finite number`);
+  }
+  if (!Object.hasOwn(advisory.cvss, 'vectorString') || (
+    advisory.cvss.vectorString !== null
+    && typeof advisory.cvss.vectorString !== 'string'
+  )) {
+    throw new Error(`${path}.cvss.vectorString must be a string or null`);
+  }
+  requireNonEmptyString(advisory.range, `${path}.range`);
+}
+
+function validateFixAvailable(value, path) {
+  if (typeof value === 'boolean') return;
+  if (!isObject(value)) throw new Error(`${path} must be a boolean or complete object`);
+  requireNonEmptyString(value.name, `${path}.name`);
+  requireNonEmptyString(value.version, `${path}.version`);
+  if (typeof value.isSemVerMajor !== 'boolean') {
+    throw new Error(`${path}.isSemVerMajor must be a boolean`);
+  }
+}
+
+function validateAudit(audit) {
+  if (!isObject(audit) || audit.auditReportVersion !== 2) {
+    throw new Error('expected npm audit JSON with auditReportVersion 2');
+  }
+  if (!isObject(audit.vulnerabilities)) throw new Error('audit vulnerabilities must be an object');
+
+  for (const [name, vulnerability] of Object.entries(audit.vulnerabilities)) {
+    const path = `audit vulnerability ${name}`;
+    if (!isObject(vulnerability)) throw new Error(`${path} must be an object`);
+    if (vulnerability.name !== name) throw new Error(`${path}.name must equal ${JSON.stringify(name)}`);
+    requireSeverity(vulnerability.severity, `${path}.severity`);
+    if (typeof vulnerability.isDirect !== 'boolean') throw new Error(`${path}.isDirect must be a boolean`);
+    requireNonEmptyString(vulnerability.range, `${path}.range`);
+
+    if (!Array.isArray(vulnerability.via)) throw new Error(`${path}.via must be an array`);
+    vulnerability.via.forEach((entry, index) => {
+      if (typeof entry === 'string') {
+        requireNonEmptyString(entry, `${path}.via[${index}]`);
+      } else {
+        validateAdvisory(entry, `${path}.via[${index}]`);
+      }
+    });
+    requireStringArray(vulnerability.effects, `${path}.effects`);
+    requireStringArray(vulnerability.nodes, `${path}.nodes`, { allowEmpty: false });
+    if (!Object.hasOwn(vulnerability, 'fixAvailable')) throw new Error(`${path}.fixAvailable is required`);
+    validateFixAvailable(vulnerability.fixAvailable, `${path}.fixAvailable`);
+  }
+}
 
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -21,43 +109,38 @@ function advisoryId(advisory) {
 
 function normalizeVia(value) {
   if (typeof value === 'string') return { kind: 'dependency', name: value };
-  if (!value || typeof value !== 'object') throw new Error('audit via entries must be advisory objects or dependency names');
 
   return {
     kind: 'advisory',
     id: advisoryId(value),
-    source: value.source ?? null,
-    dependency: value.dependency ?? value.name ?? null,
-    title: value.title ?? null,
-    url: value.url ?? null,
-    severity: value.severity ?? null,
-    cwe: Array.isArray(value.cwe) ? [...value.cwe].sort() : [],
-    cvss: value.cvss
-      ? { score: value.cvss.score ?? null, vectorString: value.cvss.vectorString ?? null }
-      : null,
-    range: value.range ?? null,
+    source: value.source,
+    dependency: value.dependency,
+    title: value.title,
+    url: value.url,
+    severity: value.severity,
+    cwe: [...value.cwe].sort(),
+    cvss: { score: value.cvss.score, vectorString: value.cvss.vectorString },
+    range: value.range,
   };
 }
 
 function normalizeFixAvailable(value) {
-  if (!value || typeof value !== 'object') return value ?? false;
+  if (typeof value === 'boolean') return value;
   return {
-    name: value.name ?? null,
-    version: value.version ?? null,
-    isSemVerMajor: value.isSemVerMajor ?? false,
+    name: value.name,
+    version: value.version,
+    isSemVerMajor: value.isSemVerMajor,
   };
 }
 
 export function normalizeAudit(audit, lock) {
-  if (audit?.auditReportVersion !== 2 || !audit.vulnerabilities || typeof audit.vulnerabilities !== 'object') {
-    throw new Error('expected npm audit JSON with auditReportVersion 2');
-  }
-  if (!lock?.packages || typeof lock.packages !== 'object') {
+  validateAudit(audit);
+  if (!isObject(lock) || !isObject(lock.packages)) {
     throw new Error('expected package-lock JSON with a packages map');
   }
 
   return Object.fromEntries(Object.entries(audit.vulnerabilities).sort(([left], [right]) => left.localeCompare(right)).map(([name, vulnerability]) => {
-    const nodePaths = [...new Set(vulnerability.nodes ?? [])].sort();
+    const nodePaths = [...new Set(vulnerability.nodes)].sort();
     const nodes = nodePaths.map((path) => {
       const version = lock.packages[path]?.version;
       if (typeof version !== 'string') throw new Error(`lockfile has no exact version for ${path}`);
@@ -68,8 +151,8 @@ export function normalizeAudit(audit, lock) {
       severity: vulnerability.severity,
       isDirect: vulnerability.isDirect,
       range: vulnerability.range,
-      via: [...(vulnerability.via ?? [])].map(normalizeVia).sort((left, right) => stableJson(left).localeCompare(stableJson(right))),
-      effects: [...(vulnerability.effects ?? [])].sort(),
+      via: vulnerability.via.map(normalizeVia).sort((left, right) => stableJson(left).localeCompare(stableJson(right))),
+      effects: [...vulnerability.effects].sort(),
       nodes,
       fixAvailable: normalizeFixAvailable(vulnerability.fixAvailable),
     }];
@@ -78,12 +161,26 @@ export function normalizeAudit(audit, lock) {
 
 function validateBaseline(baseline) {
   if (baseline?.schemaVersion !== 1) throw new Error('baseline schemaVersion must be 1');
-  if (!baseline.policy || typeof baseline.policy !== 'object') throw new Error('baseline policy is required');
-  if (!baseline.vulnerabilities || typeof baseline.vulnerabilities !== 'object') throw new Error('baseline vulnerabilities map is required');
-  for (const key of ['owner', 'reviewedOn', 'expiresOn', 'scope', 'status']) {
-    if (typeof baseline.policy[key] !== 'string' || baseline.policy[key].length === 0) {
-      throw new Error(`baseline policy.${key} is required`);
-    }
+  if (!isObject(baseline.policy)) throw new Error('baseline policy is required');
+  if (!isObject(baseline.vulnerabilities)) throw new Error('baseline vulnerabilities map is required');
+  requireNonEmptyString(baseline.policy.owner, 'baseline policy.owner');
+  if (baseline.policy.status !== 'PENDING_UPSTREAM') {
+    throw new Error('baseline policy.status must be PENDING_UPSTREAM');
+  }
+  if (baseline.policy.scope !== 'private-prototype-only') {
+    throw new Error('baseline policy.scope must be private-prototype-only');
+  }
+  requireRealDate(baseline.policy.reviewedOn, 'baseline policy.reviewedOn');
+  requireRealDate(baseline.policy.expiresOn, 'baseline policy.expiresOn');
+}
+
+function requireRealDate(value, path) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`${path} must be a real YYYY-MM-DD date`);
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value) {
+    throw new Error(`${path} must be a real YYYY-MM-DD date`);
   }
 }
 
@@ -95,7 +192,6 @@ function formatRecord(name, vulnerability) {
 
 function isExpired(expiresOn, now) {
   const lastAllowedMoment = new Date(`${expiresOn}T23:59:59.999Z`);
-  if (Number.isNaN(lastAllowedMoment.valueOf())) throw new Error('baseline policy.expiresOn must be YYYY-MM-DD');
   return now > lastAllowedMoment;
 }
 
