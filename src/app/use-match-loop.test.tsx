@@ -12,6 +12,7 @@ import {
   createAiObservation,
   createMatch,
   type GameCommand,
+  type GameEvent,
   type MatchState,
   type TimedCommand,
 } from '../core/index';
@@ -186,6 +187,32 @@ describe('useMatchLoop', () => {
     expect(ai.update).toHaveBeenCalledTimes(10);
   });
 
+  it('preserves early catch-up events in step order when later ticks emit none', () => {
+    const earlyEvents: readonly GameEvent[] = [
+      { type: 'lines-cleared', side: 'player', amount: 2 },
+      { type: 'attack-sent', side: 'player', amount: 1 },
+    ];
+    coreSpies.stepMatch
+      .mockImplementationOnce((state: MatchState) => ({
+        events: earlyEvents,
+        state: { ...state, tick: state.tick + 1 },
+      }))
+      .mockImplementationOnce((state: MatchState) => ({
+        events: [],
+        state: { ...state, tick: state.tick + 1 },
+      }))
+      .mockImplementationOnce((state: MatchState) => ({
+        events: [],
+        state: { ...state, tick: state.tick + 1 },
+      }));
+    const { clock, result } = renderLoop();
+
+    clock.advanceBy(STEP_MS * 3);
+
+    expect(result.current.view.tick).toBe(3);
+    expect(result.current.events).toEqual(earlyEvents);
+  });
+
   it('composes pause reasons and resets the timestamp before resuming', () => {
     const { clock, result } = renderLoop();
 
@@ -211,8 +238,12 @@ describe('useMatchLoop', () => {
     ['draw', 'draw'],
   ] as const)('stops and reports terminal status %s exactly once', (status, resultName) => {
     const onFinished = vi.fn();
+    const terminalEvent: GameEvent = {
+      type: 'match-ended',
+      side: status === 'player-won' ? 'player' : 'opponent',
+    };
     coreSpies.stepMatch.mockImplementationOnce((state: MatchState) => ({
-      events: [{ type: 'match-ended', side: status === 'player-won' ? 'player' : 'opponent' }],
+      events: [terminalEvent],
       state: { ...state, status, tick: state.tick + 1 },
     }));
     const { clock, result } = renderLoop({ onFinished });
@@ -220,6 +251,7 @@ describe('useMatchLoop', () => {
     clock.advanceBy(STEP_MS);
 
     expect(result.current.view.status).toBe(status);
+    expect(result.current.events).toEqual([terminalEvent]);
     expect(onFinished).toHaveBeenCalledTimes(1);
     expect(onFinished).toHaveBeenCalledWith(resultName);
     expect(clock.pendingFrames).toBe(0);

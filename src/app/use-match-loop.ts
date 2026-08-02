@@ -45,6 +45,10 @@ interface PublishedMatch {
   readonly events: readonly GameEvent[];
 }
 
+interface AdvancedTick extends PublishedMatch {
+  readonly result: MatchResult | null;
+}
+
 function resultFor(status: PublicMatchView['status']): MatchResult | null {
   if (status === 'player-won') return 'win';
   if (status === 'opponent-won') return 'loss';
@@ -122,7 +126,7 @@ export function useMatchLoop({
       return ready;
     }
 
-    function advanceOneTick(): void {
+    function advanceOneTick(): AdvancedTick {
       const state = stateRef.current!;
       const tick = createPublicMatchView(state).tick + 1;
       const observation = createAiObservation(state, 'opponent');
@@ -131,17 +135,20 @@ export function useMatchLoop({
       const step: MatchStep = stepMatch(state, [...playerCommands, ...aiCommands]);
       stateRef.current = step.state;
       const view = createPublicMatchView(step.state);
-      setPublished({ view, events: step.events });
 
       const result = resultFor(view.status);
-      if (result !== null && !finishedRef.current) {
-        finishedRef.current = true;
+      let completion: MatchResult | null = null;
+      if (result !== null) {
+        if (!finishedRef.current) {
+          finishedRef.current = true;
+          completion = result;
+        }
         runningRef.current = false;
         commandQueueRef.current = [];
         accumulatorRef.current = 0;
         previousTimestampRef.current = null;
-        void onFinishedRef.current(result);
       }
+      return { view, events: step.events, result: completion };
     }
 
     function scheduleNextFrame(): void {
@@ -167,15 +174,23 @@ export function useMatchLoop({
 
       accumulatorRef.current += Math.max(0, timestamp - previousTimestamp);
       let steps = 0;
+      let latestView: PublicMatchView | null = null;
+      let terminalResult: MatchResult | null = null;
+      const frameEvents: GameEvent[] = [];
       while (
         accumulatorRef.current + STEP_EPSILON_MS >= STEP_MS
         && steps < MAX_STEPS_PER_FRAME
         && runningRef.current
       ) {
         accumulatorRef.current = Math.max(0, accumulatorRef.current - STEP_MS);
-        advanceOneTick();
+        const advanced = advanceOneTick();
+        latestView = advanced.view;
+        frameEvents.push(...advanced.events);
+        terminalResult = advanced.result;
         steps += 1;
       }
+      if (latestView !== null) setPublished({ view: latestView, events: frameEvents });
+      if (terminalResult !== null) void onFinishedRef.current(terminalResult);
       scheduleNextFrame();
     }
 
