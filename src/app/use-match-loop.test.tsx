@@ -59,6 +59,12 @@ vi.mock('../ai/index', async (importOriginal) => {
   };
 });
 
+// This suite owns the hook/profile/status boundary; WebGL lifecycle lives in
+// BattleCanvas.test.tsx and must not load Pixi's renderer into jsdom here.
+vi.mock('../render/BattleCanvas', () => ({
+  BattleCanvas: () => null,
+}));
+
 const STEP_MS = 1000 / 60;
 
 class FrameClock {
