@@ -1,0 +1,83 @@
+[data-safe-area-provider] {
+  min-height: 100%;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  color: #171323;
+  background:
+    radial-gradient(circle at 50% 0%, rgb(108 92 231 / 18%), transparent 38%),
+    #f7f6fc;
+}
+
+:where(.screen-shell) {
+  width: min(100%, 30rem);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding:
+    max(1.25rem, var(--native-close-exclusion-top, 10px))
+    max(1.25rem, var(--native-close-exclusion-right, 10px))
+    max(1.25rem, var(--safe-area-bottom, 0px))
+    max(1.25rem, var(--safe-area-left, 0px));
+  display: grid;
+  align-content: center;
+  gap: 1rem;
+}
+
+.screen-shell h1,
+.screen-shell p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: #6c5ce7;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.floor-list,
+.screen-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.floor-card {
+  display: grid;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+:where(.screen-shell) button {
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.875rem;
+  color: #fff;
+  background: #6c5ce7;
+  font: inherit;
+  font-weight: 750;
+}
+
+:where(.screen-shell) button:disabled {
+  color: #777184;
+  background: #dedbe8;
+}
+
+.screen-shell .secondary-button {
+  color: #4b4169;
+  background: #e9e6f5;
+}
+
+.notice {
+  padding: 0.875rem;
+  border-radius: 0.75rem;
+  background: #eeeafd;
+}
+
+@media (min-width: 400px) {
+  .screen-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
