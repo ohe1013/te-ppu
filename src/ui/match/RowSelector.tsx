@@ -54,6 +54,8 @@ export function RowSelector({
   onClose,
   onSelectedRowChange,
 }: RowSelectorProps) {
+  const selectorRef = useRef<HTMLDivElement>(null);
+  const rowActionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const pointerIdRef = useRef<number | null>(null);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [confirmationMessage, setConfirmationMessage] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export function RowSelector({
     onSelectedRowChange?.(row);
   }, [onSelectedRowChange]);
 
-  const rowForEvent = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const rowForEvent = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     return rowFromPointer(
       event.clientX,
       event.clientY,
@@ -73,18 +75,14 @@ export function RowSelector({
     );
   }, []);
 
-  const releaseCapture = useCallback((control: HTMLButtonElement, pointerId: number) => {
+  const releaseCapture = useCallback((control: HTMLDivElement, pointerId: number) => {
     pointerIdRef.current = null;
     if (control.hasPointerCapture(pointerId)) {
       control.releasePointerCapture(pointerId);
     }
   }, []);
 
-  const confirmRow = useCallback((row: number | null) => {
-    if (row === null) {
-      setConfirmationMessage('위아래 화살표로 제거할 행을 먼저 선택하세요.');
-      return;
-    }
+  const confirmRow = useCallback((row: number) => {
     if (!rowHasFixedCell(board, row)) {
       setConfirmationMessage(`${row + 1}번째 행은 빈 행이라 제거할 수 없습니다.`);
       return;
@@ -94,7 +92,7 @@ export function RowSelector({
     onClose();
   }, [board, dispatch, onClose, selectRow]);
 
-  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || pointerIdRef.current !== null) return;
     event.preventDefault();
     pointerIdRef.current = event.pointerId;
@@ -102,13 +100,13 @@ export function RowSelector({
     selectRow(rowForEvent(event));
   }, [rowForEvent, selectRow]);
 
-  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== event.pointerId) return;
     event.preventDefault();
     selectRow(rowForEvent(event));
   }, [rowForEvent, selectRow]);
 
-  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== event.pointerId) return;
     event.preventDefault();
     const row = rowForEvent(event);
@@ -122,7 +120,7 @@ export function RowSelector({
     confirmRow(row);
   }, [confirmRow, onClose, releaseCapture, rowForEvent, selectRow]);
 
-  const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (pointerIdRef.current !== event.pointerId) return;
     event.preventDefault();
     selectRow(null);
@@ -130,16 +128,17 @@ export function RowSelector({
     onClose();
   }, [onClose, releaseCapture, selectRow]);
 
-  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    let nextRow: number | null = null;
+  const handleKeyDown = useCallback((
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    row: number,
+  ) => {
+    let nextRow: number;
     switch (event.key) {
       case 'ArrowUp':
-        nextRow = selectedRow === null ? 0 : Math.max(0, selectedRow - 1);
+        nextRow = Math.max(0, row - 1);
         break;
       case 'ArrowDown':
-        nextRow = selectedRow === null
-          ? 0
-          : Math.min(VISIBLE_ROWS - 1, selectedRow + 1);
+        nextRow = Math.min(VISIBLE_ROWS - 1, row + 1);
         break;
       case 'Home':
         nextRow = 0;
@@ -150,7 +149,10 @@ export function RowSelector({
       case 'Escape': {
         event.preventDefault();
         const pointerId = pointerIdRef.current;
-        if (pointerId !== null) releaseCapture(event.currentTarget, pointerId);
+        const selector = selectorRef.current;
+        if (pointerId !== null && selector !== null) {
+          releaseCapture(selector, pointerId);
+        }
         selectRow(null);
         onClose();
         return;
@@ -159,14 +161,21 @@ export function RowSelector({
         return;
     }
     event.preventDefault();
-    selectRow(nextRow);
-  }, [onClose, releaseCapture, selectRow, selectedRow]);
+    rowActionRefs.current[nextRow]?.focus();
+  }, [onClose, releaseCapture, selectRow]);
 
-  const handleClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (event.detail !== 0) return;
+  const handleRowClick = useCallback((
+    event: ReactMouseEvent<HTMLButtonElement>,
+    row: number,
+  ) => {
+    if (event.detail !== 0) {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
-    confirmRow(selectedRow);
-  }, [confirmRow, selectedRow]);
+    if (selectedRow !== row) selectRow(row);
+    confirmRow(row);
+  }, [confirmRow, selectRow, selectedRow]);
 
   const highlightStyle: CSSProperties | undefined = selectedRow === null
     ? undefined
@@ -177,27 +186,43 @@ export function RowSelector({
 
   const selectionStatus = confirmationMessage
     ?? (selectedRow === null
-      ? '선택된 행 없음. 위아래 화살표로 행을 선택하세요.'
+      ? '선택된 행 없음. 행 동작을 탐색하여 제거할 행을 선택하세요.'
       : `${selectedRow + 1}번째 행 선택. ${
           rowHasFixedCell(board, selectedRow) ? '제거 가능' : '빈 행'
         }.`);
 
   return (
-    <button
+    <div
       aria-describedby={statusId}
-      aria-keyshortcuts="ArrowUp ArrowDown Home End Enter Space Escape"
       aria-label="행 제거 대상 선택"
       className="row-selector"
       data-selected-row={selectedRow ?? undefined}
-      type="button"
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
+      ref={selectorRef}
+      role="group"
       onLostPointerCapture={handlePointerCancel}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
+      {Array.from({ length: VISIBLE_ROWS }, (_, row) => {
+        const removable = rowHasFixedCell(board, row);
+        return (
+          <button
+            aria-keyshortcuts="ArrowUp ArrowDown Home End Enter Space Escape"
+            aria-label={`${row + 1}번째 행, ${removable ? '제거 가능' : '빈 행'}`}
+            className="row-selector__action"
+            key={row}
+            ref={(action) => {
+              rowActionRefs.current[row] = action;
+            }}
+            type="button"
+            onClick={(event) => handleRowClick(event, row)}
+            onFocus={() => selectRow(row)}
+            onKeyDown={(event) => handleKeyDown(event, row)}
+          />
+        );
+      })}
       {selectedRow !== null && (
         <span
           aria-hidden="true"
@@ -214,6 +239,6 @@ export function RowSelector({
       >
         {selectionStatus}
       </span>
-    </button>
+    </div>
   );
 }

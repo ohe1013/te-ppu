@@ -215,7 +215,10 @@ function setupSelector(board = boardWithFixedCell(5)) {
       onSelectedRowChange={onSelectedRowChange}
     />,
   );
-  const selector = screen.getByLabelText('행 제거 대상 선택');
+  const selector = screen.getByRole('group', { name: '행 제거 대상 선택' });
+  const rowActions = screen.getAllByRole('button', {
+    name: /\d+번째 행, (?:제거 가능|빈 행)/,
+  });
   const setPointerCapture = vi.fn();
   const releasePointerCapture = vi.fn();
   Object.defineProperties(selector, {
@@ -229,6 +232,7 @@ function setupSelector(board = boardWithFixedCell(5)) {
     onClose,
     onSelectedRowChange,
     releasePointerCapture,
+    rowActions,
     selector,
     setPointerCapture,
   };
@@ -243,6 +247,15 @@ function pointerDown(selector: HTMLElement, row: number, pointerId = 7) {
   });
 }
 
+function rowActionAt(
+  rowActions: readonly HTMLElement[],
+  row: number,
+): HTMLElement {
+  const action = rowActions[row];
+  if (action === undefined) throw new Error(`Missing row action ${row}`);
+  return action;
+}
+
 describe('RowSelector', () => {
   it('dispatches one row-clear command for a valid visible row and closes', () => {
     const {
@@ -250,16 +263,17 @@ describe('RowSelector', () => {
       onClose,
       onSelectedRowChange,
       releasePointerCapture,
+      rowActions,
       selector,
       setPointerCapture,
     } = setupSelector();
-    pointerDown(selector, 5);
+    pointerDown(rowActionAt(rowActions, 5), 5);
     fireEvent.pointerUp(selector, {
       clientX: 80,
       clientY: 188,
       pointerId: 7,
     });
-    fireEvent.click(selector, { detail: 1 });
+    fireEvent.click(rowActionAt(rowActions, 5), { detail: 1 });
 
     expect(setPointerCapture).toHaveBeenCalledWith(7);
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
@@ -270,8 +284,14 @@ describe('RowSelector', () => {
   });
 
   it('keeps selection active after a blank-row release and can confirm a later row', () => {
-    const { dispatch, onClose, onSelectedRowChange, selector } = setupSelector();
-    pointerDown(selector, 3);
+    const {
+      dispatch,
+      onClose,
+      onSelectedRowChange,
+      rowActions,
+      selector,
+    } = setupSelector();
+    pointerDown(rowActionAt(rowActions, 3), 3);
     fireEvent.pointerMove(selector, {
       clientX: 80,
       clientY: 172,
@@ -286,7 +306,7 @@ describe('RowSelector', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
 
-    pointerDown(selector, 5, 8);
+    pointerDown(rowActionAt(rowActions, 5), 5, 8);
     fireEvent.pointerUp(selector, {
       clientX: 80,
       clientY: 188,
@@ -304,8 +324,14 @@ describe('RowSelector', () => {
     clientX,
     clientY,
   ) => {
-    const { dispatch, onClose, onSelectedRowChange, selector } = setupSelector();
-    pointerDown(selector, 5);
+    const {
+      dispatch,
+      onClose,
+      onSelectedRowChange,
+      rowActions,
+      selector,
+    } = setupSelector();
+    pointerDown(rowActionAt(rowActions, 5), 5);
     fireEvent.pointerMove(selector, {
       clientX,
       clientY,
@@ -322,24 +348,36 @@ describe('RowSelector', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('is a tabbable semantic control with deterministic row boundaries', async () => {
+  it('exposes all rows as switch-discoverable native actions in board order', async () => {
     const user = userEvent.setup();
-    const { onSelectedRowChange, selector } = setupSelector();
+    const { rowActions } = setupSelector();
 
-    await user.tab();
-    expect(selector).toHaveFocus();
-    expect(selector).toHaveRole('button');
+    expect(rowActions).toHaveLength(20);
+    expect(rowActionAt(rowActions, 0)).toHaveAccessibleName('1번째 행, 빈 행');
+    expect(rowActionAt(rowActions, 5)).toHaveAccessibleName('6번째 행, 제거 가능');
+    expect(rowActionAt(rowActions, 19)).toHaveAccessibleName('20번째 행, 빈 행');
 
+    for (const rowAction of rowActions) {
+      await user.tab();
+      expect(rowAction).toHaveFocus();
+      expect(rowAction).toHaveAttribute('type', 'button');
+    }
+  });
+
+  it('moves focus deterministically between row actions with arrow and boundary keys', async () => {
+    const user = userEvent.setup();
+    const { onSelectedRowChange, rowActions, selector } = setupSelector();
+
+    rowActionAt(rowActions, 0).focus();
     await user.keyboard('{ArrowUp}');
-    expect(selector).toHaveAttribute('data-selected-row', '0');
-    await user.keyboard('{ArrowUp}');
-    expect(selector).toHaveAttribute('data-selected-row', '0');
+    expect(rowActionAt(rowActions, 0)).toHaveFocus();
 
     await user.keyboard('{End}{ArrowDown}');
-    expect(selector).toHaveAttribute('data-selected-row', '19');
+    expect(rowActionAt(rowActions, 19)).toHaveFocus();
     await user.keyboard('{ArrowUp}');
-    expect(selector).toHaveAttribute('data-selected-row', '18');
+    expect(rowActionAt(rowActions, 18)).toHaveFocus();
     await user.keyboard('{Home}');
+    expect(rowActionAt(rowActions, 0)).toHaveFocus();
     expect(selector).toHaveAttribute('data-selected-row', '0');
     expect(onSelectedRowChange).toHaveBeenLastCalledWith(0);
   });
@@ -352,10 +390,14 @@ describe('RowSelector', () => {
     key,
   ) => {
     const user = userEvent.setup();
-    const { dispatch, onClose, onSelectedRowChange, selector } = setupSelector();
-    selector.focus();
-    await user.keyboard('{Home}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
-    expect(selector).toHaveAttribute('data-selected-row', '5');
+    const {
+      dispatch,
+      onClose,
+      onSelectedRowChange,
+      rowActions,
+    } = setupSelector();
+    rowActionAt(rowActions, 5).focus();
+    expect(rowActionAt(rowActions, 5)).toHaveFocus();
 
     await user.keyboard(key);
 
@@ -367,9 +409,8 @@ describe('RowSelector', () => {
 
   it('keeps a blank keyboard row active and announces why it cannot confirm', async () => {
     const user = userEvent.setup();
-    const { dispatch, onClose, selector } = setupSelector();
-    selector.focus();
-    await user.keyboard('{Home}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
+    const { dispatch, onClose, rowActions, selector } = setupSelector();
+    rowActionAt(rowActions, 4).focus();
 
     await user.keyboard('{Enter}');
 
@@ -382,17 +423,21 @@ describe('RowSelector', () => {
     expect(selector).toHaveAttribute('aria-describedby', status.id);
   });
 
-  it('confirms the current row for a switch or screen-reader detail-zero click', () => {
-    const { dispatch, onClose, selector } = setupSelector();
-    fireEvent.keyDown(selector, { key: 'Home' });
-    for (let step = 0; step < 5; step += 1) {
-      fireEvent.keyDown(selector, { key: 'ArrowDown' });
-    }
+  it('lets assistive technology activate an exact row without preselection', () => {
+    const {
+      dispatch,
+      onClose,
+      onSelectedRowChange,
+      rowActions,
+      selector,
+    } = setupSelector();
+    expect(selector).not.toHaveAttribute('data-selected-row');
 
-    fireEvent.click(selector, { detail: 0 });
+    fireEvent.click(rowActionAt(rowActions, 5), { detail: 0 });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith({ type: 'use-row-clear', row: 5 });
+    expect(onSelectedRowChange.mock.calls).toEqual([[5], [null]]);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -407,10 +452,13 @@ describe('RowSelector', () => {
         onSelectedRowChange={(row) => calls.push(`row:${row}`)}
       />,
     );
-    const selector = screen.getByLabelText('행 제거 대상 선택');
-    fireEvent.keyDown(selector, { key: 'End' });
+    const selector = screen.getByRole('group', { name: '행 제거 대상 선택' });
+    const rowActions = screen.getAllByRole('button', {
+      name: /\d+번째 행, (?:제거 가능|빈 행)/,
+    });
+    rowActionAt(rowActions, 19).focus();
 
-    fireEvent.keyDown(selector, { key: 'Escape' });
+    fireEvent.keyDown(rowActionAt(rowActions, 19), { key: 'Escape' });
 
     expect(calls.slice(-2)).toEqual(['row:null', 'close']);
     expect(selector).not.toHaveAttribute('data-selected-row');
