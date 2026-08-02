@@ -59,7 +59,52 @@ describe('AI controller', () => {
     ]);
   });
 
-  it('replans after a hidden collision rejects movement and never hard-drops the stale route', () => {
+  it('excludes a hidden-row rejected prefix and makes deterministic bounded progress', () => {
+    const run = () => {
+      let state = createMatch({ matchSeed: 9, countdownTicks: 0 });
+      const cells = [...state.sides.opponent.board.cells];
+      cells[2 * BOARD_WIDTH + 6] = { kind: 'J' };
+      state = {
+        ...state,
+        sides: {
+          ...state.sides,
+          opponent: { ...state.sides.opponent, board: { cells } },
+        },
+      } satisfies MatchState;
+      const ai = createAiController(AI_FLOOR_PROFILES[2]!, 11);
+      const emitted: TimedCommand[] = [];
+      let lockedAt: number | null = null;
+
+      for (let tick = 1; tick <= 240; tick += 1) {
+        const observation = createAiObservation(state, 'opponent');
+        expect(observation.self.board.every((cell) => cell === null)).toBe(true);
+        const commands = ai.update(observation, tick);
+        emitted.push(...commands);
+        const step = stepMatch(state, commands);
+        state = step.state;
+        if (step.events.some((event) => event.type === 'piece-locked' && event.side === 'opponent')) {
+          lockedAt = tick;
+          break;
+        }
+      }
+      return { emitted, lockedAt };
+    };
+
+    const first = run();
+    const second = run();
+    expect(first).toEqual(second);
+    expect(first.emitted[0]).toEqual({
+      tick: 12,
+      side: 'opponent',
+      command: { type: 'move', dx: 1 },
+    });
+    expect(first.emitted[1]?.tick).toBe(24);
+    expect(first.emitted[1]?.command).not.toEqual({ type: 'move', dx: 1 });
+    expect(first.lockedAt).not.toBeNull();
+    expect(first.lockedAt!).toBeLessThanOrEqual(240);
+  });
+
+  it('uses one deterministic mistake draw for each actual replan', () => {
     let state = createMatch({ matchSeed: 9, countdownTicks: 0 });
     const cells = [...state.sides.opponent.board.cells];
     cells[2 * BOARD_WIDTH + 6] = { kind: 'J' };
@@ -70,23 +115,45 @@ describe('AI controller', () => {
         opponent: { ...state.sides.opponent, board: { cells } },
       },
     } satisfies MatchState;
-    const ai = createAiController(AI_FLOOR_PROFILES[2]!, 11);
-    const emitted = [];
+    const profile = { ...AI_FLOOR_PROFILES[0]!, reactionTicks: 12 as const };
+    const ai = createAiController(profile, 3);
+    const emitted: TimedCommand[] = [];
 
-    for (let tick = 1; tick <= 36; tick += 1) {
-      const observation = createAiObservation(state, 'opponent');
-      expect(observation.self.board.every((cell) => cell === null)).toBe(true);
-      const commands = ai.update(observation, tick);
+    for (let tick = 1; tick <= 24; tick += 1) {
+      const commands = ai.update(createAiObservation(state, 'opponent'), tick);
       emitted.push(...commands);
       state = stepMatch(state, commands).state;
     }
 
     expect(emitted).toEqual([
       { tick: 12, side: 'opponent', command: { type: 'move', dx: 1 } },
-      { tick: 24, side: 'opponent', command: { type: 'move', dx: 1 } },
-      { tick: 36, side: 'opponent', command: { type: 'move', dx: 1 } },
+      // For seed 3, draw index 1 selects rotation; skipping to index 2 selects move-left.
+      { tick: 24, side: 'opponent', command: { type: 'rotate-clockwise' } },
     ]);
-    expect(state.sides.opponent.active?.x).toBe(3);
+  });
+
+  it('falls back to direct hard drop after every movement prefix is rejected', () => {
+    const view = createAiObservation(
+      createMatch({ matchSeed: 9, countdownTicks: 0 }),
+      'opponent',
+    );
+    const ai = createAiController(AI_FLOOR_PROFILES[2]!, 11);
+    const emitted: TimedCommand[] = [];
+
+    for (let tick = 1; tick <= 60; tick += 1) {
+      const output = ai.update(view, tick);
+      emitted.push(...output);
+      if (output[0]?.command.type === 'hard-drop') break;
+    }
+
+    expect(emitted.at(-1)?.command).toEqual({ type: 'hard-drop' });
+    const movementKeys = emitted
+      .filter(({ command }) => command.type !== 'hard-drop')
+      .map(({ command }) => JSON.stringify(command));
+    expect(new Set(movementKeys).size).toBe(movementKeys.length);
+    expect(emitted.map(({ tick }) => tick)).toEqual(
+      emitted.map((_, index) => (index + 1) * AI_FLOOR_PROFILES[2]!.reactionTicks),
+    );
   });
 
   it('invalidates a validated route when gravity changes the active piece between reactions', () => {

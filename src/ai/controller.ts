@@ -19,6 +19,8 @@ import type { AiController, AiFloorProfile } from './types';
 interface RouteExpectation {
   readonly contextFingerprint: string;
   readonly active: PublicActivePiece;
+  readonly sourceFingerprint: string;
+  readonly failedPrefix: string;
 }
 
 function fingerprint(value: unknown): string {
@@ -31,6 +33,21 @@ function contextFingerprint(view: AiObservation): string {
     inventory: view.self.inventory,
     phase: view.self.phase,
   });
+}
+
+function placementFingerprint(view: AiObservation): string {
+  return fingerprint({
+    board: view.self.board,
+    inventory: view.self.inventory,
+    phase: view.self.phase,
+    active: view.self.active,
+  });
+}
+
+function commandPrefix(command: GameCommand): string | null {
+  return command.type === 'move' || command.type === 'rotate-clockwise'
+    ? fingerprint(command)
+    : null;
 }
 
 function sameActive(left: PublicActivePiece | null, right: PublicActivePiece): boolean {
@@ -75,6 +92,8 @@ function expectedAfterCommand(
     return {
       contextFingerprint: contextFingerprint(view),
       active: { ...active, token: { ...active.token }, x: active.x + command.dx },
+      sourceFingerprint: placementFingerprint(view),
+      failedPrefix: fingerprint(command),
     };
   }
   if (command.type === 'rotate-clockwise') {
@@ -87,6 +106,8 @@ function expectedAfterCommand(
         y: rotated.y - HIDDEN_ROWS,
         rotation: rotated.rotation,
       },
+      sourceFingerprint: placementFingerprint(view),
+      failedPrefix: fingerprint(command),
     };
   }
   return null;
@@ -101,11 +122,21 @@ export function createAiController(
   let decisionIndex = 0;
   let route: GameCommand[] = [];
   let expectation: RouteExpectation | null = null;
+  let failedFingerprint: string | null = null;
+  const failedPrefixes = new Set<string>();
 
   return {
     side,
     update(view: AiObservation, tick: number): readonly TimedCommand[] {
+      const currentFingerprint = placementFingerprint(view);
+      if (failedFingerprint !== currentFingerprint) {
+        failedFingerprint = currentFingerprint;
+        failedPrefixes.clear();
+      }
       if (expectation !== null && !matchesExpectation(view, expectation)) {
+        if (expectation.sourceFingerprint === currentFingerprint) {
+          failedPrefixes.add(expectation.failedPrefix);
+        }
         route = [];
         expectation = null;
       }
@@ -119,7 +150,17 @@ export function createAiController(
       if (route.length === 0) {
         const scored = scoreCandidates(view, profile);
         if (scored.length === 0) return [];
-        const selected = selectCandidate(scored, profile, () =>
+        const withoutFailedPrefixes = scored.filter((candidate) => {
+          const first = candidate.commands[0];
+          const prefix = first === undefined ? null : commandPrefix(first);
+          return prefix === null || !failedPrefixes.has(prefix);
+        });
+        const directHardDrop = scored.find((candidate) =>
+          candidate.commands.length === 1 && candidate.commands[0]?.type === 'hard-drop');
+        const available = withoutFailedPrefixes.length > 0
+          ? withoutFailedPrefixes
+          : directHardDrop === undefined ? scored : [directHardDrop];
+        const selected = selectCandidate(available, profile, () =>
           counterU32(seed, RandomStream.AI_MISTAKE, decisionIndex++) / 0x1_0000_0000);
         route = [...selected.commands];
       }
