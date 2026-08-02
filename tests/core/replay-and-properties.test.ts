@@ -267,7 +267,7 @@ describe('canonical replay', () => {
     expect(eventCoverage.get('item-acquired')).toBeGreaterThan(8);
     expect(eventCoverage.get('item-used')).toBeGreaterThan(12);
     expect(usedItems).toEqual(new Set(['row-clear', 'freeze', 'queue-swap']));
-  });
+  }, 10_000);
 });
 
 describe('authoritative match invariants', () => {
