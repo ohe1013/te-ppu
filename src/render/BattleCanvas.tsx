@@ -227,8 +227,12 @@ export function BattleCanvas({
   return (
     <div
       className="battle-canvas"
+      data-opponent-board-height={layout.opponent.height}
+      data-opponent-board-width={layout.opponent.width}
       data-opponent-height={layout.opponent.height}
       data-opponent-width={layout.opponent.width}
+      data-player-board-height={layout.player.height}
+      data-player-board-width={layout.player.width}
       data-player-height={layout.player.height}
       data-player-width={layout.player.width}
       data-testid="battle-canvas"

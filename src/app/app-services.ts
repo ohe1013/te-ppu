@@ -11,12 +11,19 @@ export interface AppServices {
   readonly progressRepository: ProgressRepository;
 }
 
+export interface AppServiceOverrides {
+  readonly platform?: PlatformPort;
+  readonly progressRepository?: ProgressRepository;
+}
+
 export function createAppServices(
   runtimeMode: RuntimeMode,
   storage: Storage = window.localStorage,
+  overrides: AppServiceOverrides = {},
 ): AppServices {
   return {
-    platform: createPlatform(runtimeMode),
-    progressRepository: createLocalProgressRepository(storage),
+    platform: overrides.platform ?? createPlatform(runtimeMode),
+    progressRepository:
+      overrides.progressRepository ?? createLocalProgressRepository(storage),
   };
 }

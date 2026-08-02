@@ -10,7 +10,11 @@ import {
   createAiController,
 } from '../../ai/index';
 import type { Floor, MatchResult } from '../../app/app-route';
-import { useMatchLoop } from '../../app/use-match-loop';
+import {
+  useMatchLoop,
+  type MatchLoopView,
+  type UseMatchLoopOptions,
+} from '../../app/use-match-loop';
 import type { GameCommand, GameEvent, MatchStatus } from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
@@ -41,7 +45,10 @@ export interface MatchScreenProps {
   readonly platform: PlatformPort;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
+  readonly useMatchLoopImpl?: MatchLoopHook;
 }
+
+export type MatchLoopHook = (options: UseMatchLoopOptions) => MatchLoopView;
 
 function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
   if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
@@ -88,12 +95,13 @@ export function MatchScreen({
   seed,
   settings,
   settingsSaveFailed,
+  useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
   const ai = useMemo(
     () => createAiController(AI_FLOOR_PROFILES[floor - 1]!, seed),
     [floor, seed],
   );
-  const match = useMatchLoop({
+  const match = useMatchLoopImpl({
     ai,
     config: { matchSeed: seed },
     onFinished,
