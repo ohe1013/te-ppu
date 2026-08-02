@@ -229,6 +229,7 @@ describe('lifecycle UI', () => {
   });
 
   it('keeps audio alive through the StrictMode effect rehearsal and destroys it on real unmount', async () => {
+    vi.useFakeTimers();
     const audio = createAudio();
     const result = render(
       <StrictMode>
@@ -246,14 +247,16 @@ describe('lifecycle UI', () => {
       </StrictMode>,
     );
 
-    await act(async () => Promise.resolve());
+    act(() => vi.advanceTimersByTime(300));
     expect(audio.destroy).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
     expect(audio.unlock).toHaveBeenCalled();
 
     result.unmount();
-    await act(async () => Promise.resolve());
+    act(() => vi.advanceTimersByTime(299));
+    expect(audio.destroy).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
     expect(audio.destroy).toHaveBeenCalledTimes(1);
   });
 

@@ -55,6 +55,8 @@ export interface MatchScreenProps {
 
 export type MatchLoopHook = (options: UseMatchLoopOptions) => MatchLoopView;
 
+const AUDIO_DESTROY_GRACE_MS = 300;
+
 function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
   if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
   if (event.type === 'lines-cleared') return 'clear';
@@ -159,6 +161,7 @@ export function MatchScreen({
   const pendingAudioDestroyRef = useRef<{
     readonly audio: AudioPort;
     cancelled: boolean;
+    timer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
 
   const handleRowSelectionChange = useCallback((active: boolean) => {
@@ -190,19 +193,25 @@ export function MatchScreen({
     const pending = pendingAudioDestroyRef.current;
     if (pending?.audio === audio) {
       pending.cancelled = true;
+      if (pending.timer !== null) clearTimeout(pending.timer);
       pendingAudioDestroyRef.current = null;
     }
 
     return () => {
-      const scheduled = { audio, cancelled: false };
+      const scheduled: NonNullable<typeof pendingAudioDestroyRef.current> = {
+        audio,
+        cancelled: false,
+        timer: null,
+      };
       pendingAudioDestroyRef.current = scheduled;
-      queueMicrotask(() => {
+      scheduled.timer = setTimeout(() => {
+        scheduled.timer = null;
         if (scheduled.cancelled) return;
         if (pendingAudioDestroyRef.current === scheduled) {
           pendingAudioDestroyRef.current = null;
         }
         ignoreEffect(() => scheduled.audio.destroy());
-      });
+      }, AUDIO_DESTROY_GRACE_MS);
     };
   }, [audio]);
 
