@@ -9,6 +9,7 @@ import type {
   ProgressRepository,
   ProgressSaveResult,
   ProgressState,
+  Floor,
 } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { PlatformPort } from '../platform/platform-port';
@@ -38,6 +39,20 @@ const floorThreeProgress: ProgressState = {
   schemaVersion: 2,
   highestUnlockedFloor: 3,
   clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
+  settings: { soundEnabled: true, hapticsEnabled: true },
+};
+
+const floorFourProgress: ProgressState = {
+  schemaVersion: 2,
+  highestUnlockedFloor: 4,
+  clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
+  settings: { soundEnabled: true, hapticsEnabled: true },
+};
+
+const floorFiveProgress: ProgressState = {
+  schemaVersion: 2,
+  highestUnlockedFloor: 5,
+  clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
   settings: { soundEnabled: true, hapticsEnabled: true },
 };
 
@@ -135,8 +150,11 @@ function renderGame(
   );
 }
 
-async function enterMatch(user: ReturnType<typeof userEvent.setup>, floor: 1 | 2 | 3) {
-  const reactionMs = { 1: 800, 2: 633, 3: 450 }[floor];
+async function enterMatch(
+  user: ReturnType<typeof userEvent.setup>,
+  floor: Floor,
+  reactionMs: number,
+) {
   await screen.findByTestId('tower-screen');
   await user.click(screen.getByRole('button', { name: `${floor}층 선택` }));
   expect(screen.getByTestId('floor-intro-screen')).toBeInTheDocument();
@@ -172,7 +190,7 @@ describe('AppRoot', () => {
       />,
     );
 
-    await enterMatch(user, 1);
+    await enterMatch(user, 1, 800);
 
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
     expect(screen.getByRole('region', { name: 'PLAYER battle status' }))
@@ -231,7 +249,7 @@ describe('AppRoot', () => {
     });
     renderGame(repository);
 
-    await enterMatch(user, 1);
+    await enterMatch(user, 1, 800);
     await user.click(screen.getByRole('button', { name: 'finish win' }));
     await screen.findByTestId('result-screen');
     await waitFor(() => expect(repository.saves).toHaveLength(1));
@@ -266,12 +284,42 @@ describe('AppRoot', () => {
     })).toBeInTheDocument();
   });
 
+  it('renders all five floor choices with floor four available and floor five locked', async () => {
+    renderGame(new TestProgressRepository(floorFourProgress));
+
+    await screen.findByTestId('tower-screen');
+    expect(screen.getAllByRole('button', { name: /층 선택/ })).toHaveLength(5);
+    expect(screen.getByRole('button', { name: '4층 선택' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
+    expect(screen.getByRole('button', {
+      name: '3층 선택',
+      description: '클리어 완료 · 재도전 가능',
+    })).toBeEnabled();
+  });
+
+  it.each([
+    [1, floorOneProgress, 800],
+    [2, floorThreeProgress, 633],
+    [3, floorThreeProgress, 450],
+    [4, floorFourProgress, 317],
+    [5, floorFiveProgress, 200],
+  ] as const)('shows the exact floor-%i AI reaction timing', async (
+    floor,
+    initialProgress,
+    reactionMs,
+  ) => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(initialProgress));
+
+    await enterMatch(user, floor, reactionMs);
+  });
+
   it.each(['loss', 'draw'] as const)('does not unlock floor two after a %s', async (result) => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);
     renderGame(repository);
 
-    await enterMatch(user, 1);
+    await enterMatch(user, 1, 800);
     await user.click(screen.getByRole('button', { name: `finish ${result}` }));
     await screen.findByTestId('result-screen');
     await waitFor(() => expect(repository.saves).toHaveLength(1));
@@ -284,18 +332,62 @@ describe('AppRoot', () => {
     });
   });
 
-  it('returns to the tower after a floor-three victory', async () => {
+  it('unlocks floors four and five through victories without ending early', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorThreeProgress);
     renderGame(repository);
 
-    await enterMatch(user, 3);
+    await enterMatch(user, 3, 450);
     await user.click(screen.getByRole('button', { name: 'finish win' }));
     await screen.findByTestId('result-screen');
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '계속' }));
 
     expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '4층 선택' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
+
+    await enterMatch(user, 4, 317);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('result-screen');
+    await waitFor(() => expect(repository.saves).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: '계속' }));
+
+    expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
   });
+
+  it('reaches the ending after a floor-five victory', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress);
+    renderGame(repository);
+
+    await enterMatch(user, 5, 200);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('result-screen');
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '계속' }));
+
+    expect(screen.getByTestId('ending-screen')).toBeInTheDocument();
+  });
+
+  it.each(['loss', 'draw'] as const)(
+    'returns to the tower instead of ending after a floor-five %s',
+    async (result) => {
+      const user = userEvent.setup();
+      const repository = new TestProgressRepository(floorFiveProgress);
+      renderGame(repository);
+
+      await enterMatch(user, 5, 200);
+      await user.click(screen.getByRole('button', { name: `finish ${result}` }));
+      await screen.findByTestId('result-screen');
+      await waitFor(() => expect(repository.saves).toHaveLength(1));
+      await user.click(screen.getByRole('button', { name: '계속' }));
+
+      expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
+      expect(screen.queryByTestId('ending-screen')).not.toBeInTheDocument();
+    },
+  );
 
   it('renders in-memory progress and retries a failed save through TowerController', async () => {
     const user = userEvent.setup();
@@ -308,7 +400,7 @@ describe('AppRoot', () => {
     ]);
     renderGame(repository);
 
-    await enterMatch(user, 1);
+    await enterMatch(user, 1, 800);
     await user.click(screen.getByRole('button', { name: 'finish win' }));
     await screen.findByTestId('result-screen');
     expect(screen.getByText('최고 해금 층: 2')).toBeInTheDocument();
@@ -327,7 +419,7 @@ describe('AppRoot', () => {
     const repository = new DeferredSaveRepository(floorOneProgress);
     renderGame(repository);
 
-    await enterMatch(user, 1);
+    await enterMatch(user, 1, 800);
     await user.click(screen.getByRole('button', { name: 'finish win' }));
     await screen.findByTestId('result-screen');
 

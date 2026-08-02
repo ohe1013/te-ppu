@@ -4,6 +4,8 @@
 
 .app-shell {
   min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
   color: #171323;
   background:
     radial-gradient(circle at 50% 0%, rgb(108 92 231 / 18%), transparent 38%),

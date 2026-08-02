@@ -9,6 +9,17 @@ const PORTRAITS = [
 for (const { board, viewport } of PORTRAITS) {
   test(`keeps exact equal boards and zero overflow at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
+    await openTower(page);
+
+    await expect(page.getByRole('button', { name: /층 선택/ })).toHaveCount(5);
+    const towerMetrics = await page.getByTestId('app-shell').evaluate((node) => ({
+      overflowY: getComputedStyle(node).overflowY,
+      rootWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }));
+    expect(towerMetrics.rootWidth).toBeLessThanOrEqual(towerMetrics.viewportWidth);
+    expect(towerMetrics.overflowY).toBe('auto');
+
     await openMatch(page);
 
     const metrics = await page.getByTestId('battle-canvas').evaluate((node) => ({
