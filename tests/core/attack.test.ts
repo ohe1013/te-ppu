@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { dropGarbageBatch, resolveAttackExchange } from '../../src/core/attack';
 import { emptyBoard, occupiedCells } from '../../src/core/board';
 import { createSideState } from '../../src/core/field';
-import { BOARD_ROWS, BOARD_WIDTH, type Board, type SideState } from '../../src/core/model';
+import {
+  BOARD_ROWS,
+  BOARD_WIDTH,
+  type Board,
+  type SideState,
+} from '../../src/core/model';
 import { randomInt, RandomStream } from '../../src/core/random';
 
 function boardWithCell(board: Board, x: number, y: number): Board {
@@ -96,10 +101,10 @@ describe('seeded garbage batches', () => {
     expect(result.side.garbageDrawIndex).toBe(4);
     expect(result.side.incoming).toBe(0);
     expect(result.events).toEqual([
-      { type: 'garbage-landed', side: 'player', amount: 1 },
-      { type: 'garbage-landed', side: 'player', amount: 1 },
-      { type: 'garbage-landed', side: 'player', amount: 1 },
-      { type: 'garbage-landed', side: 'player', amount: 1 },
+      { type: 'garbage-landed', side: 'player', amount: 1, column: 3, landingRow: 19 },
+      { type: 'garbage-landed', side: 'player', amount: 1, column: 2, landingRow: 19 },
+      { type: 'garbage-landed', side: 'player', amount: 1, column: 4, landingRow: 19 },
+      { type: 'garbage-landed', side: 'player', amount: 1, column: 3, landingRow: 18 },
     ]);
     expect(side.incoming).toBe(4);
     expect(side.garbageDrawIndex).toBe(0);
@@ -118,11 +123,28 @@ describe('seeded garbage batches', () => {
       { x: 9, y: BOARD_ROWS - 1, kind: 'O' },
     ]);
     expect(result.events).toEqual([
-      { type: 'garbage-landed', side: 'opponent', amount: 1 },
-      { type: 'garbage-landed', side: 'opponent', amount: 1 },
-      { type: 'garbage-landed', side: 'opponent', amount: 1 },
-      { type: 'garbage-landed', side: 'opponent', amount: 1 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1, column: 5, landingRow: 19 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1, column: 2, landingRow: 19 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1, column: 9, landingRow: 19 },
+      { type: 'garbage-landed', side: 'opponent', amount: 1, column: 2, landingRow: 18 },
     ]);
+  });
+
+  it('reports a successful hidden garbage landing without fabricating a visible row', () => {
+    const board = boardWithCell(emptyBoard(), 3, 1);
+
+    const result = dropGarbageBatch(waitingForGarbage(1, board), 0, 'player');
+
+    expect(result.events).toEqual([
+      {
+        type: 'garbage-landed',
+        side: 'player',
+        amount: 1,
+        column: 3,
+        landingRow: -4,
+      },
+    ]);
+    expect(result.side.board.cells[3]).toEqual({ kind: 'O' });
   });
 
   it('leaves a garbage-completed row in place until normal locking clears it', () => {
@@ -135,7 +157,13 @@ describe('seeded garbage batches', () => {
     const result = dropGarbageBatch(side, 0, 'player');
 
     expect(result.side.board.cells.slice((BOARD_ROWS - 1) * BOARD_WIDTH).every(Boolean)).toBe(true);
-    expect(result.events).toEqual([{ type: 'garbage-landed', side: 'player', amount: 1 }]);
+    expect(result.events).toEqual([{
+      type: 'garbage-landed',
+      side: 'player',
+      amount: 1,
+      column: 3,
+      landingRow: 19,
+    }]);
   });
 
   it('accepts an unbounded batch and stops only when a sequential drop overflows', () => {

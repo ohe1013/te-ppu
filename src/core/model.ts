@@ -69,6 +69,9 @@ export type GameEvent = {
   readonly amount?: number;
   readonly item?: ItemType;
   readonly row?: number;
+  readonly rows?: readonly number[];
+  readonly column?: number;
+  readonly landingRow?: number;
 };
 export type MatchStep = { readonly state: MatchState; readonly events: readonly GameEvent[] };
 

@@ -1,5 +1,11 @@
 import { dropGarbageCell } from './board';
-import { BOARD_WIDTH, type GameEvent, type SideId, type SideState } from './model';
+import {
+  BOARD_WIDTH,
+  HIDDEN_ROWS,
+  type GameEvent,
+  type SideId,
+  type SideState,
+} from './model';
 import { randomInt, RandomStream } from './random';
 
 export type AttackExchangeInput = {
@@ -63,7 +69,7 @@ export function dropGarbageBatch(
     const column = randomInt(seed, streamFor(recipient), drawIndex, BOARD_WIDTH);
     drawIndex += 1;
     const dropped = dropGarbageCell(board, column);
-    if (dropped.topOut) {
+    if (dropped.topOut || dropped.landedY === null) {
       return {
         side: {
           ...side,
@@ -78,7 +84,13 @@ export function dropGarbageBatch(
     }
 
     board = dropped.board;
-    events.push({ type: 'garbage-landed', side: recipient, amount: 1 });
+    events.push({
+      type: 'garbage-landed',
+      side: recipient,
+      amount: 1,
+      column,
+      landingRow: dropped.landedY - HIDDEN_ROWS,
+    });
   }
 
   return {

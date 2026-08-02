@@ -5,6 +5,7 @@ import {
   BOARD_ROWS,
   BOARD_WIDTH,
   FREEZE_TICKS,
+  HIDDEN_ROWS,
   type ActivePiece,
   type Board,
   type Cell,
@@ -53,6 +54,16 @@ function boardCompletableByHorizontalI(): Board {
   let board = emptyBoard();
   for (let x = 0; x < BOARD_WIDTH; x += 1) {
     if (x < 3 || x > 6) board = boardWithCell(board, x, BOARD_ROWS - 1);
+  }
+  return board;
+}
+
+function boardWithFullRows(rows: readonly number[]): Board {
+  let board = emptyBoard();
+  for (const row of rows) {
+    for (let x = 0; x < BOARD_WIDTH; x += 1) {
+      board = boardWithCell(board, x, row);
+    }
   }
   return board;
 }
@@ -214,6 +225,24 @@ describe('simultaneous freeze', () => {
 });
 
 describe('simultaneous attack, garbage, and top-out', () => {
+  it('reports only visible cleared rows in public coordinates', () => {
+    let state = createMatch({ matchSeed: 0, countdownTicks: 0 });
+    state = patchSide(state, 'player', {
+      active: null,
+      board: boardWithFullRows([HIDDEN_ROWS - 1, HIDDEN_ROWS, BOARD_ROWS - 1]),
+      phase: 'clear-and-attack',
+    });
+
+    const result = stepMatch(state, []);
+
+    expect(result.events).toContainEqual({
+      type: 'lines-cleared',
+      side: 'player',
+      amount: 3,
+      rows: [0, 19],
+    });
+  });
+
   it('resolves a normal clear and row item attack together without ending the item user piece', () => {
     let state = createMatch({ matchSeed: 0, countdownTicks: 0 });
     state = patchSide(state, 'player', {
