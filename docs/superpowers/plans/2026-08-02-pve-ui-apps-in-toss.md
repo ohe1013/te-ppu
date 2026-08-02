@@ -17,12 +17,12 @@
 - Reuse the already implemented `TowerController` from `src/app/towerController.ts` for unlocks, fresh starts/restarts, in-memory save failures, and save retry; React must not duplicate those transitions.
 - `GameCommand` is exactly `{ type: 'move'; dx: -1 | 1 } | { type: 'rotate-clockwise' } | { type: 'soft-drop'; active: boolean } | { type: 'hard-drop' } | { type: 'use-row-clear'; row: number } | { type: 'use-freeze' } | { type: 'use-queue-swap' }`; `TimedCommand` is exactly `{ tick: number; side: SideId; command: GameCommand }`.
 - `useMatchLoop` owns immutable `MatchState`, calls `stepMatch`, gives AI only `createAiObservation(state, 'opponent')`, and renders only `createPublicMatchView(state)`. The view is `{ tick; status: 'countdown' | 'playing' | 'player-won' | 'opponent-won' | 'draw'; sides: Record<SideId, PublicSideView> }`; each side exposes only `board`, `active`, `ghostY`, two-entry `next`, `combo`, `incoming`, `inventory`, `freezeTicks`, `phase`, and `topOut`.
-- Use React 19 and PixiJS/`@pixi/react` major version 8; initialize Pixi with `preference="webgl"`. Do not use WebGPU, SSR, `eval`, `new Function`, or `iframe`.
-- Use `@apps-in-toss/web-framework` exactly `2.10.8`, `granite.config.ts`, `webViewProps.type = 'game'`, `ait build`, and app name `te-ppu-prototype`.
+- Use React 19 and PixiJS/`@pixi/react` major version 8; initialize Pixi with `preference="webgl"`. Do not use WebGPU, SSR, `eval`, `new Function`, or `iframe`. The WebGPU exclusion is a project compatibility choice; the iframe prohibition is an Apps-in-Toss rule.
+- Use `@apps-in-toss/web-framework` exactly `2.10.8`, `granite.config.ts`, `webViewProps.type = 'game'`, and `ait build`. `te-ppu-prototype` is the private local app ID, but the QR/device build must use the exact app ID registered in the Apps-in-Toss console.
 - The layout is portrait-only. At 360x640 through 430x932, both visible 10x20 boards remain the same size, appear simultaneously, and never become minimaps.
 - The first usable screen must appear within 10 seconds. No screen opens with an automatic bottom sheet.
-- Safe Area includes Dynamic Island and the framework X-button reserve. Use `SafeAreaInsets.get()` for the initial value and `SafeAreaInsets.subscribe()` for changes; never use deprecated `getSafeAreaInsets()`.
-- Call `setDeviceOrientation({ type: 'portrait' })`; disable the iOS swipe-back gesture. Call `closeView()` only after the in-app exit confirmation succeeds.
+- Safe Area covers system insets such as Dynamic Island, but not the native game X button. Use `SafeAreaInsets.get()` for the initial value and `SafeAreaInsets.subscribe()` for changes, never deprecated `getSafeAreaInsets()`, and reserve a separate conservative top-right exclusion rectangle using `right + 10` and `top + 10` so authored controls cannot overlap the X button.
+- Call `setDeviceOrientation({ type: 'portrait' })`; disable iOS back/forward swipe at build time with `webViewProps.allowsBackForwardNavigationGestures = false`. Call `closeView()` only after the in-app exit confirmation succeeds.
 - Handle every `getUserKeyForGame()` result explicitly: `{ type: 'HASH', hash }`, `'INVALID_CATEGORY'`, `'ERROR'`, and `undefined`.
 - This remains a private prototype: no ads, in-app purchases, public release, final branding, or unreviewed third-party IP assets.
 
@@ -93,16 +93,22 @@ import { defineConfig } from '@apps-in-toss/web-framework/config';
 
 export default defineConfig({
   appName: 'te-ppu-prototype',
-  brand: { displayName: '탑 블록 대전', primaryColor: '#6c5ce7', icon: '/prototype-mark.svg' },
+  brand: { displayName: '탑 블록 대전', primaryColor: '#6c5ce7', icon: process.env.AIT_ICON_URL ?? '/prototype-mark.svg' },
   web: { host: 'localhost', port: 5173, commands: { dev: 'vite --host 0.0.0.0 --mode apps', build: 'npm run typecheck && vite build --mode apps' } },
-  webViewProps: { type: 'game' },
+  webViewProps: {
+    type: 'game',
+    allowsBackForwardNavigationGestures: false,
+    bounces: false,
+    pullToRefreshEnabled: false,
+    overScrollMode: 'never',
+  },
   navigationBar: { withBackButton: false, withHomeButton: false, withTitle: false, transparentBackground: true, theme: 'dark' },
   permissions: [],
   outdir: 'dist',
 });
 ```
 
-Create `prototype-mark.svg` from only a violet square, three white ascending rectangles, and no text or third-party asset.
+Create a square `prototype-mark.svg` source from only a violet background and three white ascending rectangles, with no text or third-party asset. The local path is only an automated-build fallback. Before Sandbox/private-QR testing, upload a 600x600 rasterized copy to the same Apps-in-Toss console app, set `AIT_ICON_URL` to that console-hosted image URL, and make `appName`/`displayName` exactly match the registered metadata.
 
 - [ ] **Step 3: Write the failing runtime-mode test**
 
@@ -165,7 +171,6 @@ export interface PlatformPort {
   getInitialSafeArea(): SafeArea;
   subscribeSafeArea(listener: (value: SafeArea) => void): () => void;
   lockPortrait(): Promise<void>;
-  disableSystemBack(): Promise<void>;
   haptic(type: 'tickWeak' | 'tap' | 'success' | 'error'): Promise<void>;
   close(): Promise<void>;
 }
@@ -204,7 +209,6 @@ import {
   generateHapticFeedback,
   getUserKeyForGame,
   setDeviceOrientation,
-  setIosSwipeGestureEnabled,
 } from '@apps-in-toss/web-framework';
 
 async function getIdentity(): Promise<UserIdentity> {
@@ -216,9 +220,9 @@ async function getIdentity(): Promise<UserIdentity> {
 }
 ```
 
-Use `SafeAreaInsets.get()` only for initial state, then `SafeAreaInsets.subscribe({ onEvent })` with cleanup. `lockPortrait()` calls `setDeviceOrientation({ type: 'portrait' })`; `disableSystemBack()` calls `setIosSwipeGestureEnabled({ isEnabled: false })`; `close()` calls `closeView()`.
+Use `SafeAreaInsets.get()` only for initial state, then return the exact cleanup from `SafeAreaInsets.subscribe({ onEvent: listener })`. `lockPortrait()` calls `setDeviceOrientation({ type: 'portrait' })`; the build-time WebView configuration owns iOS swipe-back disabling; `close()` calls `closeView()`.
 
-The browser port returns zero insets, a `local-browser` identity, no-op orientation/back/haptic calls, and marks close requests in memory for tests. Select the browser port only for Vite `browser`/`e2e` modes; `.ait` mode always selects the Apps-in-Toss port and never masks SDK errors with the browser identity.
+The browser port returns zero insets, a `local-browser` identity, no-op orientation/haptic calls, and marks close requests in memory for tests. Select the browser port only for Vite `browser`/`e2e` modes; `.ait` mode always selects the Apps-in-Toss port and never masks SDK errors with the browser identity.
 
 - [ ] **Step 4: Implement boot and progress behavior**
 
@@ -230,13 +234,13 @@ export type BootState =
   | { status: 'retryable-error'; retry: () => void; message: string };
 ```
 
-`useBoot` concurrently locks portrait, disables system back, obtains identity, creates `createLocalProgressRepository(window.localStorage)`, and loads progress. For `ProgressLoadResult.ok === false`, continue with the returned in-memory `state` and show a retryable persistence notice. If `recoveredFromCorruption` is true, show the recovery notice already backed by the progression layer.
+`useBoot` concurrently locks portrait, obtains identity, creates `createLocalProgressRepository(window.localStorage)`, and loads progress. For `ProgressLoadResult.ok === false`, continue with the returned in-memory `state` and show a retryable persistence notice. If `recoveredFromCorruption` is true, show the recovery notice already backed by the progression layer.
 
 - [ ] **Step 5: Run tests**
 
 Run: `npm test -- src/platform/apps-in-toss-platform.test.ts src/app/use-boot.test.tsx`
 
-Expected: PASS; the four user-key branches, Safe Area cleanup, portrait/back calls, and progress recovery paths are covered.
+Expected: PASS; the four user-key branches, Safe Area cleanup, portrait calls, and progress recovery paths are covered. Configuration tests separately assert the game WebView and disabled iOS navigation gesture.
 
 - [ ] **Step 6: Commit**
 
@@ -578,7 +582,7 @@ Expected: FAIL because lifecycle components are missing.
 
 - [ ] **Step 3: Implement lifecycle coordination**
 
-Handle `visibilitychange`, `pagehide`, and `window.blur`. Background entry pauses the match, resets every held input, and suspends Web Audio. Foreground entry starts a wall-clock UI countdown while match time remains paused; reset the match-loop frame timestamp before clearing the pause reason.
+Handle `visibilitychange` as the primary signal and pair `pagehide`/`window.blur` with `pageshow`/`window.focus`. Make duplicate or out-of-order signals idempotent. Background entry pauses the match, resets every held input, and suspends Web Audio. Foreground entry starts a wall-clock UI countdown while match time remains paused; reset the match-loop frame timestamp before clearing the pause reason. Any SDK-native transparent-overlay visibility signal is supplementary, must be isolated behind the platform adapter with cleanup, and remains device-verified rather than browser-assumed.
 
 Provide an in-app `게임 나가기` action. It opens a React dialog (`role="dialog"`, focus trapped) and pauses both sides before asking. The confirm handler awaits `closeView()` through `PlatformPort.close`; it never mutates browser history. Keep the SDK game navigation X visible through `webViewProps.type='game'`; verify its native confirmation separately in QR QA.
 
@@ -677,7 +681,7 @@ console.log(`AIT_OK ${path} ${bytes}`);
 
 - [ ] **Step 5: Run the automated preflight**
 
-Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build:ait`, and `npm run check:ait` separately; each must exit 0. Then run `rg -n "eval\(|new Function|WebGPU|ReactDOMServer|<iframe" src` and require exit 1 with no output.
+Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build:ait`, and `npm run check:ait` separately; each must exit 0. Then scan all authored runtime/config surfaces, case-insensitively, for `eval(`, `new Function`, `webgpu`, `navigator.gpu`, `ReactDOMServer`, iframe markup, and dynamic iframe creation; require no findings in `src`, `index.html`, `public`, and the build configuration files.
 
 Expected: both Playwright projects pass; exactly one generated `.ait` exists; `check:ait` prints `AIT_OK` below 104857600 bytes; the source-policy scan finds nothing.
 
@@ -685,7 +689,7 @@ Expected: both Playwright projects pass; exactly one generated `.ait` exists; `c
 
 Write `docs/qa/apps-in-toss-private-qr.md` with checkboxes and exact expected results for:
 
-1. Latest Android and iOS sandbox launch the `.ait` build and return a mock game user key without boot failure.
+1. The console app ID/display name match the bundle, `AIT_ICON_URL` points to the 600x600 original icon uploaded to that console app, and latest Android/iOS Sandbox launch the `.ait` build and return a mock game user key without boot failure.
 2. Console private QR launches on the real Toss app and returns a stable HASH identity; `INVALID_CATEGORY`, `ERROR`, and unsupported app-version screens are not observed.
 3. Portrait lock, Dynamic Island/Safe Area, native game X, in-app exit confirmation, and `closeView()` work without overlap.
 4. Both 10x20 boards remain equal and visible at once; joystick, rotation, all three items, AI item effects, incoming/offset/return effects, and resume countdown are usable.
