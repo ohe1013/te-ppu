@@ -1,0 +1,195 @@
+import { describe, expect, it } from 'vitest';
+import { TowerController } from '../../src/app/towerController';
+import { createMatch } from '../../src/core/index';
+import {
+  DEFAULT_PROGRESS,
+  type ProgressLoadResult,
+  type ProgressRepository,
+  type ProgressSaveResult,
+  type ProgressState,
+} from '../../src/progression/index';
+
+class RecordingRepository implements ProgressRepository {
+  readonly saved: ProgressState[] = [];
+  readonly results: ProgressSaveResult[];
+
+  constructor(results: readonly ProgressSaveResult[] = []) {
+    this.results = [...results];
+  }
+
+  async load(): Promise<ProgressLoadResult> {
+    return {
+      ok: true,
+      state: DEFAULT_PROGRESS,
+      recoveredFromCorruption: false,
+    };
+  }
+
+  async save(state: ProgressState): Promise<ProgressSaveResult> {
+    this.saved.push(structuredClone(state));
+    return this.results.shift() ?? { ok: true };
+  }
+}
+
+function unlockedFloor3(): ProgressState {
+  return {
+    ...DEFAULT_PROGRESS,
+    highestUnlockedFloor: 3,
+    clearedFloors: { 1: true, 2: true, 3: false },
+  };
+}
+
+describe('tower controller', () => {
+  it('rejects locked floors and starts unlocked floors with the selected AI profile', () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    expect(controller.startFloor(2, 9)).toEqual({ ok: false, reason: 'LOCKED_FLOOR' });
+    expect(controller.match).toBeNull();
+    expect(controller.selectedFloor).toBeNull();
+
+    const started = controller.startFloor(1, 10);
+    expect(started).toEqual({ ok: true, match: controller.match });
+    expect(controller.match).toMatchObject({ matchSeed: 10 });
+    expect(controller.ai?.side).toBe('opponent');
+    expect(controller.selectedFloor).toBe(1);
+    expect(controller.route).toBe('MATCH');
+  });
+
+  it('restarts with a fresh match and resets all battle-owned state', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    const first = controller.startFloor(1, 10);
+    if (!first.ok) throw new Error('floor 1 should start');
+    const firstAi = controller.ai;
+    const restarted = controller.restartFloor(11);
+    if (!restarted.ok) throw new Error('selected floor should restart');
+
+    expect(restarted.match).not.toBe(first.match);
+    expect(restarted.match.matchSeed).toBe(11);
+    expect(restarted.match).toEqual(createMatch({ matchSeed: 11 }));
+    expect(controller.ai).not.toBe(firstAi);
+    for (const side of ['player', 'opponent'] as const) {
+      expect(restarted.match.sides[side]).toMatchObject({
+        combo: 0,
+        incoming: 0,
+        garbageDrawIndex: 0,
+        inventory: { rowClear: 0, freeze: 0, queueSwap: 0 },
+      });
+      expect(restarted.match.sides[side].appeared)
+        .not.toBe(first.match.sides[side].appeared);
+      expect(restarted.match.sides[side].board.cells.every((cell) => cell === null)).toBe(true);
+    }
+  });
+
+  it('requires a selected floor before restart', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+
+    expect(controller.restartFloor(11)).toEqual({
+      ok: false,
+      reason: 'NO_SELECTED_FLOOR',
+    });
+  });
+
+  it.each([
+    { result: 'WIN' as const, route: 'RESULT_WIN' as const },
+    { result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
+    { result: 'DRAW' as const, route: 'RESULT_DRAW' as const },
+  ])('routes floor 1 $result and persists progress without battle state', async ({ result, route }) => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+
+    expect(await controller.completeFloor(result)).toEqual({ ok: true, route });
+    expect(controller.route).toBe(route);
+    expect(controller.match).toBeNull();
+    expect(controller.ai).toBeNull();
+    expect(repository.saved).toHaveLength(1);
+    expect(Object.keys(repository.saved[0]!)).toEqual([
+      'schemaVersion',
+      'highestUnlockedFloor',
+      'clearedFloors',
+      'settings',
+    ]);
+    expect(JSON.stringify(repository.saved[0])).not.toMatch(/matchSeed|sides|board|inventory|combo/);
+    expect(controller.progress.highestUnlockedFloor).toBe(result === 'WIN' ? 2 : 1);
+  });
+
+  it('routes a floor 3 win to the ending and keeps cleared floors replayable', async () => {
+    const controller = new TowerController(unlockedFloor3(), new RecordingRepository());
+    controller.startFloor(3, 30);
+
+    expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'ENDING' });
+    expect(controller.progress.clearedFloors).toEqual({ 1: true, 2: true, 3: true });
+    expect(controller.startFloor(1, 31).ok).toBe(true);
+  });
+
+  it('abandons only live battle state and returns to the selected floor intro', () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+
+    controller.abandonMatch();
+
+    expect(controller.route).toBe('FLOOR_INTRO');
+    expect(controller.selectedFloor).toBe(1);
+    expect(controller.match).toBeNull();
+    expect(controller.ai).toBeNull();
+    expect(repository.saved).toEqual([]);
+  });
+
+  it('keeps unlocks playable in memory after save failure and retries the exact pending state', async () => {
+    const repository = new RecordingRepository([
+      { ok: false, error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' } },
+      { ok: true },
+    ]);
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+
+    expect(await controller.completeFloor('WIN')).toEqual({
+      ok: false,
+      reason: 'SAVE_FAILED',
+      route: 'RESULT_WIN',
+    });
+    expect(controller.progress.highestUnlockedFloor).toBe(2);
+    expect(controller.saveError).toBe('SAVE_FAILED');
+    expect(controller.route).toBe('RESULT_WIN');
+    expect(controller.startFloor(2, 20).ok).toBe(true);
+
+    expect(await controller.retrySave()).toEqual({ ok: true, route: 'MATCH' });
+    expect(controller.saveError).toBeNull();
+    expect(controller.route).toBe('MATCH');
+    expect(repository.saved[1]).toEqual(repository.saved[0]);
+  });
+
+  it('updates settings in memory before save and preserves them through failure and retry', async () => {
+    const repository = new RecordingRepository([
+      { ok: false, error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' } },
+      { ok: true },
+    ]);
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    expect(await controller.updateSettings({ soundEnabled: false })).toEqual({
+      ok: false,
+      reason: 'SAVE_FAILED',
+      route: 'TOWER',
+    });
+    expect(controller.progress.settings).toEqual({
+      soundEnabled: false,
+      hapticsEnabled: true,
+    });
+    expect(await controller.retrySave()).toEqual({ ok: true, route: 'TOWER' });
+    expect(repository.saved[1]).toEqual(repository.saved[0]);
+  });
+
+  it('reports retry when no save is pending without writing', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    expect(await controller.retrySave()).toEqual({
+      ok: false,
+      reason: 'NO_PENDING_SAVE',
+      route: 'TOWER',
+    });
+    expect(repository.saved).toEqual([]);
+  });
+});

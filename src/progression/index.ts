@@ -7,3 +7,5 @@ export type {
 } from './schema';
 export { DEFAULT_PROGRESS } from './schema';
 export { createLocalProgressRepository } from './localProgressRepository';
+export type { Floor, FloorResult } from './tower';
+export { applyFloorResult, canSelectFloor } from './tower';
