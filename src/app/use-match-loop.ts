@@ -37,6 +37,10 @@ export interface MatchLoopView {
 export interface UseMatchLoopOptions {
   readonly ai: AiController;
   readonly config: MatchConfig;
+  readonly onEvents?: (
+    events: readonly GameEvent[],
+    view: PublicMatchView,
+  ) => void;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
 }
 
@@ -59,6 +63,7 @@ function resultFor(status: PublicMatchView['status']): MatchResult | null {
 export function useMatchLoop({
   ai,
   config,
+  onEvents,
   onFinished,
 }: UseMatchLoopOptions): MatchLoopView {
   const stateRef = useRef<MatchState | null>(null);
@@ -69,6 +74,7 @@ export function useMatchLoop({
     view: createPublicMatchView(stateRef.current!),
   }));
   const aiRef = useRef(ai);
+  const onEventsRef = useRef(onEvents);
   const onFinishedRef = useRef(onFinished);
   const commandQueueRef = useRef<TimedCommand[]>([]);
   const pauseReasonsRef = useRef(new Set<PauseReason>());
@@ -79,6 +85,7 @@ export function useMatchLoop({
   const finishedRef = useRef(false);
 
   aiRef.current = ai;
+  onEventsRef.current = onEvents;
   onFinishedRef.current = onFinished;
 
   const stop = useCallback(() => {
@@ -189,7 +196,16 @@ export function useMatchLoop({
         terminalResult = advanced.result;
         steps += 1;
       }
-      if (latestView !== null) setPublished({ view: latestView, events: frameEvents });
+      if (latestView !== null) {
+        setPublished({ view: latestView, events: frameEvents });
+        if (frameEvents.length > 0) {
+          try {
+            onEventsRef.current?.(frameEvents, latestView);
+          } catch {
+            // Optional presentation feedback cannot own the match clock.
+          }
+        }
+      }
       if (terminalResult !== null) void onFinishedRef.current(terminalResult);
       scheduleNextFrame();
     }

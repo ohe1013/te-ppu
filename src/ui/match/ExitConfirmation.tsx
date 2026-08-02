@@ -27,8 +27,19 @@ export function ExitConfirmation({
 }: ExitConfirmationProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmPendingRef = useRef(false);
+  const closeSucceededRef = useRef(false);
   const [confirmPending, setConfirmPending] = useState(false);
+  const [closeSucceeded, setCloseSucceeded] = useState(false);
   const [closeFailed, setCloseFailed] = useState(false);
+
+  useEffect(() => {
+    if (open) return;
+    confirmPendingRef.current = false;
+    closeSucceededRef.current = false;
+    setConfirmPending(false);
+    setCloseSucceeded(false);
+    setCloseFailed(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -44,7 +55,11 @@ export function ExitConfirmation({
   if (!open) return null;
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key === 'Escape' && !confirmPendingRef.current) {
+    if (
+      event.key === 'Escape'
+      && !confirmPendingRef.current
+      && !closeSucceededRef.current
+    ) {
       event.preventDefault();
       onCancel();
       return;
@@ -68,12 +83,14 @@ export function ExitConfirmation({
   }
 
   async function confirm(): Promise<void> {
-    if (confirmPendingRef.current) return;
+    if (confirmPendingRef.current || closeSucceededRef.current) return;
     confirmPendingRef.current = true;
     setConfirmPending(true);
     setCloseFailed(false);
     try {
       await onConfirm();
+      closeSucceededRef.current = true;
+      setCloseSucceeded(true);
     } catch {
       setCloseFailed(true);
     } finally {
@@ -100,12 +117,19 @@ export function ExitConfirmation({
             게임을 닫지 못했습니다. 다시 시도해 주세요.
           </p>
         ) : null}
+        {closeSucceeded ? (
+          <p aria-live="polite" role="status">게임을 닫는 중입니다.</p>
+        ) : null}
         <div className="exit-confirmation__actions">
-          <button disabled={confirmPending} onClick={onCancel} type="button">
+          <button
+            disabled={confirmPending || closeSucceeded}
+            onClick={onCancel}
+            type="button"
+          >
             계속하기
           </button>
           <button
-            disabled={confirmPending}
+            disabled={confirmPending || closeSucceeded}
             onClick={() => void confirm()}
             type="button"
           >

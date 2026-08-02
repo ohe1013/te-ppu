@@ -55,20 +55,47 @@ test('keeps blank and outside row gestures inert and dispatches the valid row', 
   ]);
 });
 
-test('signals lifecycle changes through the typed driver contract', async ({ page }) => {
+test('pauses hidden match time and resumes only after the visible 3-2-1 countdown', async ({ page }) => {
   await openMatch(page);
-  const states: string[] = [];
-  await page.exposeFunction('captureLifecycleState', (state: string) => states.push(state));
-  await page.evaluate(() => {
-    document.addEventListener('visibilitychange', () => {
-      void (window as unknown as Window & {
-        captureLifecycleState(state: string): Promise<void>;
-      }).captureLifecycleState(document.visibilityState);
-    });
-  });
+  const tick = page.getByTestId('match-tick');
+  await expect(tick).not.toHaveText('0');
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('hidden'));
-  await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('visible'));
+  const hiddenTick = await tick.textContent();
+  await page.waitForTimeout(250);
+  await expect(tick).toHaveText(hiddenTick ?? '');
+  await expect(page.getByRole('group', { name: '게임 조작' }))
+    .toHaveAttribute('disabled', '');
 
-  await expect.poll(() => states).toEqual(['hidden', 'visible']);
+  await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('visible'));
+  const countdown = page.getByRole('status', { name: '게임 재개 카운트다운' });
+  await expect(countdown).toHaveText('3');
+  await expect(countdown).toHaveText('2', { timeout: 1_500 });
+  await expect(countdown).toHaveText('1', { timeout: 1_500 });
+  await expect(countdown).not.toBeVisible({ timeout: 1_500 });
+  await expect(page.getByRole('group', { name: '게임 조작' }))
+    .not.toHaveAttribute('disabled', '');
+  await expect(tick).not.toHaveText(hiddenTick ?? '');
+});
+
+test('pauses for exit, cancels safely, and closes only after confirmation', async ({ page }) => {
+  await openMatch(page);
+
+  await page.getByRole('button', { name: '게임 나가기' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('group', { name: '게임 조작' }))
+    .toHaveAttribute('disabled', '');
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
+
+  await page.getByRole('button', { name: '계속하기' }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await expect(page.getByRole('group', { name: '게임 조작' }))
+    .not.toHaveAttribute('disabled', '');
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
+
+  await page.getByRole('button', { name: '게임 나가기' }).click();
+  await page.getByRole('button', { name: '게임 나가기 확인' }).click();
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.closeCount),
+  ).toBe(1);
 });

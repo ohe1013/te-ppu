@@ -6,6 +6,8 @@ export interface AppLifecycleOptions {
   readonly audio: Pick<AudioPort, 'resume' | 'suspend'>;
   readonly countdownStepMs?: number;
   readonly documentTarget?: Document;
+  readonly now?: () => number;
+  readonly onBackgroundChange?: (backgrounded: boolean) => void;
   readonly onCountdownChange: (count: number | null) => void;
   readonly resetAll: () => void;
   readonly setPaused: (reason: 'background', paused: boolean) => void;
@@ -28,6 +30,8 @@ export function createAppLifecycleCoordinator({
   audio,
   countdownStepMs = 1_000,
   documentTarget = document,
+  now = Date.now,
+  onBackgroundChange,
   onCountdownChange,
   resetAll,
   setPaused,
@@ -36,18 +40,26 @@ export function createAppLifecycleCoordinator({
   const sources = new Set<BackgroundSource>();
   let phase: 'foreground' | 'background' | 'countdown' | 'destroyed' = 'foreground';
   let countdownTimer: ReturnType<typeof setTimeout> | null = null;
+  let countdownDeadline = 0;
+  let publishedCountdown: number | null = null;
   let generation = 0;
+  const stepMs = Number.isFinite(countdownStepMs)
+    ? Math.max(1, Math.floor(countdownStepMs))
+    : 1_000;
 
   function clearCountdown(): void {
     generation += 1;
     if (countdownTimer !== null) clearTimeout(countdownTimer);
     countdownTimer = null;
+    countdownDeadline = 0;
+    publishedCountdown = null;
   }
 
   function enterBackground(): void {
     if (phase === 'destroyed' || phase === 'background') return;
     clearCountdown();
     phase = 'background';
+    onBackgroundChange?.(true);
     onCountdownChange(null);
     setPaused('background', true);
     resetAll();
@@ -56,22 +68,44 @@ export function createAppLifecycleCoordinator({
 
   function finishCountdown(expectedGeneration: number): void {
     countdownTimer = null;
-    void (async () => {
-      try {
-        await audio.resume();
-      } catch {
-        // Audio availability must never keep the match permanently paused.
-      }
-      if (
-        phase !== 'countdown'
-        || generation !== expectedGeneration
-        || sources.size > 0
-      ) return;
-      phase = 'foreground';
-      onCountdownChange(null);
-      // setPaused resets the match loop frame timestamp before it unpauses.
-      setPaused('background', false);
-    })();
+    if (
+      phase !== 'countdown'
+      || generation !== expectedGeneration
+      || sources.size > 0
+    ) return;
+    phase = 'foreground';
+    onBackgroundChange?.(false);
+    countdownDeadline = 0;
+    publishedCountdown = null;
+    onCountdownChange(null);
+    // Audio and match time resume in the same turn. A slow or rejected audio
+    // operation never owns the deterministic match clock.
+    ignoreRejection(() => audio.resume());
+    // setPaused resets the match-loop frame timestamp before it unpauses.
+    setPaused('background', false);
+  }
+
+  function advanceCountdown(expectedGeneration: number): void {
+    if (
+      phase !== 'countdown'
+      || generation !== expectedGeneration
+      || sources.size > 0
+    ) return;
+    const remaining = countdownDeadline - now();
+    if (remaining <= 0) {
+      finishCountdown(expectedGeneration);
+      return;
+    }
+    const count = Math.min(3, Math.max(1, Math.ceil(remaining / stepMs)));
+    if (count !== publishedCountdown) {
+      publishedCountdown = count;
+      onCountdownChange(count);
+    }
+    const untilNextBoundary = remaining - ((count - 1) * stepMs);
+    countdownTimer = setTimeout(
+      () => advanceCountdown(expectedGeneration),
+      Math.max(1, Math.ceil(untilNextBoundary)),
+    );
   }
 
   function beginCountdown(): void {
@@ -79,22 +113,8 @@ export function createAppLifecycleCoordinator({
     clearCountdown();
     phase = 'countdown';
     const expectedGeneration = generation;
-    let count = 3;
-    onCountdownChange(count);
-
-    const advance = () => {
-      countdownTimer = setTimeout(() => {
-        if (phase !== 'countdown' || generation !== expectedGeneration) return;
-        if (count > 1) {
-          count -= 1;
-          onCountdownChange(count);
-          advance();
-          return;
-        }
-        finishCountdown(expectedGeneration);
-      }, countdownStepMs);
-    };
-    advance();
+    countdownDeadline = now() + (3 * stepMs);
+    advanceCountdown(expectedGeneration);
   }
 
   function markBackground(source: BackgroundSource): void {

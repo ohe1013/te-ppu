@@ -109,9 +109,11 @@ function fakeAi(commands: readonly TimedCommand[] = []): AiController & {
 
 function renderLoop({
   ai = fakeAi(),
+  onEvents,
   onFinished = vi.fn(),
 }: {
   readonly ai?: AiController;
+  readonly onEvents?: Parameters<typeof useMatchLoop>[0]['onEvents'];
   readonly onFinished?: (result: 'win' | 'loss' | 'draw') => void | Promise<void>;
 } = {}) {
   const clock = new FrameClock();
@@ -119,6 +121,7 @@ function renderLoop({
   const hook = renderHook(() => useMatchLoop({
     ai,
     config: { matchSeed: 17, countdownTicks: 0 },
+    onEvents,
     onFinished,
   }));
   clock.advanceBy(0);
@@ -244,6 +247,7 @@ describe('useMatchLoop', () => {
     ['draw', 'draw'],
   ] as const)('stops and reports terminal status %s exactly once', (status, resultName) => {
     const onFinished = vi.fn();
+    const onEvents = vi.fn();
     const terminalEvent: GameEvent = {
       type: 'match-ended',
       side: status === 'player-won' ? 'player' : 'opponent',
@@ -252,14 +256,17 @@ describe('useMatchLoop', () => {
       events: [terminalEvent],
       state: { ...state, status, tick: state.tick + 1 },
     }));
-    const { clock, result } = renderLoop({ onFinished });
+    const { clock, result } = renderLoop({ onEvents, onFinished });
 
     clock.advanceBy(STEP_MS);
 
     expect(result.current.view.status).toBe(status);
     expect(result.current.events).toEqual([terminalEvent]);
+    expect(onEvents).toHaveBeenCalledWith([terminalEvent], result.current.view);
     expect(onFinished).toHaveBeenCalledTimes(1);
     expect(onFinished).toHaveBeenCalledWith(resultName);
+    expect(onEvents.mock.invocationCallOrder[0])
+      .toBeLessThan(onFinished.mock.invocationCallOrder[0]!);
     expect(clock.pendingFrames).toBe(0);
 
     act(() => result.current.dispatch({ type: 'hard-drop' }));

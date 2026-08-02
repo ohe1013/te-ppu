@@ -15,7 +15,12 @@ import {
   type MatchLoopView,
   type UseMatchLoopOptions,
 } from '../../app/use-match-loop';
-import type { GameCommand, GameEvent, MatchStatus } from '../../core/index';
+import type {
+  GameCommand,
+  GameEvent,
+  MatchStatus,
+  PublicMatchView,
+} from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
@@ -59,8 +64,10 @@ function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
     || event.type === 'item-used'
     || event.type === 'freeze-applied'
   ) return 'item';
-  if (event.type === 'match-ended') return status === 'player-won' ? 'win' : 'loss';
-  if (event.type === 'top-out') return 'loss';
+  if (event.type === 'match-ended') {
+    if (status === 'player-won') return 'win';
+    if (status === 'opponent-won') return 'loss';
+  }
   return null;
 }
 
@@ -72,8 +79,10 @@ function hapticForEvent(event: GameEvent, status: MatchStatus): HapticType | nul
     return event.side === 'player' ? 'tap' : null;
   }
   if (event.type === 'freeze-applied') return event.side === 'player' ? 'error' : 'success';
-  if (event.type === 'top-out' && event.side === 'player') return 'error';
-  if (event.type === 'match-ended') return status === 'player-won' ? 'success' : 'error';
+  if (event.type === 'match-ended') {
+    if (status === 'player-won') return 'success';
+    if (status === 'opponent-won') return 'error';
+  }
   return null;
 }
 
@@ -97,6 +106,41 @@ export function MatchScreen({
   settingsSaveFailed,
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
+  const resetBus = useMemo(() => new InputResetBus(), []);
+  const audio = useMemo(
+    () => audioPort ?? createWebAudioPort({ enabled: settings.soundEnabled }),
+    [audioPort],
+  );
+  const feedbackRef = useRef({ audio, platform, settings });
+  feedbackRef.current = { audio, platform, settings };
+  const handleMatchEvents = useCallback((
+    events: readonly GameEvent[],
+    view: PublicMatchView,
+  ) => {
+    const feedback = feedbackRef.current;
+    const playedCues = new Set<SoundCue>();
+    const sentHaptics = new Set<HapticType>();
+    for (const event of events) {
+      if (feedback.settings.soundEnabled) {
+        const cue = cueForEvent(event, view.status);
+        if (cue !== null && !playedCues.has(cue)) {
+          playedCues.add(cue);
+          try {
+            feedback.audio.play(cue);
+          } catch {
+            // Audio ports are optional and isolated from gameplay.
+          }
+        }
+      }
+      if (feedback.settings.hapticsEnabled) {
+        const haptic = hapticForEvent(event, view.status);
+        if (haptic !== null && !sentHaptics.has(haptic)) {
+          sentHaptics.add(haptic);
+          ignoreEffect(() => feedback.platform.haptic(haptic));
+        }
+      }
+    }
+  }, []);
   const ai = useMemo(
     () => createAiController(AI_FLOOR_PROFILES[floor - 1]!, seed),
     [floor, seed],
@@ -104,18 +148,18 @@ export function MatchScreen({
   const match = useMatchLoopImpl({
     ai,
     config: { matchSeed: seed },
+    onEvents: handleMatchEvents,
     onFinished,
   });
-  const resetBus = useMemo(() => new InputResetBus(), []);
-  const audio = useMemo(
-    () => audioPort ?? createWebAudioPort({ enabled: settings.soundEnabled }),
-    [audioPort],
-  );
   const [rowSelectionActive, setRowSelectionActive] = useState(false);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
+  const [backgroundPaused, setBackgroundPaused] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
-  const processedEventBatchRef = useRef<readonly GameEvent[] | null>(null);
+  const pendingAudioDestroyRef = useRef<{
+    readonly audio: AudioPort;
+    cancelled: boolean;
+  } | null>(null);
 
   const handleRowSelectionChange = useCallback((active: boolean) => {
     setRowSelectionActive(active);
@@ -134,6 +178,7 @@ export function MatchScreen({
   useEffect(() => {
     const lifecycle = createAppLifecycleCoordinator({
       audio,
+      onBackgroundChange: setBackgroundPaused,
       onCountdownChange: setResumeCountdown,
       resetAll: resetEveryInput,
       setPaused: match.setPaused,
@@ -141,36 +186,25 @@ export function MatchScreen({
     return () => lifecycle.destroy();
   }, [audio, match.setPaused, resetEveryInput]);
 
-  useEffect(() => () => {
-    void audio.destroy();
-  }, [audio]);
-
   useEffect(() => {
-    if (processedEventBatchRef.current === match.events) return;
-    processedEventBatchRef.current = match.events;
-    const playedCues = new Set<SoundCue>();
-    const sentHaptics = new Set<HapticType>();
-    for (const event of match.events) {
-      if (settings.soundEnabled) {
-        const cue = cueForEvent(event, match.view.status);
-        if (cue !== null && !playedCues.has(cue)) {
-          playedCues.add(cue);
-          try {
-            audio.play(cue);
-          } catch {
-            // Audio ports are optional and isolated from gameplay.
-          }
-        }
-      }
-      if (settings.hapticsEnabled) {
-        const haptic = hapticForEvent(event, match.view.status);
-        if (haptic !== null && !sentHaptics.has(haptic)) {
-          sentHaptics.add(haptic);
-          ignoreEffect(() => platform.haptic(haptic));
-        }
-      }
+    const pending = pendingAudioDestroyRef.current;
+    if (pending?.audio === audio) {
+      pending.cancelled = true;
+      pendingAudioDestroyRef.current = null;
     }
-  }, [audio, match.events, match.view.status, platform, settings]);
+
+    return () => {
+      const scheduled = { audio, cancelled: false };
+      pendingAudioDestroyRef.current = scheduled;
+      queueMicrotask(() => {
+        if (scheduled.cancelled) return;
+        if (pendingAudioDestroyRef.current === scheduled) {
+          pendingAudioDestroyRef.current = null;
+        }
+        ignoreEffect(() => scheduled.audio.destroy());
+      });
+    };
+  }, [audio]);
 
   const dispatch = useCallback((command: GameCommand) => {
     match.dispatch(command);
@@ -192,6 +226,7 @@ export function MatchScreen({
     && player.phase === 'active'
     && player.freezeTicks === 0
     && !player.topOut
+    && !backgroundPaused
     && !exitOpen
     && resumeCountdown === null;
 
@@ -213,10 +248,14 @@ export function MatchScreen({
 
   function updateSoundEnabled(enabled: boolean): void {
     audio.setEnabled(enabled);
-    if (enabled) ignoreEffect(() => audio.unlock());
+    if (enabled) unlockAudio();
   }
 
   function unlockAudio(): void {
+    if (
+      resumeCountdown !== null
+      || document.visibilityState !== 'visible'
+    ) return;
     ignoreEffect(() => audio.unlock());
   }
 

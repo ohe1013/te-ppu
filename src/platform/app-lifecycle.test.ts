@@ -96,6 +96,57 @@ describe('createAppLifecycleCoordinator', () => {
     lifecycle.destroy();
   });
 
+  it('uses an absolute deadline when timer delivery is delayed', () => {
+    let wallClock = 0;
+    const setPaused = vi.fn();
+    const countdowns: Array<number | null> = [];
+    const lifecycle = createAppLifecycleCoordinator({
+      audio: createAudio(),
+      now: () => wallClock,
+      onCountdownChange: (value) => countdowns.push(value),
+      resetAll: vi.fn(),
+      setPaused,
+    });
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(countdowns.at(-1)).toBe(3);
+
+    wallClock = 2_500;
+    vi.advanceTimersByTime(1_000);
+    expect(countdowns.at(-1)).toBe(1);
+    wallClock = 3_000;
+    vi.advanceTimersByTime(500);
+    expect(setPaused).toHaveBeenLastCalledWith('background', false);
+    expect(countdowns.at(-1)).toBeNull();
+
+    lifecycle.destroy();
+  });
+
+  it('unpauses at the deadline even when audio resume never settles', () => {
+    const setPaused = vi.fn();
+    const audio = createAudio();
+    vi.mocked(audio.resume).mockImplementation(() => new Promise<void>(() => undefined));
+    const lifecycle = createAppLifecycleCoordinator({
+      audio,
+      onCountdownChange: vi.fn(),
+      resetAll: vi.fn(),
+      setPaused,
+    });
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(3_000);
+
+    expect(audio.resume).toHaveBeenCalledTimes(1);
+    expect(setPaused).toHaveBeenLastCalledWith('background', false);
+    lifecycle.destroy();
+  });
+
   it('pairs page and focus signals, cancels a countdown on re-entry, and cleans up listeners', async () => {
     const setPaused = vi.fn();
     const resetAll = vi.fn();

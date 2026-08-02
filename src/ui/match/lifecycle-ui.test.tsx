@@ -2,9 +2,12 @@
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MatchLoopView } from '../../app/use-match-loop';
+import type {
+  MatchLoopView,
+  UseMatchLoopOptions,
+} from '../../app/use-match-loop';
 import { createMatch, createPublicMatchView } from '../../core/index';
 import type { AudioPort } from '../../platform/audio-port';
 import type { PlatformPort } from '../../platform/platform-port';
@@ -119,9 +122,12 @@ describe('lifecycle UI', () => {
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
     await act(async () => finishClose?.());
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫는 중입니다.');
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
     result.rerender(
       <ExitConfirmation open={false} onCancel={onCancel} onConfirm={onConfirm} />,
     );
@@ -191,17 +197,23 @@ describe('lifecycle UI', () => {
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(loop.setPaused).toHaveBeenCalledWith('background', true);
     expect(audio.suspend).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    expect(audio.unlock).not.toHaveBeenCalled();
 
     visibilityState = 'visible';
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(screen.getByRole('status', { name: '게임 재개 카운트다운' }))
       .toHaveTextContent('3');
+    fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    expect(audio.unlock).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
     expect(screen.getByRole('status', { name: '게임 재개 카운트다운' }))
       .toHaveTextContent('1');
     expect(loop.setPaused).not.toHaveBeenCalledWith('background', false);
     await act(async () => vi.advanceTimersByTimeAsync(1_000));
     expect(loop.setPaused).toHaveBeenCalledWith('background', false);
+    fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    expect(audio.unlock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', true);
@@ -216,6 +228,35 @@ describe('lifecycle UI', () => {
     expect(platform.close).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps audio alive through the StrictMode effect rehearsal and destroys it on real unmount', async () => {
+    const audio = createAudio();
+    const result = render(
+      <StrictMode>
+        <MatchScreen
+          audioPort={audio}
+          floor={1}
+          onFinished={vi.fn()}
+          onRetrySettingsSave={vi.fn(async () => true)}
+          onSettingsChange={vi.fn(async () => true)}
+          platform={createPlatform()}
+          seed={91}
+          settings={enabledSettings}
+          settingsSaveFailed={false}
+        />
+      </StrictMode>,
+    );
+
+    await act(async () => Promise.resolve());
+    expect(audio.destroy).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    expect(audio.unlock).toHaveBeenCalled();
+
+    result.unmount();
+    await act(async () => Promise.resolve());
+    expect(audio.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('maps game events only when the matching sound and haptic settings are enabled', () => {
     const events: MatchLoopView['events'] = [
       { type: 'piece-locked', side: 'player' },
@@ -226,7 +267,11 @@ describe('lifecycle UI', () => {
     const loop = createLoop(events);
     const platform = createPlatform();
     const audio = createAudio();
-    useMatchLoopMock.mockReturnValue(loop);
+    let loopOptions: UseMatchLoopOptions | null = null;
+    useMatchLoopMock.mockImplementation((options: UseMatchLoopOptions) => {
+      loopOptions = options;
+      return loop;
+    });
     const props = {
       audioPort: audio,
       floor: 1 as const,
@@ -239,6 +284,7 @@ describe('lifecycle UI', () => {
     };
 
     const result = render(<MatchScreen {...props} settings={enabledSettings} />);
+    act(() => loopOptions?.onEvents?.(events, loop.view));
     expect(audio.play).toHaveBeenCalledWith('land');
     expect(audio.play).toHaveBeenCalledWith('clear');
     expect(audio.play).toHaveBeenCalledWith('attack');
@@ -253,27 +299,56 @@ describe('lifecycle UI', () => {
     expect(platform.haptic).not.toHaveBeenCalled();
 
     vi.clearAllMocks();
-    useMatchLoopMock.mockReturnValue({ ...loop, events: [...events] });
     result.rerender(
       <MatchScreen
         {...props}
         settings={{ hapticsEnabled: false, soundEnabled: false }}
       />,
     );
+    act(() => loopOptions?.onEvents?.([...events], loop.view));
     expect(audio.play).not.toHaveBeenCalled();
     expect(platform.haptic).not.toHaveBeenCalled();
   });
 
-  it('coalesces terminal top-out and match-end feedback within one event batch', () => {
+  it.each([
+    {
+      expectedCue: 'loss',
+      expectedHaptic: 'error',
+      matchEndSide: 'opponent',
+      status: 'opponent-won',
+      topOutSide: 'player',
+    },
+    {
+      expectedCue: 'win',
+      expectedHaptic: 'success',
+      matchEndSide: 'player',
+      status: 'player-won',
+      topOutSide: 'opponent',
+    },
+  ] as const)('emits only $expectedCue feedback for a terminal batch', ({
+    expectedCue,
+    expectedHaptic,
+    matchEndSide,
+    status,
+    topOutSide,
+  }) => {
+    const events: MatchLoopView['events'] = [
+      { type: 'top-out', side: topOutSide },
+      { type: 'match-ended', side: matchEndSide },
+    ];
     const loop = createLoop([
-      { type: 'top-out', side: 'player' },
-      { type: 'match-ended', side: 'opponent' },
+      ...events,
     ]);
     const platform = createPlatform();
     const audio = createAudio();
-    useMatchLoopMock.mockReturnValue({
+    const terminalLoop = {
       ...loop,
-      view: { ...loop.view, status: 'opponent-won' },
+      view: { ...loop.view, status },
+    };
+    let loopOptions: UseMatchLoopOptions | null = null;
+    useMatchLoopMock.mockImplementation((options: UseMatchLoopOptions) => {
+      loopOptions = options;
+      return terminalLoop;
     });
 
     render(
@@ -289,10 +364,47 @@ describe('lifecycle UI', () => {
         settingsSaveFailed={false}
       />,
     );
+    act(() => loopOptions?.onEvents?.(events, terminalLoop.view));
 
     expect(audio.play).toHaveBeenCalledTimes(1);
-    expect(audio.play).toHaveBeenCalledWith('loss');
+    expect(audio.play).toHaveBeenCalledWith(expectedCue);
     expect(platform.haptic).toHaveBeenCalledTimes(1);
-    expect(platform.haptic).toHaveBeenCalledWith('error');
+    expect(platform.haptic).toHaveBeenCalledWith(expectedHaptic);
+  });
+
+  it('does not misreport a draw as a loss', () => {
+    const events: MatchLoopView['events'] = [
+      { type: 'top-out', side: 'player' },
+      { type: 'top-out', side: 'opponent' },
+      { type: 'match-ended', side: 'player' },
+      { type: 'match-ended', side: 'opponent' },
+    ];
+    const loop = createLoop(events);
+    const drawLoop = { ...loop, view: { ...loop.view, status: 'draw' as const } };
+    const platform = createPlatform();
+    const audio = createAudio();
+    let loopOptions: UseMatchLoopOptions | null = null;
+    useMatchLoopMock.mockImplementation((options: UseMatchLoopOptions) => {
+      loopOptions = options;
+      return drawLoop;
+    });
+
+    render(
+      <MatchScreen
+        audioPort={audio}
+        floor={1}
+        onFinished={vi.fn()}
+        onRetrySettingsSave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        platform={platform}
+        seed={91}
+        settings={enabledSettings}
+        settingsSaveFailed={false}
+      />,
+    );
+    act(() => loopOptions?.onEvents?.(events, drawLoop.view));
+
+    expect(audio.play).not.toHaveBeenCalled();
+    expect(platform.haptic).not.toHaveBeenCalled();
   });
 });
