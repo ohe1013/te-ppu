@@ -66,7 +66,7 @@ function unlockedFloor3(): ProgressState {
   return {
     ...DEFAULT_PROGRESS,
     highestUnlockedFloor: 3,
-    clearedFloors: { 1: true, 2: true, 3: false },
+    clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
   };
 }
 
@@ -150,7 +150,7 @@ describe('tower controller', () => {
     controller.startFloor(3, 30);
 
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
-    expect(controller.progress.clearedFloors).toEqual({ 1: true, 2: true, 3: true });
+    expect(controller.progress.clearedFloors).toEqual({ 1: true, 2: true, 3: true, 4: false, 5: false });
     expect(controller.startFloor(1, 31).ok).toBe(true);
   });
 

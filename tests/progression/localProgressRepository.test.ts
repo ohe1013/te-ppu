@@ -33,9 +33,9 @@ class TestStorage {
 
 function validProgress(patch: Partial<ProgressState> = {}): ProgressState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     highestUnlockedFloor: 2,
-    clearedFloors: { 1: true, 2: false, 3: false },
+    clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
     settings: { soundEnabled: false, hapticsEnabled: true },
     ...patch,
   };
@@ -63,9 +63,9 @@ describe('local progress repository', () => {
     const save: ProgressSaveResult = await repository.save(validProgress());
 
     expect(DEFAULT_PROGRESS).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false },
+      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
       settings: { soundEnabled: true, hapticsEnabled: true },
     });
     expect(load).toEqual({
@@ -92,7 +92,7 @@ describe('local progress repository', () => {
     expect(storage.writes).toEqual([]);
   });
 
-  it('loads an exact valid version-1 value without rewriting it', async () => {
+  it('loads an exact valid version-2 value without rewriting it', async () => {
     const storage = new TestStorage();
     const saved = validProgress();
     storage.values.set(PROGRESS_KEY, JSON.stringify(saved));
@@ -105,15 +105,105 @@ describe('local progress repository', () => {
     expect(storage.writes).toEqual([]);
   });
 
+  it('migrates a cleared legacy third floor and immediately persists v2', async () => {
+    const legacyCleared = JSON.stringify({
+      schemaVersion: 1,
+      highestUnlockedFloor: 3,
+      clearedFloors: { 1: true, 2: true, 3: true },
+      settings: { soundEnabled: false, hapticsEnabled: true },
+    });
+    const storage = new TestStorage();
+    storage.values.set(PROGRESS_KEY, legacyCleared);
+
+    const result = await createLocalProgressRepository(storage).load();
+
+    expect(result).toEqual({
+      ok: true,
+      recoveredFromCorruption: false,
+      state: {
+        schemaVersion: 2,
+        highestUnlockedFloor: 4,
+        clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
+        settings: { soundEnabled: false, hapticsEnabled: true },
+      },
+    });
+    expect(storage.writes).toEqual([{
+      key: PROGRESS_KEY,
+      value: JSON.stringify(result.ok ? result.state : undefined),
+    }]);
+  });
+
+  it('migrates an uncleared legacy third floor without changing its highest unlocked floor', async () => {
+    const legacyUncleared = JSON.stringify({
+      schemaVersion: 1,
+      highestUnlockedFloor: 3,
+      clearedFloors: { 1: true, 2: true, 3: false },
+      settings: { soundEnabled: true, hapticsEnabled: false },
+    });
+    const storage = new TestStorage();
+    storage.values.set(PROGRESS_KEY, legacyUncleared);
+
+    expect(await createLocalProgressRepository(storage).load()).toEqual({
+      ok: true,
+      recoveredFromCorruption: false,
+      state: {
+        schemaVersion: 2,
+        highestUnlockedFloor: 3,
+        clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
+        settings: { soundEnabled: true, hapticsEnabled: false },
+      },
+    });
+    expect(storage.writes).toHaveLength(1);
+    expect(storage.writes[0]?.key).toBe(PROGRESS_KEY);
+  });
+
+  it('returns migrated state with WRITE_FAILED when the v2 migration write fails', async () => {
+    const legacyCleared = JSON.stringify({
+      schemaVersion: 1,
+      highestUnlockedFloor: 3,
+      clearedFloors: { 1: true, 2: true, 3: true },
+      settings: { soundEnabled: false, hapticsEnabled: true },
+    });
+    const storage = new TestStorage();
+    storage.values.set(PROGRESS_KEY, legacyCleared);
+    storage.writeErrorFor = (key) => key === PROGRESS_KEY ? new Error('canonical denied') : null;
+
+    expect(await createLocalProgressRepository(storage).load()).toEqual({
+      ok: false,
+      state: {
+        schemaVersion: 2,
+        highestUnlockedFloor: 4,
+        clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
+        settings: { soundEnabled: false, hapticsEnabled: true },
+      },
+      error: error('WRITE_FAILED'),
+    });
+    expect(storage.writes).toEqual([]);
+    expect(storage.values.get(PROGRESS_KEY)).toBe(legacyCleared);
+  });
+
   it.each([
     { label: 'malformed JSON', raw: '{broken' },
-    { label: 'unsupported version', raw: JSON.stringify({ ...validProgress(), schemaVersion: 2 }) },
+    { label: 'unknown version', raw: JSON.stringify({ ...validProgress(), schemaVersion: 3 }) },
     { label: 'missing field', raw: JSON.stringify({ ...validProgress(), settings: undefined }) },
     { label: 'invalid nested field', raw: JSON.stringify({
       ...validProgress(),
-      clearedFloors: { 1: true, 2: 0, 3: false },
+      clearedFloors: { 1: true, 2: 0, 3: false, 4: false, 5: false },
     }) },
     { label: 'extra field', raw: JSON.stringify({ ...validProgress(), legacyScore: 99 }) },
+    { label: 'missing v2 floor key', raw: JSON.stringify({
+      ...validProgress(),
+      clearedFloors: { 1: true, 2: false, 3: false, 4: false },
+    }) },
+    { label: 'extra v2 floor key', raw: JSON.stringify({
+      ...validProgress(),
+      clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false, 6: false },
+    }) },
+    { label: 'floor 6 highest unlock', raw: JSON.stringify({ ...validProgress(), highestUnlockedFloor: 6 }) },
+    { label: 'malformed settings', raw: JSON.stringify({
+      ...validProgress(),
+      settings: { soundEnabled: 'yes', hapticsEnabled: true },
+    }) },
   ])('backs up exact $label input before replacing it with defaults', async ({ raw }) => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     const storage = new TestStorage();
@@ -179,7 +269,7 @@ describe('local progress repository', () => {
   it('saves valid progress exactly and does not throw on a normal write failure', async () => {
     const saved = validProgress({
       highestUnlockedFloor: 3,
-      clearedFloors: { 1: true, 2: true, 3: false },
+      clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
     });
     const storage = new TestStorage();
     const repository = createLocalProgressRepository(storage);

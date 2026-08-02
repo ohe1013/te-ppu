@@ -28,16 +28,16 @@ afterEach(() => {
 });
 
 const floorOneProgress: ProgressState = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   highestUnlockedFloor: 1,
-  clearedFloors: { 1: false, 2: false, 3: false },
+  clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
   settings: { soundEnabled: true, hapticsEnabled: true },
 };
 
 const floorThreeProgress: ProgressState = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   highestUnlockedFloor: 3,
-  clearedFloors: { 1: true, 2: true, 3: false },
+  clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
   settings: { soundEnabled: true, hapticsEnabled: true },
 };
 
@@ -227,7 +227,7 @@ describe('AppRoot', () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository({
       ...floorOneProgress,
-      clearedFloors: { 1: true, 2: false, 3: false },
+      clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
     });
     renderGame(repository);
 
@@ -280,7 +280,7 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeDisabled();
     expect(repository.saves[0]).toMatchObject({
       highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false },
+      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
     });
   });
 

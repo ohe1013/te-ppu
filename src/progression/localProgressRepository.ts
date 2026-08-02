@@ -1,7 +1,7 @@
 import {
   DEFAULT_PROGRESS,
   cloneProgressState,
-  parseProgressState,
+  parsePersistedProgress,
   type ProgressError,
   type ProgressLoadResult,
   type ProgressRepository,
@@ -31,9 +31,9 @@ function defaults(): ProgressState {
   return cloneProgressState(DEFAULT_PROGRESS);
 }
 
-function parseRaw(raw: string): ProgressState | null {
+function parseRaw(raw: string): ReturnType<typeof parsePersistedProgress> {
   try {
-    return parseProgressState(JSON.parse(raw));
+    return parsePersistedProgress(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -61,9 +61,16 @@ export function createLocalProgressRepository(
 
       const parsed = parseRaw(raw);
       if (parsed !== null) {
+        if (parsed.migrated) {
+          try {
+            storage.setItem(PROGRESS_KEY, JSON.stringify(parsed.state));
+          } catch {
+            return { ok: false, state: parsed.state, error: WRITE_FAILED };
+          }
+        }
         return {
           ok: true,
-          state: parsed,
+          state: parsed.state,
           recoveredFromCorruption: false,
         };
       }

@@ -9,9 +9,9 @@ import type { AppServices } from './app-services';
 import { useBoot } from './use-boot';
 
 const progress: ProgressState = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   highestUnlockedFloor: 2,
-  clearedFloors: { 1: true, 2: false, 3: false },
+  clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
   settings: { soundEnabled: true, hapticsEnabled: true },
 };
 

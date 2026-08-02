@@ -14,7 +14,7 @@ function unlockedProgress(): ProgressState {
   return {
     ...DEFAULT_PROGRESS,
     highestUnlockedFloor: 3,
-    clearedFloors: { 1: true, 2: true, 3: false },
+    clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
     settings: { soundEnabled: false, hapticsEnabled: true },
   };
 }
@@ -36,12 +36,12 @@ describe('tower progression transitions', () => {
     expect(afterFloor1).toEqual({
       ...DEFAULT_PROGRESS,
       highestUnlockedFloor: 2,
-      clearedFloors: { 1: true, 2: false, 3: false },
+      clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
     });
     expect(afterFloor2).toEqual({
       ...DEFAULT_PROGRESS,
       highestUnlockedFloor: 3,
-      clearedFloors: { 1: true, 2: true, 3: false },
+      clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
     });
     expect(replayedFloor1).toEqual(afterFloor2);
     expect(canSelectFloor(afterFloor2, 1)).toBe(true);
@@ -62,7 +62,7 @@ describe('tower progression transitions', () => {
     expect(applyFloorResult(progress, 3, 'WIN')).toEqual({
       ...progress,
       highestUnlockedFloor: 3,
-      clearedFloors: { 1: true, 2: true, 3: true },
+      clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
       settings: { soundEnabled: false, hapticsEnabled: true },
     });
   });
