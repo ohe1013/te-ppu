@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BOARD_WIDTH,
@@ -37,6 +39,30 @@ function playerView(
     topOut: false,
     ...overrides,
   };
+}
+
+function ControlledSelectionHarness({ player }: { readonly player: PublicSideView }) {
+  const [rowSelectionActive, setRowSelectionActive] = useState(true);
+  const [selectedRow, setSelectedRow] = useState<number | null>(5);
+
+  const closeSelection = (active: boolean) => {
+    setRowSelectionActive(active);
+    if (!active) setSelectedRow(null);
+  };
+
+  return (
+    <>
+      <output data-testid="controlled-selected-row">
+        {selectedRow === null ? 'none' : selectedRow}
+      </output>
+      <ItemControls
+        dispatch={vi.fn()}
+        onRowSelectionChange={closeSelection}
+        player={player}
+        rowSelectionActive={rowSelectionActive}
+      />
+    </>
+  );
 }
 
 describe('ItemControls', () => {
@@ -134,6 +160,29 @@ describe('ItemControls', () => {
     expect(screen.getByRole('button', { name: /상대 정지/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /다음 교환/ })).toBeDisabled();
   });
+
+  it('lets the parent clear controlled row state on explicit cancel', async () => {
+    const user = userEvent.setup();
+    render(<ControlledSelectionHarness player={playerView()} />);
+
+    expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('5');
+    await user.click(screen.getByRole('button', { name: /행 선택 취소/ }));
+
+    expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('none');
+  });
+
+  it('asks the parent to close and clear selection when eligibility is lost', () => {
+    const view = render(<ControlledSelectionHarness player={playerView()} />);
+    expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('5');
+
+    view.rerender(
+      <ControlledSelectionHarness player={playerView({ phase: 'lock' })} />,
+    );
+
+    expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('none');
+    expect(screen.queryByRole('button', { name: /행 선택 취소/ }))
+      .not.toBeInTheDocument();
+  });
 });
 
 const SELECTOR_RECT: DOMRect = {
@@ -166,7 +215,7 @@ function setupSelector(board = boardWithFixedCell(5)) {
       onSelectedRowChange={onSelectedRowChange}
     />,
   );
-  const selector = screen.getByRole('group', { name: '행 제거 대상 선택' });
+  const selector = screen.getByLabelText('행 제거 대상 선택');
   const setPointerCapture = vi.fn();
   const releasePointerCapture = vi.fn();
   Object.defineProperties(selector, {
@@ -210,6 +259,7 @@ describe('RowSelector', () => {
       clientY: 188,
       pointerId: 7,
     });
+    fireEvent.click(selector, { detail: 1 });
 
     expect(setPointerCapture).toHaveBeenCalledWith(7);
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
@@ -270,5 +320,100 @@ describe('RowSelector', () => {
     expect(onSelectedRowChange).toHaveBeenLastCalledWith(null);
     expect(dispatch).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a tabbable semantic control with deterministic row boundaries', async () => {
+    const user = userEvent.setup();
+    const { onSelectedRowChange, selector } = setupSelector();
+
+    await user.tab();
+    expect(selector).toHaveFocus();
+    expect(selector).toHaveRole('button');
+
+    await user.keyboard('{ArrowUp}');
+    expect(selector).toHaveAttribute('data-selected-row', '0');
+    await user.keyboard('{ArrowUp}');
+    expect(selector).toHaveAttribute('data-selected-row', '0');
+
+    await user.keyboard('{End}{ArrowDown}');
+    expect(selector).toHaveAttribute('data-selected-row', '19');
+    await user.keyboard('{ArrowUp}');
+    expect(selector).toHaveAttribute('data-selected-row', '18');
+    await user.keyboard('{Home}');
+    expect(selector).toHaveAttribute('data-selected-row', '0');
+    expect(onSelectedRowChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', ' '],
+  ] as const)('confirms a nonblank keyboard row with %s exactly once', async (
+    _label,
+    key,
+  ) => {
+    const user = userEvent.setup();
+    const { dispatch, onClose, onSelectedRowChange, selector } = setupSelector();
+    selector.focus();
+    await user.keyboard('{Home}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(selector).toHaveAttribute('data-selected-row', '5');
+
+    await user.keyboard(key);
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'use-row-clear', row: 5 });
+    expect(onSelectedRowChange).toHaveBeenLastCalledWith(null);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a blank keyboard row active and announces why it cannot confirm', async () => {
+    const user = userEvent.setup();
+    const { dispatch, onClose, selector } = setupSelector();
+    selector.focus();
+    await user.keyboard('{Home}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
+
+    await user.keyboard('{Enter}');
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(selector).toHaveAttribute('data-selected-row', '4');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('5번째 행');
+    expect(status).toHaveTextContent('빈 행');
+    expect(selector).toHaveAttribute('aria-describedby', status.id);
+  });
+
+  it('confirms the current row for a switch or screen-reader detail-zero click', () => {
+    const { dispatch, onClose, selector } = setupSelector();
+    fireEvent.keyDown(selector, { key: 'Home' });
+    for (let step = 0; step < 5; step += 1) {
+      fireEvent.keyDown(selector, { key: 'ArrowDown' });
+    }
+
+    fireEvent.click(selector, { detail: 0 });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'use-row-clear', row: 5 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the controlled row before Escape closes the selector', () => {
+    const calls: string[] = [];
+    const dispatch = vi.fn<(command: GameCommand) => void>();
+    render(
+      <RowSelector
+        board={boardWithFixedCell(5)}
+        dispatch={dispatch}
+        onClose={() => calls.push('close')}
+        onSelectedRowChange={(row) => calls.push(`row:${row}`)}
+      />,
+    );
+    const selector = screen.getByLabelText('행 제거 대상 선택');
+    fireEvent.keyDown(selector, { key: 'End' });
+
+    fireEvent.keyDown(selector, { key: 'Escape' });
+
+    expect(calls.slice(-2)).toEqual(['row:null', 'close']);
+    expect(selector).not.toHaveAttribute('data-selected-row');
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

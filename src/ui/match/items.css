@@ -33,6 +33,22 @@
   touch-action: none;
 }
 
+.screen-shell button.row-selector {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.row-selector:focus-visible {
+  outline: 0.15rem solid rgb(255 232 128 / 96%);
+  outline-offset: -0.2rem;
+}
+
 .row-selector__highlight {
   position: absolute;
   right: 0;
