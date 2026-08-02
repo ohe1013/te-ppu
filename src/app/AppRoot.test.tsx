@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -61,6 +61,27 @@ class TestProgressRepository implements ProgressRepository {
   async save(state: ProgressState): Promise<ProgressSaveResult> {
     this.saves.push(cloneProgress(state));
     return this.saveResults.shift() ?? { ok: true };
+  }
+}
+
+class DeferredSaveRepository extends TestProgressRepository {
+  private readonly pendingSave: Promise<ProgressSaveResult>;
+  private settlePendingSave: ((result: ProgressSaveResult) => void) | undefined;
+
+  constructor(initial: ProgressState) {
+    super(initial);
+    this.pendingSave = new Promise((resolve) => {
+      this.settlePendingSave = resolve;
+    });
+  }
+
+  override async save(state: ProgressState): Promise<ProgressSaveResult> {
+    this.saves.push(cloneProgress(state));
+    return this.pendingSave;
+  }
+
+  settle(result: ProgressSaveResult) {
+    this.settlePendingSave?.(result);
   }
 }
 
@@ -152,6 +173,25 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
   });
 
+  it.each([
+    ['cleared replay', floorThreeProgress, 1, '클리어 완료 · 재도전 가능'],
+    ['available', floorThreeProgress, 3, '도전 가능'],
+    ['locked', floorOneProgress, 2, '잠김'],
+  ] as const)('exposes the %s floor status to assistive technology', async (
+    _name,
+    initialProgress,
+    floor,
+    description,
+  ) => {
+    renderGame(new TestProgressRepository(initialProgress));
+
+    await screen.findByTestId('tower-screen');
+    expect(screen.getByRole('button', {
+      name: `${floor}층 선택`,
+      description,
+    })).toBeInTheDocument();
+  });
+
   it.each(['loss', 'draw'] as const)('does not unlock floor two after a %s', async (result) => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);
@@ -206,6 +246,30 @@ describe('AppRoot', () => {
     });
     expect(repository.saves).toHaveLength(2);
     expect(repository.saves[1]).toEqual(repository.saves[0]);
+  });
+
+  it('keeps result navigation locked until a deferred save settles as failed', async () => {
+    const user = userEvent.setup();
+    const repository = new DeferredSaveRepository(floorOneProgress);
+    renderGame(repository);
+
+    await enterMatch(user, 1);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('result-screen');
+
+    expect(screen.getByRole('status')).toHaveTextContent('진행 상황 저장 중');
+    expect(screen.getByRole('button', { name: '다시 대전' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '계속' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '계속' }));
+    expect(screen.getByTestId('result-screen')).toBeInTheDocument();
+
+    await act(async () => repository.settle({
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    }));
+
+    expect(await screen.findByRole('button', { name: '저장 다시 시도' })).toBeInTheDocument();
+    expect(screen.getByTestId('result-screen')).toBeInTheDocument();
   });
 
   it('keeps retryable boot errors inside the app shell and retries them', async () => {

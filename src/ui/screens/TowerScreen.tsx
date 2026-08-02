@@ -19,8 +19,11 @@ export function TowerScreen({ notice, onSelectFloor, progress }: TowerScreenProp
         {FLOORS.map((floor) => {
           const unlocked = floor <= progress.highestUnlockedFloor;
           const cleared = progress.clearedFloors[floor];
+          const status = cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
+          const statusId = `floor-${floor}-status`;
           return (
             <button
+              aria-describedby={statusId}
               aria-label={`${floor}층 선택`}
               className="floor-card"
               disabled={!unlocked}
@@ -29,7 +32,7 @@ export function TowerScreen({ notice, onSelectFloor, progress }: TowerScreenProp
               type="button"
             >
               <span>{floor}층 선택</span>
-              <small>{cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김'}</small>
+              <small id={statusId}>{status}</small>
             </button>
           );
         })}

@@ -12,6 +12,7 @@ export interface ResultScreenProps {
   readonly progress: ProgressState;
   readonly result: MatchResult;
   readonly saveFailed: boolean;
+  readonly savePending: boolean;
   readonly saveRetrying: boolean;
   readonly onContinue: () => void;
   readonly onRetry: () => void;
@@ -26,6 +27,7 @@ export function ResultScreen({
   progress,
   result,
   saveFailed,
+  savePending,
   saveRetrying,
 }: ResultScreenProps) {
   return (
@@ -33,6 +35,7 @@ export function ResultScreen({
       <p className="eyebrow">{floor}층 결과</p>
       <h1>{RESULT_LABELS[result]}</h1>
       <p>최고 해금 층: {progress.highestUnlockedFloor}</p>
+      {savePending && <p className="notice" role="status">진행 상황 저장 중…</p>}
       {saveFailed && (
         <div className="notice" role="alert">
           <p>진행 상황을 저장하지 못했습니다.</p>
@@ -42,8 +45,15 @@ export function ResultScreen({
         </div>
       )}
       <div className="screen-actions">
-        <button className="secondary-button" type="button" onClick={onRetry}>다시 대전</button>
-        <button type="button" onClick={onContinue}>계속</button>
+        <button
+          className="secondary-button"
+          disabled={savePending}
+          type="button"
+          onClick={onRetry}
+        >
+          다시 대전
+        </button>
+        <button disabled={savePending} type="button" onClick={onContinue}>계속</button>
       </div>
     </section>
   );

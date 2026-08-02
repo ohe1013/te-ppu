@@ -1,5 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import { reduceRoute, type AppRoute } from './app-route';
+import {
+  reduceRoute,
+  type AppRoute,
+  type AppRouteEvent,
+} from './app-route';
+
+const invalidEventCases: ReadonlyArray<readonly [
+  string,
+  AppRoute,
+  readonly AppRouteEvent[],
+]> = [
+  ['boot', { name: 'boot' }, [
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
+  ['tower', { name: 'tower' }, [
+    { type: 'boot-ready' },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
+  ['floor intro', { name: 'floor-intro', floor: 2 }, [
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+  ]],
+  ['match', { name: 'match', floor: 2, seed: 3 }, [
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+  ]],
+  ['result', { name: 'result', floor: 2, result: 'loss' }, [
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+  ]],
+  ['ending', { name: 'ending' }, [
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+  ]],
+];
 
 describe('reduceRoute', () => {
   it('moves through boot, floor selection, match start, and result', () => {
@@ -46,8 +101,10 @@ describe('reduceRoute', () => {
     )).toEqual({ name: 'tower' });
   });
 
-  it('ignores events that are invalid for the current route', () => {
-    const route: AppRoute = { name: 'tower' };
-    expect(reduceRoute(route, { type: 'continue' })).toBe(route);
-  });
+  it.each(invalidEventCases)(
+    'keeps the %s route referentially stable for every invalid event',
+    (_name, route, events) => {
+      for (const event of events) expect(reduceRoute(route, event)).toBe(route);
+    },
+  );
 });

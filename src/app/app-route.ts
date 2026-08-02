@@ -21,7 +21,7 @@ export type AppRouteEvent =
 
 export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
   if (event.type === 'return-to-tower' && route.name !== 'boot') {
-    return { name: 'tower' };
+    return route.name === 'tower' ? route : { name: 'tower' };
   }
 
   switch (route.name) {

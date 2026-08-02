@@ -62,9 +62,12 @@ export function AppRoot({
   const boot = useBoot(services);
   const [route, dispatchRoute] = useReducer(reduceRoute, { name: 'boot' } satisfies AppRoute);
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
+  const [resultSavePending, setResultSavePending] = useState(false);
   const [saveRetrying, setSaveRetrying] = useState(false);
   const controllerRef = useRef<TowerController | null>(null);
   const completionPendingRef = useRef(false);
+  const completionTokenRef = useRef(0);
+  const mountedRef = useRef(false);
 
   if (boot.status === 'ready' && controllerRef.current === null) {
     controllerRef.current = new TowerController(boot.progress, services.progressRepository);
@@ -73,6 +76,14 @@ export function AppRoot({
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
   }, [boot.status]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      completionTokenRef.current += 1;
+    };
+  }, []);
 
   const controller = controllerRef.current;
 
@@ -93,11 +104,16 @@ export function AppRoot({
   async function finishMatch(result: MatchResult): Promise<void> {
     if (controller === null || completionPendingRef.current) return;
     completionPendingRef.current = true;
+    const completionToken = completionTokenRef.current + 1;
+    completionTokenRef.current = completionToken;
+    setResultSavePending(true);
     const save = controller.completeFloor(toControllerResult(result));
     dispatchRoute({ type: 'match-finished', result });
     refreshControllerView();
     await save;
+    if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
+    setResultSavePending(false);
     refreshControllerView();
   }
 
@@ -105,6 +121,7 @@ export function AppRoot({
     if (controller === null || saveRetrying) return;
     setSaveRetrying(true);
     await controller.retrySave();
+    if (!mountedRef.current) return;
     setSaveRetrying(false);
     refreshControllerView();
   }
@@ -146,6 +163,7 @@ export function AppRoot({
             progress={controller.progress}
             result={route.result}
             saveFailed={controller.saveError === 'SAVE_FAILED'}
+            savePending={resultSavePending || saveRetrying}
             saveRetrying={saveRetrying}
             onContinue={() => dispatchRoute({ type: 'continue' })}
             onRetry={retryFloor}
