@@ -38,12 +38,18 @@ function sideView(): PublicSideView {
 
 const effects: readonly AnimationEffect[] = [
   {
-    event: { amount: 1, side: 'player', type: 'lines-cleared' },
+    event: { amount: 1, rows: [19], side: 'player', type: 'lines-cleared' },
     id: 'clear-1',
     priority: 'critical',
   },
   {
-    event: { amount: 1, side: 'player', type: 'garbage-landed' },
+    event: {
+      amount: 1,
+      column: 6,
+      landingRow: 15,
+      side: 'player',
+      type: 'garbage-landed',
+    },
     id: 'garbage-1',
     priority: 'critical',
   },
@@ -52,6 +58,7 @@ const effects: readonly AnimationEffect[] = [
 describe('createBoardPrimitives', () => {
   it('describes the visible grid, pieces, markers, warnings, and ordered effects', () => {
     const primitives = createBoardPrimitives({
+      effectProgress: 0,
       effects,
       model: sideView(),
       selectedRow: 7,
@@ -73,9 +80,120 @@ describe('createBoardPrimitives', () => {
     expect(roles('garbage-drop')).toHaveLength(1);
   });
 
+  it('flashes each exact visible cleared row once, including noncontiguous rows', () => {
+    const event: AnimationEffect['event'] = {
+      amount: 4,
+      rows: [2, 13],
+      side: 'player',
+      type: 'lines-cleared',
+    };
+    const primitives = createBoardPrimitives({
+      effectProgress: 0,
+      effects: [
+        { event, id: 'clear-1', priority: 'critical' },
+        { event, id: 'clear-1:particles', priority: 'decorative' },
+      ],
+      model: sideView(),
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.filter(({ role }) => role === 'line-clear')).toEqual([
+      { height: 1, role: 'line-clear', width: 10, x: 0, y: 2 },
+      { height: 1, role: 'line-clear', width: 10, x: 0, y: 13 },
+    ]);
+  });
+
+  it.each([
+    { effectProgress: 0, expectedY: 0 },
+    { effectProgress: 0.5, expectedY: 9 },
+    { effectProgress: 1, expectedY: 18 },
+  ])('moves garbage through its exact column and landing row at $effectProgress progress', ({
+    effectProgress,
+    expectedY,
+  }) => {
+    const primitives = createBoardPrimitives({
+      effectProgress,
+      effects: [{
+        event: {
+          amount: 1,
+          column: 4,
+          landingRow: 18,
+          side: 'player',
+          type: 'garbage-landed',
+        },
+        id: 'garbage-exact',
+        priority: 'critical',
+      }],
+      model: sideView(),
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.filter(({ role }) => role === 'garbage-drop')).toEqual([{
+      height: 1,
+      role: 'garbage-drop',
+      width: 1,
+      x: 4,
+      y: expectedY,
+    }]);
+  });
+
+  it('creates no positional fallback for missing, hidden, or invalid coordinates', () => {
+    const primitives = createBoardPrimitives({
+      effectProgress: 0.5,
+      effects: [
+        {
+          event: { amount: 2, side: 'player', type: 'lines-cleared' },
+          id: 'clear-missing',
+          priority: 'critical',
+        },
+        {
+          event: { amount: 2, rows: [-1, 20], side: 'player', type: 'lines-cleared' },
+          id: 'clear-hidden',
+          priority: 'critical',
+        },
+        {
+          event: { amount: 1, side: 'player', type: 'garbage-landed' },
+          id: 'garbage-missing',
+          priority: 'critical',
+        },
+        {
+          event: {
+            amount: 1,
+            column: 3,
+            landingRow: -1,
+            side: 'player',
+            type: 'garbage-landed',
+          },
+          id: 'garbage-hidden',
+          priority: 'critical',
+        },
+        {
+          event: {
+            amount: 1,
+            column: 10,
+            landingRow: 8,
+            side: 'player',
+            type: 'garbage-landed',
+          },
+          id: 'garbage-invalid',
+          priority: 'critical',
+        },
+      ],
+      model: sideView(),
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.filter(({ role }) => role === 'line-clear')).toEqual([]);
+    expect(primitives.filter(({ role }) => role === 'garbage-drop')).toEqual([]);
+  });
+
   it('clips active cells that remain in hidden spawn rows', () => {
     const model = sideView();
     const primitives = createBoardPrimitives({
+      effectProgress: 0,
       effects: [],
       model: {
         ...model,

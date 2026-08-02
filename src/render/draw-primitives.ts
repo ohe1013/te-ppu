@@ -39,6 +39,7 @@ export interface BoardPrimitive {
 }
 
 export interface CreateBoardPrimitivesInput {
+  readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
   readonly model: PublicSideView;
   readonly selectedRow: number | null;
@@ -73,13 +74,8 @@ function markerPrimitive(
   };
 }
 
-function stableColumn(id: string): number {
-  let hash = 0;
-  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return hash % BOARD_COLUMNS;
-}
-
 export function createBoardPrimitives({
+  effectProgress,
   effects,
   model,
   selectedRow,
@@ -187,22 +183,35 @@ export function createBoardPrimitives({
 
   for (const effect of effects) {
     if (effect.event.side !== side) continue;
-    const amount = Math.max(1, Math.min(BOARD_ROWS, effect.event.amount ?? 1));
     if (effect.event.type === 'lines-cleared') {
-      primitives.push({
-        height: amount,
-        role: 'line-clear',
-        width: BOARD_COLUMNS,
-        x: 0,
-        y: BOARD_ROWS - amount,
-      });
+      if (effect.priority !== 'critical') continue;
+      for (const row of effect.event.rows ?? []) {
+        if (!Number.isInteger(row) || row < 0 || row >= BOARD_ROWS) continue;
+        primitives.push({
+          height: 1,
+          role: 'line-clear',
+          width: BOARD_COLUMNS,
+          x: 0,
+          y: row,
+        });
+      }
     } else if (effect.event.type === 'garbage-landed') {
+      const { column, landingRow } = effect.event;
+      if (
+        effect.priority !== 'critical'
+        || column === undefined
+        || landingRow === undefined
+        || !Number.isInteger(column)
+        || !Number.isInteger(landingRow)
+        || !isVisibleCell(column, landingRow)
+      ) continue;
+      const progress = Math.min(1, Math.max(0, effectProgress));
       primitives.push({
         height: 1,
         role: 'garbage-drop',
         width: 1,
-        x: stableColumn(effect.id),
-        y: 0,
+        x: column,
+        y: landingRow * progress,
       });
     } else if (effect.event.type === 'attack-sent') {
       primitives.push({

@@ -24,6 +24,7 @@ import './pixi-elements';
 const MAX_RESOLUTION = 2;
 const MAX_DECORATIVE_EFFECTS = 6;
 const CRITICAL_EFFECT_MS = 140;
+const EFFECT_FRAME_GRACE_MS = 50;
 
 export interface BattleCanvasProps {
   readonly events: readonly GameEvent[];
@@ -93,7 +94,10 @@ export function observeBattleCanvas(
 function useOrderedEffects(
   events: readonly GameEvent[],
   tick: number,
-): readonly AnimationEffect[] {
+): {
+  readonly effectProgress: number;
+  readonly effects: readonly AnimationEffect[];
+} {
   const queueRef = useRef(new EventAnimationQueue({
     maxDecorative: MAX_DECORATIVE_EFFECTS,
   }));
@@ -101,6 +105,10 @@ function useOrderedEffects(
   const activeRef = useRef<AnimationEffect | null>(null);
   const [active, setActive] = useState<AnimationEffect | null>(null);
   const [decorative, setDecorative] = useState<readonly AnimationEffect[]>([]);
+  const [progress, setProgress] = useState<{
+    readonly effectId: string | null;
+    readonly value: number;
+  }>({ effectId: null, value: 0 });
 
   useEffect(() => {
     if (events.length === 0 || handledTickRef.current === tick) return;
@@ -117,16 +125,65 @@ function useOrderedEffects(
 
   useEffect(() => {
     if (active === null) return;
-    const timer = window.setTimeout(() => {
+    const effectId = active.id;
+    setProgress({ effectId, value: 0 });
+    let advanced = false;
+    let advanceFrame: number | null = null;
+    let progressFrame: number | null = null;
+    const advance = () => {
+      if (advanced) return;
+      advanced = true;
       setDecorative([]);
       const next = queueRef.current.shiftCritical();
       activeRef.current = next;
       setActive(next);
-    }, CRITICAL_EFFECT_MS);
-    return () => window.clearTimeout(timer);
+      setProgress({ effectId: next?.id ?? null, value: 0 });
+    };
+    if (active.event.type === 'garbage-landed') {
+      const startedAt = performance.now();
+      const updateProgress = (timestamp: number) => {
+        progressFrame = null;
+        if (advanced) return;
+        const value = Math.min(
+          1,
+          Math.max(0, (timestamp - startedAt) / CRITICAL_EFFECT_MS),
+        );
+        setProgress((current) => (
+          current.effectId === effectId && current.value === value
+            ? current
+            : { effectId, value }
+        ));
+        if (value < 1) {
+          progressFrame = window.requestAnimationFrame(updateProgress);
+          return;
+        }
+        advanceFrame = window.requestAnimationFrame(() => {
+          advanceFrame = null;
+          advance();
+        });
+      };
+      progressFrame = window.requestAnimationFrame(updateProgress);
+    }
+    const timer = window.setTimeout(
+      advance,
+      active.event.type === 'garbage-landed'
+        ? CRITICAL_EFFECT_MS + EFFECT_FRAME_GRACE_MS
+        : CRITICAL_EFFECT_MS,
+    );
+    return () => {
+      advanced = true;
+      window.clearTimeout(timer);
+      if (progressFrame !== null) window.cancelAnimationFrame(progressFrame);
+      if (advanceFrame !== null) window.cancelAnimationFrame(advanceFrame);
+    };
   }, [active]);
 
-  return active === null ? decorative : [active, ...decorative];
+  return {
+    effectProgress: active !== null && progress.effectId === active.id
+      ? progress.value
+      : 0,
+    effects: active === null ? decorative : [active, ...decorative],
+  };
 }
 
 export function BattleCanvas({
@@ -139,7 +196,7 @@ export function BattleCanvas({
   const applicationRef = useRef<ApplicationRef>(null);
   const metricsRef = useRef<CanvasMetrics>({ height: 1, resolution: 1, width: 1 });
   const [metrics, setMetrics] = useState(metricsRef.current);
-  const effects = useOrderedEffects(events, view.tick);
+  const { effectProgress, effects } = useOrderedEffects(events, view.tick);
   const layout = computeBoardLayout(metrics.width, metrics.height);
 
   useLayoutEffect(() => {
@@ -189,6 +246,7 @@ export function BattleCanvas({
         width={metrics.width}
       >
         <BoardScene
+          effectProgress={effectProgress}
           effects={effects}
           model={view.sides.player}
           rect={layout.player}
@@ -196,6 +254,7 @@ export function BattleCanvas({
           side="player"
         />
         <BoardScene
+          effectProgress={effectProgress}
           effects={effects}
           model={view.sides.opponent}
           rect={layout.opponent}

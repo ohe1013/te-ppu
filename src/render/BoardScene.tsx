@@ -11,6 +11,7 @@ import {
 import type { AnimationEffect } from './event-animation-queue';
 
 export interface BoardSceneProps {
+  readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
   readonly model: PublicSideView;
   readonly rect: Rect;
@@ -19,6 +20,7 @@ export interface BoardSceneProps {
 }
 
 export function BoardScene({
+  effectProgress,
   effects,
   model,
   rect,
@@ -26,9 +28,15 @@ export function BoardScene({
   side,
 }: BoardSceneProps) {
   const draw = useCallback((graphics: Parameters<typeof drawBoardPrimitives>[0]) => {
-    const primitives = createBoardPrimitives({ effects, model, selectedRow, side });
+    const primitives = createBoardPrimitives({
+      effectProgress,
+      effects,
+      model,
+      selectedRow,
+      side,
+    });
     drawBoardPrimitives(graphics, primitives, rect.width, rect.height);
-  }, [effects, model, rect.height, rect.width, selectedRow, side]);
+  }, [effectProgress, effects, model, rect.height, rect.width, selectedRow, side]);
 
   return (
     <pixiContainer x={rect.x} y={rect.y}>
