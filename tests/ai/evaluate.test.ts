@@ -4,7 +4,11 @@ import { scoreCandidates, selectCandidate } from '../../src/ai/evaluate';
 import type { AiFloorProfile } from '../../src/ai/types';
 import {
   BOARD_WIDTH,
+  HIDDEN_ROWS,
+  ghostY,
+  type ActivePiece,
   type AiObservation,
+  type Board,
   type Cell,
   type PieceKind,
   type PublicPieceToken,
@@ -32,18 +36,32 @@ function observation(options: {
   readonly incoming?: number;
   readonly opponentBoard?: readonly (Cell | null)[];
 } = {}): AiObservation {
+  const board = options.board ?? emptyBoard();
+  const activeToken = token(options.kind ?? 'O', options.marker);
+  const internalBoard: Board = {
+    cells: [
+      ...Array<Cell | null>(BOARD_WIDTH * HIDDEN_ROWS).fill(null),
+      ...board,
+    ],
+  };
+  const internalActive: ActivePiece = {
+    token: { serial: 0, ...activeToken },
+    x: 3,
+    y: 2,
+    rotation: 0,
+  };
   return {
     tick: 0,
     status: 'playing',
     self: {
-      board: options.board ?? emptyBoard(),
+      board,
       active: {
-        token: token(options.kind ?? 'O', options.marker),
+        token: activeToken,
         x: 3,
         y: -2,
         rotation: 0,
       },
-      ghostY: 18,
+      ghostY: ghostY(internalBoard, internalActive) - HIDDEN_ROWS,
       next: options.next ?? [token('T'), token('L')],
       combo: options.combo ?? 0,
       incoming: options.incoming ?? 0,
@@ -175,15 +193,21 @@ describe('candidate scoring', () => {
     ]);
   });
 
-  it('scores top-out placements as negative infinity', () => {
+  it('scores a placement whose next piece cannot spawn as negative infinity', () => {
     const board = emptyBoard();
-    for (let y = 0; y < VISIBLE_ROWS; y += 1) {
-      for (let x = 0; x < BOARD_WIDTH; x += 1) board[y * BOARD_WIDTH + x] = { kind: 'Z' };
-    }
+    board[4] = { kind: 'Z' };
 
     const scored = scoreCandidates(observation({ board }), zeroProfile());
-    expect(scored.length).toBeGreaterThan(0);
-    expect(scored.every(({ score }) => score === Number.NEGATIVE_INFINITY)).toBe(true);
+    const directDrop = scored.find(({ rotation, column, commands }) =>
+      rotation === 0
+      && column === 3
+      && commands.length === 1
+      && commands[0]?.type === 'hard-drop');
+
+    expect(directDrop).toMatchObject({
+      topOut: true,
+      score: Number.NEGATIVE_INFINITY,
+    });
   });
 });
 

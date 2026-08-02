@@ -7,6 +7,7 @@ import {
   ghostY,
   lockPiece,
   resolveNormalClear,
+  spawnPiece,
   tryRotateClockwise,
   type ActivePiece,
   type AiObservation,
@@ -134,6 +135,11 @@ function visibleBoard(board: Board): BoardView {
   return board.cells.slice(BOARD_WIDTH * HIDDEN_ROWS);
 }
 
+function projectedTopOut(board: Board, view: AiObservation): boolean {
+  const next = view.self.next[0];
+  return !canPlace(board, spawnPiece({ serial: 0, ...next }));
+}
+
 export function enumerateCandidates(view: AiObservation): readonly PlacementCandidate[] {
   const active = internalActive(view);
   if (active === null) return [];
@@ -154,16 +160,26 @@ export function enumerateCandidates(view: AiObservation): readonly PlacementCand
     for (let column = firstColumn; column <= lastColumn; column += 1) {
       const intendedAtColumn = { ...rotationRoute.piece, x: column };
       if (!canPlace(board, intendedAtColumn)) continue;
+      const unchangedRoute = rotationRoute.commands.length === 0
+        && column === active.x
+        && view.self.ghostY !== null;
       const intendedLanding = {
         ...intendedAtColumn,
-        y: ghostY(board, intendedAtColumn),
+        y: unchangedRoute
+          ? view.self.ghostY! + HIDDEN_ROWS
+          : ghostY(board, intendedAtColumn),
       };
       const commands: readonly GameCommand[] = [
         ...rotationRoute.commands,
         ...horizontalCommands(rotationRoute.piece.x, column),
         { type: 'hard-drop' },
       ];
-      const replayedLanding = replayPlacement(board, active, commands);
+      // The current route can trust core's observed ghost. Routes that rotate or move
+      // remain visible-state optimistic; Task 3 must emit one command and validate the
+      // next observation before continuing the stored route.
+      const replayedLanding = unchangedRoute
+        ? intendedLanding
+        : replayPlacement(board, active, commands);
       if (replayedLanding === null) continue;
 
       const intendedCells = sortedPoints(intendedLanding);
@@ -185,7 +201,7 @@ export function enumerateCandidates(view: AiObservation): readonly PlacementCand
         clearedLines,
         acquiredItems: clear.markers,
         attack: resolveNormalClear(view.self.combo, clearedLines).attack,
-        topOut: cellsFor(replayedLanding).some(({ y }) => y < HIDDEN_ROWS),
+        topOut: projectedTopOut(clear.board, view),
       });
     }
   }

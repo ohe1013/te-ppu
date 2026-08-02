@@ -4,14 +4,21 @@ import {
   HIDDEN_ROWS,
   canPlace,
   cellsFor,
+  createAiObservation,
+  createMatch,
+  emptyBoard,
   ghostY,
+  spawnPiece,
+  stepMatch,
   tryRotateClockwise,
   type ActivePiece,
   type AiObservation,
   type Board,
   type Cell,
   type GameCommand,
+  type MatchState,
   type PieceKind,
+  type PieceToken,
 } from '../../src/core/index';
 import { enumerateCandidates } from '../../src/ai/candidates';
 
@@ -25,10 +32,22 @@ function observation(
   kind: PieceKind,
   board: readonly (Cell | null)[] = emptyVisibleBoard(),
 ): AiObservation {
+  const internal: Board = {
+    cells: [
+      ...Array<Cell | null>(BOARD_WIDTH * HIDDEN_ROWS).fill(null),
+      ...board,
+    ],
+  };
+  const active: ActivePiece = {
+    token: piece(kind, 0),
+    x: 3,
+    y: 2,
+    rotation: 0,
+  };
   const side = {
     board,
     active: { token: { kind, marker: null }, x: 3, y: -2, rotation: 0 as const },
-    ghostY: 18,
+    ghostY: ghostY(internal, active) - HIDDEN_ROWS,
     next: [
       { kind: 'T' as const, marker: null },
       { kind: 'L' as const, marker: null },
@@ -108,6 +127,50 @@ function replayRoute(
     .sort((left, right) => left.y - right.y || left.x - right.x);
 }
 
+function piece(kind: PieceKind, serial: number): PieceToken {
+  return { serial, kind, marker: null };
+}
+
+function realBoard(points: readonly { readonly x: number; readonly y: number }[]): Board {
+  const cells = [...emptyBoard().cells];
+  for (const { x, y } of points) cells[y * BOARD_WIDTH + x] = { kind: 'J' };
+  return { cells };
+}
+
+function withOpponent(
+  state: MatchState,
+  board: Board,
+  activeToken: PieceToken,
+  next: readonly [PieceToken, PieceToken],
+): MatchState {
+  return {
+    ...state,
+    sides: {
+      ...state.sides,
+      opponent: {
+        ...state.sides.opponent,
+        board,
+        active: spawnPiece(activeToken),
+        next,
+        nextSerial: Math.max(next[0].serial, next[1].serial) + 1,
+        phase: 'active',
+        topOut: false,
+      },
+    },
+  };
+}
+
+function executeOpponentRoute(
+  state: MatchState,
+  commands: readonly GameCommand[],
+): MatchState {
+  return stepMatch(state, commands.map((command) => ({
+    tick: state.tick + 1,
+    side: 'opponent',
+    command,
+  }))).state;
+}
+
 describe('placement candidate enumeration', () => {
   it('enumerates exactly nine O placements and seventeen I placements on an empty board', () => {
     expect(enumerateCandidates(observation('O'))).toHaveLength(9);
@@ -135,5 +198,68 @@ describe('placement candidate enumeration', () => {
       expect(candidate.commands.slice(0, -1).every((command) =>
         command.type === 'move' || command.type === 'rotate-clockwise')).toBe(true);
     }
+  });
+
+  it('projects top-out after a hidden vertical I clears two visible rows and the next piece spawns', () => {
+    const filledRows = [0, 1].flatMap((visibleY) =>
+      Array.from({ length: BOARD_WIDTH }, (_, x) => ({ x, y: visibleY + HIDDEN_ROWS }))
+        .filter(({ x }) => x !== 5));
+    const state = withOpponent(
+      createMatch({ matchSeed: 31, countdownTicks: 0 }),
+      realBoard([...filledRows, { x: 5, y: HIDDEN_ROWS + 2 }]),
+      piece('I', 100),
+      [piece('O', 101), piece('T', 102)],
+    );
+    const view = createAiObservation(state, 'opponent');
+    const candidate = enumerateCandidates(view).find(({ rotation, column }) =>
+      rotation === 1 && column === 3);
+
+    expect(candidate).toBeDefined();
+    expect(candidate!.landingCells).toEqual([
+      { x: 5, y: -2 },
+      { x: 5, y: -1 },
+      { x: 5, y: 0 },
+      { x: 5, y: 1 },
+    ]);
+    expect(candidate!.clearedLines).toBe(2);
+
+    const actual = executeOpponentRoute(state, candidate!.commands);
+    const actualView = createAiObservation(actual, 'opponent');
+    expect(actual.sides.opponent.topOut).toBe(false);
+    expect(actual.sides.opponent.active?.token.kind).toBe('O');
+    expect(candidate!.topOut).toBe(actual.sides.opponent.topOut);
+    expect(candidate!.resultingBoard).toEqual(actualView.self.board);
+  });
+
+  it('uses the observed ghost for an unchanged hard drop blocked by a hidden cell', () => {
+    const state = withOpponent(
+      createMatch({ matchSeed: 32, countdownTicks: 0 }),
+      realBoard([{ x: 5, y: HIDDEN_ROWS - 1 }]),
+      piece('S', 200),
+      [piece('O', 201), piece('T', 202)],
+    );
+    const view = createAiObservation(state, 'opponent');
+    expect(view.self.board.every((cell) => cell === null)).toBe(true);
+    expect(view.self.ghostY).toBe(-2);
+
+    const candidate = enumerateCandidates(view).find(({ rotation, column, commands }) =>
+      rotation === 0
+      && column === 3
+      && commands.length === 1
+      && commands[0]?.type === 'hard-drop');
+
+    expect(candidate).toBeDefined();
+    expect(candidate!.landingCells).toEqual([
+      { x: 4, y: -2 },
+      { x: 5, y: -2 },
+      { x: 3, y: -1 },
+      { x: 4, y: -1 },
+    ]);
+
+    const actual = executeOpponentRoute(state, candidate!.commands);
+    const actualView = createAiObservation(actual, 'opponent');
+    expect(actual.sides.opponent.topOut).toBe(true);
+    expect(candidate!.topOut).toBe(actual.sides.opponent.topOut);
+    expect(candidate!.resultingBoard).toEqual(actualView.self.board);
   });
 });
