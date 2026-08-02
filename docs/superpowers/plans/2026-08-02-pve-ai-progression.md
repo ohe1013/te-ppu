@@ -161,11 +161,11 @@ export interface PlacementCandidate {
   clearedLines: number
   acquiredItems: readonly ItemType[]
   attack: number
-  topOut: boolean
+  topOut: boolean | 'unknown'
 }
 ```
 
-For each unique rotation, scan every column whose rotated cells fit, descend until the next row collides, and deduplicate by sorted `x:y` landing-cell key. Build routes as zero or more `{type:'rotate-clockwise'}`, repeated `{type:'move',dx:-1|1}`, then `{type:'hard-drop'}`. Reject a candidate when replaying its route against the public board cannot reach the same landing; this keeps SRS/collision disagreements out of controller output.
+For each unique rotation, scan every column whose rotated cells fit, descend until the next row collides, and deduplicate by sorted `x:y` landing-cell key. Build routes as zero or more `{type:'rotate-clockwise'}`, repeated `{type:'move',dx:-1|1}`, then `{type:'hard-drop'}`. Reject a candidate when replaying its route against the public board cannot reach the same landing; this keeps SRS/collision disagreements out of controller output. Preserve the observed `ghostY` for the unchanged direct hard drop. Because `AiObservation` intentionally omits hidden rows, enumeration must not inspect `view.self.next` to infer the post-lock spawn and must report hidden-state-dependent top-out as `'unknown'`.
 
 - [ ] **Step 4: Implement exact features, recursive public lookahead, and mistakes**
 
@@ -183,13 +183,13 @@ const score = dot(profile.weights, {
 })
 ```
 
-Treat `topOut` as `Number.NEGATIVE_INFINITY`. Recurse over only `view.self.next.slice(0, profile.lookahead)`, multiplying each future score by `futureDiscount`. Sort by score descending, then rotation, column, landing row, and command-string order. Floor 1 samples uniformly from the first five; floor 2 uses cumulative `[0.6,0.3,0.1]`; floor 3 takes index zero. Consume exactly one seeded mistake draw per new placement decision.
+Treat only `topOut === true` as `Number.NEGATIVE_INFINITY`; score `'unknown'` from the visible projection. Slice previews once at the scoring boundary and pass that explicit list through recursion: floor 1 consumes none, floor 2 consumes `next[0]` once, and floor 3 consumes `next[0]` followed by `next[1]`, never a stale tuple or a third preview. Multiply each future score by `futureDiscount`. Sort by score descending, then rotation, column, landing row, and command-string order. Floor 1 samples uniformly from the first five; floor 2 uses cumulative `[0.6,0.3,0.1]`; floor 3 takes index zero. Consume exactly one seeded mistake draw per new placement decision.
 
 - [ ] **Step 5: Verify current/next-depth and deterministic selection**
 
 Run: `npm test -- tests/ai/candidates.test.ts tests/ai/evaluate.test.ts`
 
-Expected: PASS, including fixtures where floor 1 ignores previews, floor 2 changes for preview one, and floor 3 changes only when preview two changes.
+Expected: PASS, including identical public observations whose hidden states produce different actual top-out outcomes, floor 1 near-top rankings that ignore previews, floor 2 consuming only preview one, floor 3 consuming exactly previews one and two, and runtime third-preview invariance.
 
 - [ ] **Step 6: Commit**
 

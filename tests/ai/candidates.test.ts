@@ -21,6 +21,8 @@ import {
   type PieceToken,
 } from '../../src/core/index';
 import { enumerateCandidates } from '../../src/ai/candidates';
+import { scoreCandidates } from '../../src/ai/evaluate';
+import { AI_FLOOR_PROFILES } from '../../src/ai/profiles';
 
 const VISIBLE_ROWS = 20;
 
@@ -200,7 +202,7 @@ describe('placement candidate enumeration', () => {
     }
   });
 
-  it('projects top-out after a hidden vertical I clears two visible rows and the next piece spawns', () => {
+  it('keeps top-out unknown when a hidden vertical I clears into a safe actual spawn', () => {
     const filledRows = [0, 1].flatMap((visibleY) =>
       Array.from({ length: BOARD_WIDTH }, (_, x) => ({ x, y: visibleY + HIDDEN_ROWS }))
         .filter(({ x }) => x !== 5));
@@ -227,11 +229,11 @@ describe('placement candidate enumeration', () => {
     const actualView = createAiObservation(actual, 'opponent');
     expect(actual.sides.opponent.topOut).toBe(false);
     expect(actual.sides.opponent.active?.token.kind).toBe('O');
-    expect(candidate!.topOut).toBe(actual.sides.opponent.topOut);
+    expect(candidate!.topOut).toBe('unknown');
     expect(candidate!.resultingBoard).toEqual(actualView.self.board);
   });
 
-  it('uses the observed ghost for an unchanged hard drop blocked by a hidden cell', () => {
+  it('keeps the observed ghost but reports unknown top-out for a hidden-cell hard drop', () => {
     const state = withOpponent(
       createMatch({ matchSeed: 32, countdownTicks: 0 }),
       realBoard([{ x: 5, y: HIDDEN_ROWS - 1 }]),
@@ -259,7 +261,45 @@ describe('placement candidate enumeration', () => {
     const actual = executeOpponentRoute(state, candidate!.commands);
     const actualView = createAiObservation(actual, 'opponent');
     expect(actual.sides.opponent.topOut).toBe(true);
-    expect(candidate!.topOut).toBe(actual.sides.opponent.topOut);
+    expect(candidate!.topOut).toBe('unknown');
     expect(candidate!.resultingBoard).toEqual(actualView.self.board);
+  });
+
+  it('keeps hidden-row-dependent top-out explicitly unknown for identical observations', () => {
+    const next = [piece('O', 301), piece('T', 302)] as const;
+    const safeState = withOpponent(
+      createMatch({ matchSeed: 33, countdownTicks: 0 }),
+      emptyBoard(),
+      piece('I', 300),
+      next,
+    );
+    const unsafeState = withOpponent(
+      createMatch({ matchSeed: 33, countdownTicks: 0 }),
+      realBoard([{ x: 4, y: HIDDEN_ROWS - 2 }]),
+      piece('I', 300),
+      next,
+    );
+    const safeView = createAiObservation(safeState, 'opponent');
+    const unsafeView = createAiObservation(unsafeState, 'opponent');
+
+    expect(unsafeView).toEqual(safeView);
+    expect(safeView.self.ghostY).toBe(18);
+    expect(enumerateCandidates(unsafeView)).toEqual(enumerateCandidates(safeView));
+    expect(scoreCandidates(unsafeView, AI_FLOOR_PROFILES[0]!)).toEqual(
+      scoreCandidates(safeView, AI_FLOOR_PROFILES[0]!),
+    );
+
+    const candidate = enumerateCandidates(safeView).find(({ rotation, column, commands }) =>
+      rotation === 0
+      && column === 3
+      && commands.length === 1
+      && commands[0]?.type === 'hard-drop');
+    expect(candidate).toBeDefined();
+    expect(candidate!.topOut).toBe('unknown');
+
+    const safeResult = executeOpponentRoute(safeState, candidate!.commands);
+    const unsafeResult = executeOpponentRoute(unsafeState, candidate!.commands);
+    expect(safeResult.sides.opponent.topOut).toBe(false);
+    expect(unsafeResult.sides.opponent.topOut).toBe(true);
   });
 });

@@ -7,7 +7,6 @@ import {
   ghostY,
   lockPiece,
   resolveNormalClear,
-  spawnPiece,
   tryRotateClockwise,
   type ActivePiece,
   type AiObservation,
@@ -28,7 +27,7 @@ export interface PlacementCandidate {
   readonly clearedLines: number;
   readonly acquiredItems: readonly ItemType[];
   readonly attack: number;
-  readonly topOut: boolean;
+  readonly topOut: boolean | 'unknown';
 }
 
 interface RotationRoute {
@@ -135,11 +134,6 @@ function visibleBoard(board: Board): BoardView {
   return board.cells.slice(BOARD_WIDTH * HIDDEN_ROWS);
 }
 
-function projectedTopOut(board: Board, view: AiObservation): boolean {
-  const next = view.self.next[0];
-  return !canPlace(board, spawnPiece({ serial: 0, ...next }));
-}
-
 export function enumerateCandidates(view: AiObservation): readonly PlacementCandidate[] {
   const active = internalActive(view);
   if (active === null) return [];
@@ -201,7 +195,7 @@ export function enumerateCandidates(view: AiObservation): readonly PlacementCand
         clearedLines,
         acquiredItems: clear.markers,
         attack: resolveNormalClear(view.self.combo, clearedLines).attack,
-        topOut: projectedTopOut(clear.board, view),
+        topOut: 'unknown',
       });
     }
   }

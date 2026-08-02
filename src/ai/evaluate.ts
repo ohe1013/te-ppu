@@ -105,7 +105,7 @@ function totalScore(
   profile: AiFloorProfile,
 ): { readonly features: HeuristicFeatures; readonly score: number } {
   const features = featuresFor(view, candidate);
-  if (candidate.topOut) return { features, score: Number.NEGATIVE_INFINITY };
+  if (candidate.topOut === true) return { features, score: Number.NEGATIVE_INFINITY };
 
   const currentScore = dot(profile.weights, features);
   const [next, ...remaining] = previews;

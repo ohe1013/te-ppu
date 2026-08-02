@@ -177,7 +177,7 @@ describe('candidate scoring', () => {
       clearedLines: 1,
       acquiredItems: ['row-clear'],
       attack: 3,
-      topOut: false,
+      topOut: 'unknown',
       score: 8.5,
     });
   });
@@ -193,7 +193,7 @@ describe('candidate scoring', () => {
     ]);
   });
 
-  it('scores a placement whose next piece cannot spawn as negative infinity', () => {
+  it('scores a visibly projected placement with unknown top-out instead of rejecting it', () => {
     const board = emptyBoard();
     board[4] = { kind: 'Z' };
 
@@ -205,8 +205,8 @@ describe('candidate scoring', () => {
       && commands[0]?.type === 'hard-drop');
 
     expect(directDrop).toMatchObject({
-      topOut: true,
-      score: Number.NEGATIVE_INFINITY,
+      topOut: 'unknown',
+      score: 0,
     });
   });
 });
@@ -217,6 +217,25 @@ describe('public preview lookahead', () => {
     const changed = observation({ next: [token('Z'), token('S')] });
 
     expect(scores(first, FLOOR_1)).toEqual(scores(changed, FLOOR_1));
+  });
+
+  it('floor 1 keeps near-top vertical-I scores and ranking independent of previews', () => {
+    const board = emptyBoard();
+    board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
+    const safePreview = observation({
+      kind: 'I',
+      board,
+      next: [token('O'), token('L')],
+    });
+    const blockedPreview = observation({
+      kind: 'I',
+      board,
+      next: [token('I'), token('L')],
+    });
+
+    expect(scoreCandidates(safePreview, FLOOR_1)).toEqual(
+      scoreCandidates(blockedPreview, FLOOR_1),
+    );
   });
 
   it('floor 2 changes for preview one but ignores preview two', () => {
@@ -233,6 +252,51 @@ describe('public preview lookahead', () => {
     const previewTwoChanged = observation({ next: [token('O'), token('Z')] });
 
     expect(scores(base, FLOOR_3)).not.toEqual(scores(previewTwoChanged, FLOOR_3));
+  });
+
+  it('uses exactly one near-top preview on floor 2 and two on floor 3', () => {
+    const board = emptyBoard();
+    board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
+    const base = observation({
+      kind: 'I',
+      board,
+      next: [token('O'), token('I')],
+    });
+    const previewOneChanged = observation({
+      kind: 'I',
+      board,
+      next: [token('Z'), token('I')],
+    });
+    const previewTwoChanged = observation({
+      kind: 'I',
+      board,
+      next: [token('O'), token('Z')],
+    });
+
+    expect(scores(base, FLOOR_2)).not.toEqual(scores(previewOneChanged, FLOOR_2));
+    expect(scoreCandidates(base, FLOOR_2)).toEqual(scoreCandidates(previewTwoChanged, FLOOR_2));
+    expect(scores(base, FLOOR_3)).not.toEqual(scores(previewTwoChanged, FLOOR_3));
+  });
+
+  it('ignores a runtime third preview even for floor 3 near the top', () => {
+    const board = emptyBoard();
+    board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
+    const base = observation({
+      kind: 'I',
+      board,
+      next: [token('O'), token('I')],
+    });
+    const withThird = (third: PublicPieceToken): AiObservation => ({
+      ...base,
+      self: {
+        ...base.self,
+        next: [token('O'), token('I'), third] as unknown as AiObservation['self']['next'],
+      },
+    });
+
+    expect(scoreCandidates(withThird(token('Z')), FLOOR_3)).toEqual(
+      scoreCandidates(withThird(token('S')), FLOOR_3),
+    );
   });
 });
 
