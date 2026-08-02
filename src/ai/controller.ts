@@ -14,6 +14,7 @@ import {
   type TimedCommand,
 } from '../core/index';
 import { scoreCandidates, selectCandidate } from './evaluate';
+import { planItemCommands } from './items';
 import type { AiController, AiFloorProfile } from './types';
 
 interface RouteExpectation {
@@ -146,6 +147,13 @@ export function createAiController(
       eligibleTicks += 1;
       if (eligibleTicks < profile.reactionTicks) return [];
       eligibleTicks = 0;
+
+      const itemCommand = planItemCommands(view, profile)[0];
+      if (itemCommand !== undefined) {
+        route = [];
+        expectation = null;
+        return [{ tick, side, command: itemCommand }];
+      }
 
       if (route.length === 0) {
         const scored = scoreCandidates(view, profile);

@@ -15,6 +15,54 @@ describe('AI controller', () => {
     expect(createAiController(AI_FLOOR_PROFILES[0]!, 11).side).toBe('opponent');
   });
 
+  it('preempts and discards a placement route for an item, then replans after execution', () => {
+    const profile = { ...AI_FLOOR_PROFILES[0]!, reactionTicks: 12 as const };
+    const ai = createAiController(profile, 11);
+    const base = createAiObservation(
+      createMatch({ matchSeed: 9, countdownTicks: 0 }),
+      'opponent',
+    );
+    const firstReaction = Array.from({ length: 12 }, (_, index) => ai.update(base, index + 1))
+      .flat();
+    const boardWithBottomCell = [...base.self.board];
+    boardWithBottomCell[19 * BOARD_WIDTH] = { kind: 'J' };
+    const acquired = {
+      ...base,
+      self: {
+        ...base.self,
+        board: boardWithBottomCell,
+        active: { ...base.self.active!, x: 4 },
+        inventory: { ...base.self.inventory, rowClear: 1 },
+      },
+    };
+    const itemReaction = Array.from(
+      { length: 12 },
+      (_, index) => ai.update(acquired, index + 13),
+    ).flat();
+    const afterExecution = {
+      ...acquired,
+      self: {
+        ...acquired.self,
+        board: base.self.board,
+        inventory: { ...acquired.self.inventory, rowClear: 0 },
+      },
+    };
+    const nextReaction = Array.from(
+      { length: 12 },
+      (_, index) => ai.update(afterExecution, index + 25),
+    ).flat();
+
+    expect(firstReaction).toEqual([
+      { tick: 12, side: 'opponent', command: { type: 'move', dx: 1 } },
+    ]);
+    expect(itemReaction).toEqual([
+      { tick: 24, side: 'opponent', command: { type: 'use-row-clear', row: 19 } },
+    ]);
+    expect(nextReaction).toEqual([
+      { tick: 36, side: 'opponent', command: { type: 'move', dx: -1 } },
+    ]);
+  });
+
   it.each(AI_FLOOR_PROFILES)(
     'emits at most one placement command on exact floor $floor reaction ticks',
     (profile) => {
