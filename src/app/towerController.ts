@@ -35,7 +35,12 @@ export type TowerSaveResult =
   | { readonly ok: true; readonly route: TowerRoute }
   | {
       readonly ok: false;
-      readonly reason: 'SAVE_FAILED' | 'NO_PENDING_SAVE' | 'NO_SELECTED_FLOOR';
+      readonly reason:
+        | 'SAVE_FAILED'
+        | 'NO_PENDING_SAVE'
+        | 'NO_SELECTED_FLOOR'
+        | 'NO_ACTIVE_MATCH'
+        | 'INVALID_SETTINGS';
       readonly route: TowerRoute;
     };
 
@@ -58,6 +63,19 @@ function deriveAiSeed(matchSeed: number): number {
   return counterU32(matchSeed, RandomStream.AI_MISTAKE, 1);
 }
 
+function isSettingsUpdate(
+  settings: Partial<ProgressState['settings']>,
+): boolean {
+  if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
+    return false;
+  }
+
+  return Object.entries(settings).every(([key, value]) => (
+    (key === 'soundEnabled' || key === 'hapticsEnabled')
+    && typeof value === 'boolean'
+  ));
+}
+
 export class TowerController {
   private currentProgress: ProgressState;
   private currentSelectedFloor: Floor | null = null;
@@ -66,6 +84,7 @@ export class TowerController {
   private currentRoute: TowerRoute = 'TOWER';
   private currentSaveError: 'SAVE_FAILED' | null = null;
   private pendingSave: ProgressState | null = null;
+  private saveTail: Promise<void> = Promise.resolve();
 
   constructor(
     progress: ProgressState,
@@ -75,7 +94,7 @@ export class TowerController {
   }
 
   get progress(): ProgressState {
-    return this.currentProgress;
+    return cloneProgress(this.currentProgress);
   }
 
   get selectedFloor(): Floor | null {
@@ -125,6 +144,13 @@ export class TowerController {
     if (floor === null) {
       return { ok: false, reason: 'NO_SELECTED_FLOOR', route: this.currentRoute };
     }
+    if (
+      this.currentRoute !== 'MATCH'
+      || this.currentMatch === null
+      || this.currentAi === null
+    ) {
+      return { ok: false, reason: 'NO_ACTIVE_MATCH', route: this.currentRoute };
+    }
 
     this.currentProgress = applyFloorResult(this.currentProgress, floor, result);
     this.currentRoute = routeFor(floor, result);
@@ -142,6 +168,10 @@ export class TowerController {
   async updateSettings(
     settings: Partial<ProgressState['settings']>,
   ): Promise<TowerSaveResult> {
+    if (!isSettingsUpdate(settings)) {
+      return { ok: false, reason: 'INVALID_SETTINGS', route: this.currentRoute };
+    }
+
     this.currentProgress = {
       ...this.currentProgress,
       clearedFloors: { ...this.currentProgress.clearedFloors },
@@ -155,27 +185,33 @@ export class TowerController {
     if (pending === null) {
       return { ok: false, reason: 'NO_PENDING_SAVE', route: this.currentRoute };
     }
-
-    const saved = await this.repository.save(pending);
-    if (!saved.ok) {
-      this.currentSaveError = 'SAVE_FAILED';
-      return { ok: false, reason: 'SAVE_FAILED', route: this.currentRoute };
-    }
-    if (this.pendingSave === pending) this.pendingSave = null;
-    this.currentSaveError = null;
-    return { ok: true, route: this.currentRoute };
+    return this.enqueueSave(cloneProgress(pending));
   }
 
-  private async persistCurrentProgress(): Promise<TowerSaveResult> {
+  private persistCurrentProgress(): Promise<TowerSaveResult> {
     const pending = cloneProgress(this.currentProgress);
+    return this.enqueueSave(pending);
+  }
+
+  private async enqueueSave(pending: ProgressState): Promise<TowerSaveResult> {
     this.pendingSave = pending;
-    const saved = await this.repository.save(pending);
-    if (!saved.ok) {
+    const save = this.saveTail.then(async () => {
+      try {
+        return (await this.repository.save(pending)).ok;
+      } catch {
+        return false;
+      }
+    });
+    this.saveTail = save.then(() => undefined, () => undefined);
+
+    if (!await save) {
       this.currentSaveError = 'SAVE_FAILED';
       return { ok: false, reason: 'SAVE_FAILED', route: this.currentRoute };
     }
-    if (this.pendingSave === pending) this.pendingSave = null;
-    this.currentSaveError = null;
+    if (this.pendingSave === pending) {
+      this.pendingSave = null;
+      this.currentSaveError = null;
+    }
     return { ok: true, route: this.currentRoute };
   }
 }

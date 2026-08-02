@@ -31,6 +31,37 @@ class RecordingRepository implements ProgressRepository {
   }
 }
 
+class DeferredRepository implements ProgressRepository {
+  readonly saved: ProgressState[] = [];
+  readonly pending: Array<(result: ProgressSaveResult) => void> = [];
+
+  async load(): Promise<ProgressLoadResult> {
+    return {
+      ok: true,
+      state: DEFAULT_PROGRESS,
+      recoveredFromCorruption: false,
+    };
+  }
+
+  save(state: ProgressState): Promise<ProgressSaveResult> {
+    this.saved.push(structuredClone(state));
+    return new Promise((resolve) => {
+      this.pending.push(resolve);
+    });
+  }
+
+  resolveSave(index: number, result: ProgressSaveResult): void {
+    const resolve = this.pending[index];
+    if (!resolve) throw new Error(`save ${index} is not pending`);
+    resolve(result);
+  }
+}
+
+async function flushSaveQueue(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function unlockedFloor3(): ProgressState {
   return {
     ...DEFAULT_PROGRESS,
@@ -123,6 +154,18 @@ describe('tower controller', () => {
     expect(controller.startFloor(1, 31).ok).toBe(true);
   });
 
+  it('returns a detached progress snapshot that cannot mutate controller state', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    const snapshot = controller.progress;
+
+    snapshot.highestUnlockedFloor = 3;
+    snapshot.clearedFloors[1] = true;
+    snapshot.settings.soundEnabled = false;
+
+    expect(controller.progress).toEqual(DEFAULT_PROGRESS);
+    expect(controller.startFloor(2, 20)).toEqual({ ok: false, reason: 'LOCKED_FLOOR' });
+  });
+
   it('abandons only live battle state and returns to the selected floor intro', () => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
@@ -135,6 +178,33 @@ describe('tower controller', () => {
     expect(controller.match).toBeNull();
     expect(controller.ai).toBeNull();
     expect(repository.saved).toEqual([]);
+  });
+
+  it('rejects completion after abandon or an already completed match', async () => {
+    const abandonedRepository = new RecordingRepository();
+    const abandoned = new TowerController(DEFAULT_PROGRESS, abandonedRepository);
+    abandoned.startFloor(1, 10);
+    abandoned.abandonMatch();
+
+    expect(await abandoned.completeFloor('WIN')).toEqual({
+      ok: false,
+      reason: 'NO_ACTIVE_MATCH',
+      route: 'FLOOR_INTRO',
+    });
+    expect(abandoned.progress).toEqual(DEFAULT_PROGRESS);
+    expect(abandonedRepository.saved).toEqual([]);
+
+    const completedRepository = new RecordingRepository();
+    const completed = new TowerController(DEFAULT_PROGRESS, completedRepository);
+    completed.startFloor(1, 10);
+    expect(await completed.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
+
+    expect(await completed.completeFloor('WIN')).toEqual({
+      ok: false,
+      reason: 'NO_ACTIVE_MATCH',
+      route: 'RESULT_WIN',
+    });
+    expect(completedRepository.saved).toHaveLength(1);
   });
 
   it('keeps unlocks playable in memory after save failure and retries the exact pending state', async () => {
@@ -179,6 +249,86 @@ describe('tower controller', () => {
     });
     expect(await controller.retrySave()).toEqual({ ok: true, route: 'TOWER' });
     expect(repository.saved[1]).toEqual(repository.saved[0]);
+  });
+
+  it.each([
+    { soundEnabled: undefined },
+    { hapticsEnabled: 'yes' },
+  ])('rejects invalid runtime settings without mutating or persisting them: %j', async (settings) => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    expect(await controller.updateSettings(settings as never)).toEqual({
+      ok: false,
+      reason: 'INVALID_SETTINGS',
+      route: 'TOWER',
+    });
+    expect(controller.progress).toEqual(DEFAULT_PROGRESS);
+    expect(repository.saved).toEqual([]);
+  });
+
+  it('serializes overlapping saves so a later success clears an earlier failure safely', async () => {
+    const repository = new DeferredRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    const first = controller.updateSettings({ soundEnabled: false });
+    const second = controller.updateSettings({ hapticsEnabled: false });
+    await flushSaveQueue();
+
+    expect(repository.saved).toHaveLength(1);
+    repository.resolveSave(0, {
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    });
+    expect(await first).toEqual({ ok: false, reason: 'SAVE_FAILED', route: 'TOWER' });
+    await flushSaveQueue();
+
+    expect(controller.saveError).toBe('SAVE_FAILED');
+    expect(repository.saved).toHaveLength(2);
+    expect(repository.saved[1]?.settings).toEqual({
+      soundEnabled: false,
+      hapticsEnabled: false,
+    });
+
+    repository.resolveSave(1, { ok: true });
+    expect(await second).toEqual({ ok: true, route: 'TOWER' });
+    expect(controller.saveError).toBeNull();
+    expect(await controller.retrySave()).toEqual({
+      ok: false,
+      reason: 'NO_PENDING_SAVE',
+      route: 'TOWER',
+    });
+  });
+
+  it('retries the latest snapshot after the latest overlapping save fails', async () => {
+    const repository = new DeferredRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    const first = controller.updateSettings({ soundEnabled: false });
+    const second = controller.updateSettings({ hapticsEnabled: false });
+    await flushSaveQueue();
+
+    expect(repository.saved).toHaveLength(1);
+    repository.resolveSave(0, { ok: true });
+    expect(await first).toEqual({ ok: true, route: 'TOWER' });
+    await flushSaveQueue();
+
+    expect(repository.saved).toHaveLength(2);
+    repository.resolveSave(1, {
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    });
+    expect(await second).toEqual({ ok: false, reason: 'SAVE_FAILED', route: 'TOWER' });
+    expect(controller.saveError).toBe('SAVE_FAILED');
+
+    const retry = controller.retrySave();
+    await flushSaveQueue();
+    expect(repository.saved).toHaveLength(3);
+    expect(repository.saved[2]).toEqual(repository.saved[1]);
+
+    repository.resolveSave(2, { ok: true });
+    expect(await retry).toEqual({ ok: true, route: 'TOWER' });
+    expect(controller.saveError).toBeNull();
   });
 
   it('reports retry when no save is pending without writing', async () => {
