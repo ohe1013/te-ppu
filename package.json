@@ -13,11 +13,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:delivery-gates": "node --test scripts/security/check-dependency-audit.test.mjs scripts/security/check-authored-source-policy.test.mjs scripts/verify-ait-package.test.mjs scripts/qa/apps-in-toss-private-qr.test.mjs",
     "validate:ai": "node --expose-gc ./node_modules/tsx/dist/cli.mjs scripts/validate-ai-simulations.ts",
     "build:web": "vite build --mode browser",
     "build:ait": "ait build",
     "test:e2e": "playwright test",
     "check:ait": "node scripts/verify-ait-package.mjs",
+    "check:source-policy": "node scripts/security/check-authored-source-policy.mjs",
     "check:dependency-audit": "npm audit --omit=dev --json | node scripts/security/check-dependency-audit.mjs --baseline security/dependency-audit-baseline.json --lock package-lock.json"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@apps-in-toss/ait-format": "1.0.0",
     "@playwright/test": "1.62.1",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "7.0.0",
