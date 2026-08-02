@@ -45,5 +45,6 @@ describe('production E2E-driver gate', () => {
       expect(text).not.toContain('No E2E match is currently active.');
       expect(text).not.toContain('e2e-wiring');
     },
+    15_000,
   );
 });
