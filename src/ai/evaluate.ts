@@ -16,6 +16,11 @@ export interface ScoredCandidate extends PlacementCandidate {
 }
 
 export type MistakeRandom = () => number;
+export const LOOKAHEAD_BEAM_WIDTH = 4;
+
+function projectedCandidates(view: AiObservation): readonly PlacementCandidate[] {
+  return enumerateCandidates(view);
+}
 
 function columnHeights(board: BoardView): readonly number[] {
   const rows = board.length / BOARD_WIDTH;
@@ -112,7 +117,7 @@ function totalScore(
   if (next === undefined) return { features, score: currentScore };
 
   const nextView = futureObservation(view, candidate, next);
-  const futureScores = enumerateCandidates(nextView).map((future) =>
+  const futureScores = projectedCandidates(nextView).map((future) =>
     totalScore(nextView, future, remaining, profile).score);
   const bestFuture = futureScores.length === 0
     ? Number.NEGATIVE_INFINITY
@@ -128,23 +133,164 @@ function commandKey(candidate: PlacementCandidate): string {
   return JSON.stringify(candidate.commands);
 }
 
+function comparePlacements(left: PlacementCandidate, right: PlacementCandidate): number {
+  if (left.rotation !== right.rotation) return left.rotation - right.rotation;
+  if (left.column !== right.column) return left.column - right.column;
+  const rowDifference = landingRow(left) - landingRow(right);
+  if (rowDifference !== 0) return rowDifference;
+  return commandKey(left).localeCompare(commandKey(right));
+}
+
+function compareScores(left: number, right: number): number {
+  if (left === right) return 0;
+  return left > right ? -1 : 1;
+}
+
+function immediateScore(
+  view: AiObservation,
+  candidate: PlacementCandidate,
+  profile: AiFloorProfile,
+): { readonly features: HeuristicFeatures; readonly score: number } {
+  const features = featuresFor(view, candidate);
+  return {
+    features,
+    score: candidate.topOut === true
+      ? Number.NEGATIVE_INFINITY
+      : dot(profile.weights, features),
+  };
+}
+
+interface PreviewOnePath {
+  readonly rootIndex: number;
+  readonly root: PlacementCandidate;
+  readonly preview: PlacementCandidate;
+  readonly previewView: AiObservation;
+  readonly partialScore: number;
+}
+
+function stableRootBeam(
+  roots: readonly PlacementCandidate[],
+  rootResults: readonly { readonly score: number }[],
+): readonly number[] {
+  return roots
+    .map((root, rootIndex) => ({ root, rootIndex, score: rootResults[rootIndex]!.score }))
+    .sort((left, right) =>
+      compareScores(left.score, right.score)
+        || comparePlacements(left.root, right.root))
+    .slice(0, LOOKAHEAD_BEAM_WIDTH)
+    .map(({ rootIndex }) => rootIndex);
+}
+
+function depthOneScores(
+  view: AiObservation,
+  roots: readonly PlacementCandidate[],
+  profile: AiFloorProfile,
+): readonly ScoredCandidate[] {
+  const rootResults = roots.map((candidate) => immediateScore(view, candidate, profile));
+  const rootScores = Array<number>(roots.length).fill(Number.NEGATIVE_INFINITY);
+  for (const rootIndex of stableRootBeam(roots, rootResults)) {
+    const previewView = futureObservation(view, roots[rootIndex]!, view.self.next[0]);
+    const futureScores = projectedCandidates(previewView)
+      .map((candidate) => ({
+        candidate,
+        score: immediateScore(previewView, candidate, profile).score,
+      }))
+      .sort((left, right) =>
+        compareScores(left.score, right.score)
+          || comparePlacements(left.candidate, right.candidate));
+    const best = futureScores[0]?.score ?? Number.NEGATIVE_INFINITY;
+    rootScores[rootIndex] = rootResults[rootIndex]!.score + profile.futureDiscount * best;
+  }
+  return roots.map((candidate, index) => ({
+    ...candidate,
+    ...rootResults[index]!,
+    score: rootScores[index]!,
+  }));
+}
+
+function depthTwoScores(
+  view: AiObservation,
+  roots: readonly PlacementCandidate[],
+  profile: AiFloorProfile,
+): readonly ScoredCandidate[] {
+  const previewOne = view.self.next[0];
+  const previewTwo = view.self.next[1];
+  const rootResults = roots.map((candidate) => immediateScore(view, candidate, profile));
+  const partials: PreviewOnePath[] = [];
+  const retainedRootIndexes = stableRootBeam(roots, rootResults);
+
+  retainedRootIndexes.forEach((rootIndex) => {
+    const root = roots[rootIndex]!;
+    const previewView = futureObservation(view, root, previewOne);
+    for (const preview of projectedCandidates(previewView)) {
+      const previewResult = immediateScore(previewView, preview, profile);
+      partials.push({
+        rootIndex,
+        root,
+        preview,
+        previewView,
+        partialScore: rootResults[rootIndex]!.score
+          + profile.futureDiscount * previewResult.score,
+      });
+    }
+  });
+
+  partials.sort((left, right) =>
+    compareScores(left.partialScore, right.partialScore)
+      || comparePlacements(left.root, right.root)
+      || comparePlacements(left.preview, right.preview));
+
+  const rootScores = Array<number>(roots.length).fill(Number.NEGATIVE_INFINITY);
+  const previewTwoCache = new Map<string, number>();
+  for (const path of partials.slice(0, LOOKAHEAD_BEAM_WIDTH)) {
+    const previewTwoView = futureObservation(path.previewView, path.preview, previewTwo);
+    const previewTwoKey = JSON.stringify([
+      previewTwoView.self.board,
+      previewTwoView.self.active,
+      previewTwoView.self.combo,
+      previewTwoView.self.incoming,
+    ]);
+    let best = previewTwoCache.get(previewTwoKey);
+    if (best === undefined) {
+      const previewTwoScores = projectedCandidates(previewTwoView)
+        .map((candidate) => ({
+          candidate,
+          score: immediateScore(previewTwoView, candidate, profile).score,
+        }))
+        .sort((left, right) =>
+          compareScores(left.score, right.score)
+            || comparePlacements(left.candidate, right.candidate));
+      best = previewTwoScores[0]?.score ?? Number.NEGATIVE_INFINITY;
+      previewTwoCache.set(previewTwoKey, best);
+    }
+    const fullScore = path.partialScore
+      + profile.futureDiscount * profile.futureDiscount * best;
+    if (fullScore > rootScores[path.rootIndex]!) rootScores[path.rootIndex] = fullScore;
+  }
+
+  return roots.map((candidate, index) => ({
+    ...candidate,
+    ...rootResults[index]!,
+    score: rootScores[index]!,
+  }));
+}
+
 export function scoreCandidates(
   view: AiObservation,
   profile: AiFloorProfile,
 ): readonly ScoredCandidate[] {
   const previews = view.self.next.slice(0, profile.lookahead);
-  return enumerateCandidates(view)
-    .map((candidate): ScoredCandidate => {
-      const result = totalScore(view, candidate, previews, profile);
-      return { ...candidate, ...result };
-    })
-    .sort((left, right) => {
-      if (left.score !== right.score) return left.score > right.score ? -1 : 1;
-      if (left.rotation !== right.rotation) return left.rotation - right.rotation;
-      if (left.column !== right.column) return left.column - right.column;
-      const rowDifference = landingRow(left) - landingRow(right);
-      if (rowDifference !== 0) return rowDifference;
-      return commandKey(left).localeCompare(commandKey(right));
+  const rootCandidates = projectedCandidates(view);
+  const scored = profile.lookahead === 2
+    ? depthTwoScores(view, rootCandidates, profile)
+    : profile.lookahead === 1
+      ? depthOneScores(view, rootCandidates, profile)
+      : rootCandidates.map((candidate): ScoredCandidate => {
+        const result = totalScore(view, candidate, previews, profile);
+        return { ...candidate, ...result };
+      });
+  return [...scored].sort((left, right) => {
+      return compareScores(left.score, right.score) || comparePlacements(left, right);
     });
 }
 

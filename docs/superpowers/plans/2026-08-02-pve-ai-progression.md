@@ -352,9 +352,17 @@ export interface SimulationSummary {
 
 Create a fresh match, derive controller seeds from the match seed, call controllers only with `createAiObservation`, merge returned `TimedCommand[]` by tick/side, and advance with `stepMatch`. Stop at a terminal result or 36,000 ticks (ten simulated minutes). Hash canonical state and ordered events with Node SHA-256. Count rejected-command events.
 
+Because core intentionally has no rejected-command event, audit protocol validity against the authoritative pre-tick snapshot: reject malformed owner/tick/side output, commands emitted while the side is ineligible, and sequential same-side item use after its charge or effect is exhausted. Eligible movement, rotation, and drop probes remain accepted when collision rules make them no-ops. A valid owned item also remains accepted when an unobservable opponent command, such as a same-tick freeze, later suppresses its effect; do not retroactively redefine emission validity from post-merge resolution.
+
+Keep lookahead deterministic and bounded for validation throughput. Floor 1 remains immediate-only; floor 2 retains the stable best four root placements before expanding preview one; floor 3 retains the stable best four roots and then the stable best four root/preview-one paths before expanding preview two. Break score ties with the existing rotation/column/landing-row/command ordering.
+
+The tested player always uses the exact approved floor profile. The fixed calibration opponent is a separate `SimulationController` fixture wrapping an approved floor-2 controller: it advances the controller's eligible-call clock at a deterministic 27/23 ratio, pauses credit while frozen or non-active, emits at most one command per real tick, and defers unused virtual-call credit after an emission. This is the weakest measured fixture cadence that resolved long regression seeds 75, 111, and 552 and preserved strict `1% < 47% < 100%` ordering across a 100-seed-per-floor sample with zero rejected or capped matches. Do not widen `AiFloorProfile` or represent the 23-tick fixture cadence as an approved gameplay profile.
+
 - [ ] **Step 4: Add the 3,000-match validation script**
 
 Install the exact script runner with `npm install --save-dev tsx@4.23.1`. Run 1,000 fixed seeds per floor against one fixed benchmark controller. Assert zero rejected commands, zero tick-limit exits, and strictly ordered win rates `floor1 < floor2 < floor3`. With `global.gc()`, sample retained heap every 250 matches; require final delta no greater than 32 MiB and linear growth no greater than 256 KiB per 1,000 matches.
+
+Run the matches in at most four long-lived worker isolates. Keep workers alive through the final coordinator-requested GC checkpoint, aggregate samples across every worker, and sort match results by fixed task index before producing the report so worker completion timing cannot affect validation output.
 
 ```json
 {

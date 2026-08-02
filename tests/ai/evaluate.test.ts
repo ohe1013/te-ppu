@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { AI_FLOOR_PROFILES } from '../../src/ai/profiles';
-import { scoreCandidates, selectCandidate } from '../../src/ai/evaluate';
+import {
+  LOOKAHEAD_BEAM_WIDTH,
+  scoreCandidates,
+  selectCandidate,
+} from '../../src/ai/evaluate';
 import type { AiFloorProfile } from '../../src/ai/types';
 import {
   BOARD_WIDTH,
@@ -212,6 +216,46 @@ describe('candidate scoring', () => {
 });
 
 describe('public preview lookahead', () => {
+  it('uses a stable width-four root beam for depth-one ties', () => {
+    const depthOneZero = {
+      ...zeroProfile(),
+      floor: 2 as const,
+      lookahead: 1 as const,
+      topK: 3 as const,
+      rankWeights: [0.6, 0.3, 0.1],
+      futureDiscount: 0.65,
+    };
+    const scored = scoreCandidates(observation(), depthOneZero);
+
+    expect(scored.filter(({ score }) => Number.isFinite(score))
+      .map(({ rotation, column }) => [rotation, column])).toEqual([
+      [0, -1],
+      [0, 0],
+      [0, 1],
+      [0, 2],
+    ]);
+    expect(scored.slice(4).every(({ score }) => score === Number.NEGATIVE_INFINITY)).toBe(true);
+  });
+
+  it('uses stable width-four root and partial beams for depth-two ties', () => {
+    const depthTwoZero = {
+      ...zeroProfile(),
+      lookahead: 2 as const,
+      futureDiscount: 0.7,
+    };
+    const first = scoreCandidates(observation(), depthTwoZero);
+    const second = scoreCandidates(observation(), depthTwoZero);
+    const finiteRoots = first
+      .filter(({ score }) => Number.isFinite(score))
+      .map(({ rotation, column }) => [rotation, column]);
+
+    expect(LOOKAHEAD_BEAM_WIDTH).toBe(4);
+    expect(second).toEqual(first);
+    expect(first).toHaveLength(9);
+    expect(finiteRoots).toEqual([[0, -1]]);
+    expect(first.slice(1).every(({ score }) => score === Number.NEGATIVE_INFINITY)).toBe(true);
+  });
+
   it('floor 1 ignores both previews', () => {
     const first = observation({ next: [token('I'), token('O')] });
     const changed = observation({ next: [token('Z'), token('S')] });
