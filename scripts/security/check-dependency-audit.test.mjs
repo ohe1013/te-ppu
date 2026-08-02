@@ -20,6 +20,7 @@ function runChecker({
   baseline = 'baseline.json',
   baselinePath = fixturePath(baseline),
   lock = 'package-lock.json',
+  lockPath = fixturePath(lock),
 } = {}) {
   const result = spawnSync(
     process.execPath,
@@ -27,7 +28,7 @@ function runChecker({
       checkerPath,
       '--audit', auditPath,
       '--baseline', baselinePath,
-      '--lock', fixturePath(lock),
+      '--lock', lockPath,
     ],
     { encoding: 'utf8' },
   );
@@ -40,6 +41,7 @@ function runChecker({
 
 const validAudit = JSON.parse(readFileSync(fixturePath('audit-unchanged.json'), 'utf8'));
 const validBaseline = JSON.parse(readFileSync(fixturePath('baseline.json'), 'utf8'));
+const validLock = JSON.parse(readFileSync(fixturePath('package-lock.json'), 'utf8'));
 
 function mutated(value, change) {
   const copy = structuredClone(value);
@@ -47,17 +49,59 @@ function mutated(value, change) {
   return copy;
 }
 
-function runCheckerWithJson({ audit = validAudit, baseline = validBaseline }) {
+function runCheckerWithJson({ audit = validAudit, baseline = validBaseline, lock = validLock }) {
   const directory = mkdtempSync(join(tmpdir(), 'te-ppu-dependency-audit-'));
   const auditPath = join(directory, 'audit.json');
   const baselinePath = join(directory, 'baseline.json');
+  const lockPath = join(directory, 'package-lock.json');
   writeFileSync(auditPath, JSON.stringify(audit));
   writeFileSync(baselinePath, JSON.stringify(baseline));
+  writeFileSync(lockPath, JSON.stringify(lock));
   try {
-    return runChecker({ auditPath, baselinePath });
+    return runChecker({ auditPath, baselinePath, lockPath });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+function defineOwn(object, key, value) {
+  Object.defineProperty(object, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function collisionFixture(name) {
+  const audit = structuredClone(validAudit);
+  const baseline = structuredClone(validBaseline);
+  const lock = structuredClone(validLock);
+  const vulnerability = structuredClone(validAudit.vulnerabilities.alpha);
+  const expected = structuredClone(validBaseline.vulnerabilities.alpha);
+  const nodePath = `node_modules/${name}`;
+  const advisoryId = `GHSA-test-${name}`;
+  const advisoryTitle = `fixture ${name} advisory`;
+  const advisoryUrl = `https://github.com/advisories/${advisoryId}`;
+
+  vulnerability.name = name;
+  vulnerability.nodes = [nodePath];
+  Object.assign(vulnerability.via[0], {
+    dependency: name,
+    name,
+    title: advisoryTitle,
+    url: advisoryUrl,
+  });
+  expected.nodes = [{ path: nodePath, version: '1.0.0' }];
+  Object.assign(expected.via[0], {
+    dependency: name,
+    id: advisoryId,
+    title: advisoryTitle,
+    url: advisoryUrl,
+  });
+  lock.packages[nodePath] = { version: '1.0.0' };
+
+  return { audit, baseline, expected, lock, vulnerability };
 }
 
 test('accepts the exact reviewed audit while reporting known exceptions', () => {
@@ -77,6 +121,38 @@ test('rejects an advisory that is not in the reviewed baseline', () => {
   assert.match(result.output, /UNREVIEWED_NEW package=gamma versions=3\.0\.0 advisories=GHSA-test-gamma severity=moderate/);
   assert.match(result.output, /DEPENDENCY_AUDIT_REVIEW_REQUIRED new=1 changed=0 versionChanged=0 expired=0/);
 });
+
+for (const name of ['constructor', '__proto__']) {
+  test(`rejects a new vulnerability whose name collides with ${name}`, () => {
+    const fixture = collisionFixture(name);
+    defineOwn(fixture.audit.vulnerabilities, name, fixture.vulnerability);
+    assert.equal(Object.hasOwn(
+      JSON.parse(JSON.stringify(fixture.audit)).vulnerabilities,
+      name,
+    ), true);
+
+    const result = runCheckerWithJson(fixture);
+
+    assert.equal(result.status, 1, result.output);
+    assert.ok(result.output.includes(`UNREVIEWED_NEW package=${name} `), result.output);
+    assert.match(result.output, /DEPENDENCY_AUDIT_REVIEW_REQUIRED new=1 changed=0 versionChanged=0 expired=0/);
+  });
+
+  test(`reports a removed reviewed vulnerability whose name collides with ${name}`, () => {
+    const fixture = collisionFixture(name);
+    defineOwn(fixture.baseline.vulnerabilities, name, fixture.expected);
+    assert.equal(Object.hasOwn(
+      JSON.parse(JSON.stringify(fixture.baseline)).vulnerabilities,
+      name,
+    ), true);
+
+    const result = runCheckerWithJson(fixture);
+
+    assert.equal(result.status, 0, result.output);
+    assert.ok(result.output.includes(`RESOLVED_EXCEPTION package=${name} `), result.output);
+    assert.match(result.output, /DEPENDENCY_AUDIT_BASELINE_MATCH known=2 resolved=1 status=PENDING_UPSTREAM/);
+  });
+}
 
 test('rejects changed metadata for a reviewed advisory', () => {
   const result = runChecker({ audit: 'audit-changed.json' });

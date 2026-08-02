@@ -214,12 +214,12 @@ export function evaluateAudit({ audit, baseline, lock, now = new Date() }) {
       }
     }
 
-    const current = actual[name];
-    if (!current) {
+    if (!Object.hasOwn(actual, name)) {
       resolvedPackages.push(name);
       lines.push(`RESOLVED_EXCEPTION ${formatRecord(name, expected)}`);
       continue;
     }
+    const current = actual[name];
 
     const changedFields = REVIEWED_FIELDS.filter((field) => stableJson(expected[field]) !== stableJson(current[field]));
     const expectedPaths = expected.nodes.map(({ path }) => path).sort();
@@ -236,7 +236,7 @@ export function evaluateAudit({ audit, baseline, lock, now = new Date() }) {
   }
 
   for (const [name, current] of Object.entries(actual)) {
-    if (baseline.vulnerabilities[name]) continue;
+    if (Object.hasOwn(baseline.vulnerabilities, name)) continue;
     newPackages.push(name);
     lines.push(`UNREVIEWED_NEW ${formatRecord(name, current)}`);
   }
