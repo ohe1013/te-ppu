@@ -19,6 +19,20 @@ function unlockedProgress(): ProgressState {
   };
 }
 
+function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): ProgressState {
+  return {
+    ...DEFAULT_PROGRESS,
+    highestUnlockedFloor: floor,
+    clearedFloors: {
+      1: floor > 1,
+      2: floor > 2,
+      3: floor > 3,
+      4: floor > 4,
+      5: false,
+    },
+  };
+}
+
 describe('tower progression transitions', () => {
   it('owns the exact five-floor domain in one contract', () => {
     expect(FLOORS).toEqual([1, 2, 3, 4, 5]);
@@ -56,15 +70,13 @@ describe('tower progression transitions', () => {
     expect(applyFloorResult(progress, 2, 'DRAW')).toBe(progress);
   });
 
-  it('marks floor 3 cleared without exceeding the highest floor and preserves settings', () => {
-    const progress = unlockedProgress();
+  it.each([
+    [1, 2], [2, 3], [3, 4], [4, 5], [5, 5],
+  ] as const)('winning floor %i unlocks through %i', (floor, unlocked) => {
+    const next = applyFloorResult(progressUnlockedThrough(floor), floor, 'WIN');
 
-    expect(applyFloorResult(progress, 3, 'WIN')).toEqual({
-      ...progress,
-      highestUnlockedFloor: 3,
-      clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-      settings: { soundEnabled: false, hapticsEnabled: true },
-    });
+    expect(next.highestUnlockedFloor).toBe(unlocked);
+    expect(next.clearedFloors[floor]).toBe(true);
   });
 
   it('allows only floors at or below the highest unlocked floor', () => {

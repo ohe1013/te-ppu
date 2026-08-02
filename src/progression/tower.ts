@@ -1,5 +1,5 @@
 import type { ProgressState } from './schema';
-import type { Floor } from './floors';
+import { FINAL_FLOOR, type Floor } from './floors';
 
 export type FloorResult = 'WIN' | 'LOSS' | 'DRAW';
 
@@ -14,7 +14,7 @@ export function applyFloorResult(
 ): ProgressState {
   if (result !== 'WIN') return progress;
 
-  const unlockedByWin = Math.min(3, floor + 1) as ProgressState['highestUnlockedFloor'];
+  const unlockedByWin = Math.min(FINAL_FLOOR, floor + 1) as ProgressState['highestUnlockedFloor'];
   const highestUnlockedFloor = Math.max(
     progress.highestUnlockedFloor,
     unlockedByWin,

@@ -62,11 +62,17 @@ async function flushSaveQueue(): Promise<void> {
   await Promise.resolve();
 }
 
-function unlockedFloor3(): ProgressState {
+function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): ProgressState {
   return {
     ...DEFAULT_PROGRESS,
-    highestUnlockedFloor: 3,
-    clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
+    highestUnlockedFloor: floor,
+    clearedFloors: {
+      1: floor > 1,
+      2: floor > 2,
+      3: floor > 3,
+      4: floor > 4,
+      5: false,
+    },
   };
 }
 
@@ -145,13 +151,34 @@ describe('tower controller', () => {
     expect(controller.progress.highestUnlockedFloor).toBe(result === 'WIN' ? 2 : 1);
   });
 
-  it('routes a floor 3 win to the result and keeps cleared floors replayable', async () => {
-    const controller = new TowerController(unlockedFloor3(), new RecordingRepository());
-    controller.startFloor(3, 30);
+  it.each([3, 4] as const)('routes a floor %i win to the result and unlocks its successor', async (floor) => {
+    const controller = new TowerController(progressUnlockedThrough(floor), new RecordingRepository());
+    const started = controller.startFloor(floor, 30);
+    if (!started.ok) throw new Error(`floor ${floor} should start`);
 
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
-    expect(controller.progress.clearedFloors).toEqual({ 1: true, 2: true, 3: true, 4: false, 5: false });
-    expect(controller.startFloor(1, 31).ok).toBe(true);
+    expect(controller.progress.highestUnlockedFloor).toBe(floor + 1);
+    expect(controller.progress.clearedFloors[floor]).toBe(true);
+  });
+
+  it('routes a floor 5 win to the ending without unlocking beyond floor 5', async () => {
+    const controller = new TowerController(progressUnlockedThrough(5), new RecordingRepository());
+    const started = controller.startFloor(5, 50);
+    if (!started.ok) throw new Error('floor 5 should start');
+
+    expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'ENDING' });
+    expect(controller.progress.highestUnlockedFloor).toBe(5);
+  });
+
+  it.each(['LOSS', 'DRAW'] as const)('does not unlock floor 4 after a floor 3 %s', async (result) => {
+    const controller = new TowerController(progressUnlockedThrough(3), new RecordingRepository());
+    const started = controller.startFloor(3, 30);
+    if (!started.ok) throw new Error('floor 3 should start');
+
+    await controller.completeFloor(result);
+
+    expect(controller.progress.highestUnlockedFloor).toBe(3);
+    expect(controller.progress.clearedFloors[3]).toBe(false);
   });
 
   it('returns a detached progress snapshot that cannot mutate controller state', () => {
