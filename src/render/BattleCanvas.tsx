@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import type { Application as PixiApplication } from 'pixi.js';
 import type {
@@ -26,6 +27,7 @@ const CRITICAL_EFFECT_MS = 140;
 
 export interface BattleCanvasProps {
   readonly events: readonly GameEvent[];
+  readonly playerBoardOverlay?: ReactNode;
   readonly selectedRow: number | null;
   readonly view: PublicMatchView;
 }
@@ -127,7 +129,12 @@ function useOrderedEffects(
   return active === null ? decorative : [active, ...decorative];
 }
 
-export function BattleCanvas({ events, selectedRow, view }: BattleCanvasProps) {
+export function BattleCanvas({
+  events,
+  playerBoardOverlay,
+  selectedRow,
+  view,
+}: BattleCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const applicationRef = useRef<ApplicationRef>(null);
   const metricsRef = useRef<CanvasMetrics>({ height: 1, resolution: 1, width: 1 });
@@ -196,6 +203,20 @@ export function BattleCanvas({ events, selectedRow, view }: BattleCanvasProps) {
           side="opponent"
         />
       </Application>
+      {playerBoardOverlay !== undefined && (
+        <div
+          className="battle-canvas__player-overlay"
+          data-testid="player-board-overlay"
+          style={{
+            height: layout.player.height,
+            left: layout.player.x,
+            top: layout.player.y,
+            width: layout.player.width,
+          }}
+        >
+          {playerBoardOverlay}
+        </div>
+      )}
     </div>
   );
 }

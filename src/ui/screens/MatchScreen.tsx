@@ -1,4 +1,9 @@
-import { useMemo } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   AI_FLOOR_PROFILES,
   createAiController,
@@ -7,6 +12,11 @@ import type { Floor, MatchResult } from '../../app/app-route';
 import { useMatchLoop } from '../../app/use-match-loop';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
+import { InputResetBus } from '../match/input-reset-bus';
+import { ItemControls } from '../match/ItemControls';
+import { Joystick } from '../match/Joystick';
+import { RotateButton } from '../match/RotateButton';
+import { RowSelector } from '../match/RowSelector';
 import '../match/match-layout.css';
 
 export interface MatchScreenProps {
@@ -25,6 +35,25 @@ export function MatchScreen({ floor, seed, onFinished }: MatchScreenProps) {
     config: { matchSeed: seed },
     onFinished,
   });
+  const resetBus = useMemo(() => new InputResetBus(), []);
+  const [rowSelectionActive, setRowSelectionActive] = useState(false);
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const player = match.view.sides.player;
+  const controlsActive = match.view.status === 'playing'
+    && player.phase === 'active'
+    && player.freezeTicks === 0
+    && !player.topOut;
+
+  const handleRowSelectionChange = useCallback((active: boolean) => {
+    setRowSelectionActive(active);
+    if (!active) setSelectedRow(null);
+  }, []);
+
+  useEffect(() => {
+    if (controlsActive) return;
+    resetBus.resetAll();
+    handleRowSelectionChange(false);
+  }, [controlsActive, handleRowSelectionChange, resetBus]);
 
   return (
     <section
@@ -61,10 +90,35 @@ export function MatchScreen({ floor, seed, onFinished }: MatchScreenProps) {
       <div className="battle-stage">
         <BattleCanvas
           events={match.events}
-          selectedRow={null}
+          playerBoardOverlay={rowSelectionActive ? (
+            <RowSelector
+              board={player.board}
+              dispatch={match.dispatch}
+              onClose={() => handleRowSelectionChange(false)}
+              onSelectedRowChange={setSelectedRow}
+            />
+          ) : undefined}
+          selectedRow={selectedRow}
           view={match.view}
         />
       </div>
+
+      <fieldset
+        aria-label="게임 조작"
+        className="match-controls"
+        disabled={!controlsActive}
+      >
+        <ItemControls
+          dispatch={match.dispatch}
+          onRowSelectionChange={handleRowSelectionChange}
+          player={player}
+          rowSelectionActive={rowSelectionActive}
+        />
+        <div className="match-controls__movement">
+          <Joystick onCommand={match.dispatch} resetBus={resetBus} />
+          <RotateButton onCommand={match.dispatch} />
+        </div>
+      </fieldset>
     </section>
   );
 }

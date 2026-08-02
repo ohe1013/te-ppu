@@ -32,22 +32,23 @@ export function ItemControls({
 
   return (
     <section aria-label="아이템" className="item-controls">
-      <button
-        aria-pressed={rowSelectionActive}
-        className="item-control"
-        disabled={!canUseRowClear || rowSelectionActive}
-        type="button"
-        onClick={() => onRowSelectionChange(true)}
-      >
-        행 제거 · {player.inventory.rowClear}회
-      </button>
-      {rowSelectionActive && (
+      {rowSelectionActive ? (
         <button
           className="item-control item-control--cancel"
           type="button"
           onClick={() => onRowSelectionChange(false)}
         >
           행 선택 취소
+        </button>
+      ) : (
+        <button
+          aria-pressed={false}
+          className="item-control"
+          disabled={!canUseRowClear}
+          type="button"
+          onClick={() => onRowSelectionChange(true)}
+        >
+          행 제거 · {player.inventory.rowClear}회
         </button>
       )}
       <button

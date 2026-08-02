@@ -7,7 +7,7 @@
     max(1rem, var(--native-close-exclusion-right, 10px))
     max(0.75rem, var(--safe-area-bottom, 0px))
     max(1rem, var(--safe-area-left, 0px));
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   align-content: stretch;
   gap: 0.5rem;
 }
@@ -152,11 +152,39 @@
 }
 
 .battle-canvas {
+  position: relative;
   width: 100%;
   height: min(100%, calc(100vw - 40px), 388px);
   min-height: 1px;
   overflow: hidden;
   border-radius: 0.55rem;
+}
+
+.battle-canvas__player-overlay {
+  position: absolute;
+  z-index: 3;
+}
+
+.match-controls {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.match-controls__movement {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: 0.5rem;
+}
+
+.match-controls:disabled .joystick-control {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .battle-canvas > canvas {
@@ -172,5 +200,13 @@
 
   .battle-hud__next {
     margin-block: 0.2rem;
+  }
+
+  .joystick-control {
+    width: min(23vw, 5.25rem);
+  }
+
+  .rotate-control {
+    width: min(19vw, 4.4rem);
   }
 }

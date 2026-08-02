@@ -1,18 +1,18 @@
 .item-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
 }
 
 .item-control {
-  min-height: 2.75rem;
-  padding: 0.55rem 0.65rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.35rem;
   border: 0;
   border-radius: 0.75rem;
   color: #fff;
   background: rgb(105 84 232 / 88%);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: clamp(0.62rem, 2.7vw, 0.78rem);
   font-weight: 800;
   touch-action: manipulation;
 }

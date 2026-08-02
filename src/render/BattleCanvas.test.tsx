@@ -117,4 +117,39 @@ describe('BattleCanvas', () => {
     );
     expect(removeResolutionListener).toHaveBeenCalledOnce();
   });
+
+  it('mounts the player row selector exactly over the player board', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 9 }));
+    render(
+      <BattleCanvas
+        events={[]}
+        playerBoardOverlay={<div data-testid="player-board-overlay-content" />}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320,
+      height: 320,
+      left: 0,
+      right: 328,
+      toJSON: () => ({}),
+      top: 0,
+      width: 328,
+      x: 0,
+      y: 0,
+    });
+
+    act(() => notifyResize([], {} as ResizeObserver));
+
+    const overlay = screen.getByTestId('player-board-overlay');
+    expect(overlay).toHaveStyle({
+      height: '320px',
+      left: '0px',
+      top: '0px',
+      width: '160px',
+    });
+    expect(screen.getByTestId('player-board-overlay-content')).toBeVisible();
+  });
 });
