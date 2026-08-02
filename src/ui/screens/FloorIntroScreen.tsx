@@ -1,4 +1,4 @@
-import { AI_FLOOR_PROFILES } from '../../ai/index';
+import { getAiFloorProfile } from '../../ai/index';
 import type { Floor } from '../../app/app-route';
 
 export interface FloorIntroScreenProps {
@@ -8,7 +8,7 @@ export interface FloorIntroScreenProps {
 }
 
 export function FloorIntroScreen({ floor, onBack, onStart }: FloorIntroScreenProps) {
-  const profile = AI_FLOOR_PROFILES[floor - 1]!;
+  const profile = getAiFloorProfile(floor);
   const reactionMs = Math.round(profile.reactionTicks * (1000 / 60));
 
   return (

@@ -6,8 +6,8 @@ import {
   useState,
 } from 'react';
 import {
-  AI_FLOOR_PROFILES,
   createAiController,
+  getAiFloorProfile,
 } from '../../ai/index';
 import type { Floor, MatchResult } from '../../app/app-route';
 import {
@@ -144,7 +144,7 @@ export function MatchScreen({
     }
   }, []);
   const ai = useMemo(
-    () => createAiController(AI_FLOOR_PROFILES[floor - 1]!, seed),
+    () => createAiController(getAiFloorProfile(floor), seed),
     [floor, seed],
   );
   const match = useMatchLoopImpl({

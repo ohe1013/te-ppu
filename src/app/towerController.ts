@@ -1,8 +1,4 @@
-import {
-  AI_FLOOR_PROFILES,
-  createAiController,
-  type AiController,
-} from '../ai/index';
+import { createAiController, getAiFloorProfile, type AiController } from '../ai/index';
 import {
   RandomStream,
   counterU32,
@@ -125,7 +121,7 @@ export class TowerController {
     this.currentSelectedFloor = floor;
     this.currentMatch = createMatch({ matchSeed });
     this.currentAi = createAiController(
-      AI_FLOOR_PROFILES[floor - 1]!,
+      getAiFloorProfile(floor),
       deriveAiSeed(matchSeed),
       'opponent',
     );

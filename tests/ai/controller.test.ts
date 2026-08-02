@@ -119,7 +119,7 @@ describe('AI controller', () => {
           opponent: { ...state.sides.opponent, board: { cells } },
         },
       } satisfies MatchState;
-      const ai = createAiController(AI_FLOOR_PROFILES[2]!, 11);
+      const ai = createAiController(AI_FLOOR_PROFILES[4]!, 11);
       const emitted: TimedCommand[] = [];
       let lockedAt: number | null = null;
 
@@ -185,7 +185,7 @@ describe('AI controller', () => {
       createMatch({ matchSeed: 9, countdownTicks: 0 }),
       'opponent',
     );
-    const ai = createAiController(AI_FLOOR_PROFILES[2]!, 11);
+    const ai = createAiController(AI_FLOOR_PROFILES[4]!, 11);
     const emitted: TimedCommand[] = [];
 
     for (let tick = 1; tick <= 60; tick += 1) {
@@ -200,7 +200,7 @@ describe('AI controller', () => {
       .map(({ command }) => JSON.stringify(command));
     expect(new Set(movementKeys).size).toBe(movementKeys.length);
     expect(emitted.map(({ tick }) => tick)).toEqual(
-      emitted.map((_, index) => (index + 1) * AI_FLOOR_PROFILES[2]!.reactionTicks),
+      emitted.map((_, index) => (index + 1) * AI_FLOOR_PROFILES[4]!.reactionTicks),
     );
   });
 

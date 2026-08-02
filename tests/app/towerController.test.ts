@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TowerController } from '../../src/app/towerController';
-import { createMatch } from '../../src/core/index';
+import { createAiObservation, createMatch } from '../../src/core/index';
 import {
   DEFAULT_PROGRESS,
   type ProgressLoadResult,
@@ -159,6 +159,30 @@ describe('tower controller', () => {
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
     expect(controller.progress.highestUnlockedFloor).toBe(floor + 1);
     expect(controller.progress.clearedFloors[floor]).toBe(true);
+  });
+
+  it.each([
+    { floor: 4 as const, reactionTicks: 19 },
+    { floor: 5 as const, reactionTicks: 12 },
+  ])('runs a real floor $floor AI update at its reaction boundary', ({ floor, reactionTicks }) => {
+    const controller = new TowerController(progressUnlockedThrough(floor), new RecordingRepository());
+    const started = controller.startFloor(floor, 40);
+    if (!started.ok) throw new Error(`floor ${floor} should start`);
+    const ai = controller.ai;
+    if (ai === null) throw new Error(`floor ${floor} should create an AI controller`);
+    const observation = createAiObservation(started.match, 'opponent');
+    const output = Array.from(
+      { length: reactionTicks },
+      (_, index) => ai.update(observation, index + 1),
+    );
+
+    expect(output.slice(0, -1).flat()).toEqual([]);
+    expect(output.at(-1)).toEqual(expect.any(Array));
+    expect(output.at(-1)?.every(({ side, command }) => (
+      side === 'opponent'
+      && ['move', 'rotate-clockwise', 'hard-drop', 'use-row-clear', 'use-freeze', 'use-queue-swap']
+        .includes(command.type)
+    ))).toBe(true);
   });
 
   it('routes a floor 5 win to the ending without unlocking beyond floor 5', async () => {

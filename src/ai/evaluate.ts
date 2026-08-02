@@ -308,12 +308,6 @@ export function selectCandidate(
   if (scored.length === 0) throw new RangeError('cannot select from an empty candidate list');
   const draw = boundedDraw(rng);
   const available = scored.slice(0, Math.min(profile.topK, scored.length));
-
-  if (profile.floor === 1) {
-    return available[Math.floor(draw * available.length)]!;
-  }
-  if (profile.floor === 3) return available[0]!;
-
   const weights = profile.rankWeights.slice(0, available.length);
   let cumulative = 0;
   for (let index = 0; index < available.length; index += 1) {

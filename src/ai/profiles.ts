@@ -1,3 +1,4 @@
+import type { Floor } from '../progression/index';
 import type { AiFloorProfile } from './types';
 
 export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
@@ -23,6 +24,26 @@ export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
   },
   {
     floor: 2,
+    reactionTicks: 38,
+    lookahead: 0,
+    topK: 4,
+    rankWeights: [0.4, 0.3, 0.2, 0.1],
+    futureDiscount: 0,
+    weights: {
+      aggregateHeight: -0.3,
+      maxHeight: -0.65,
+      holes: -2.75,
+      bumpiness: -0.35,
+      clearedLines: 1,
+      combo: 0.6,
+      incomingOffset: 0.75,
+      itemGain: 0.8,
+      opponentPressure: 0.1,
+    },
+    itemPolicy: 'RISK_AWARE',
+  },
+  {
+    floor: 3,
     reactionTicks: 27,
     lookahead: 1,
     topK: 3,
@@ -42,7 +63,27 @@ export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
     itemPolicy: 'RISK_AWARE',
   },
   {
-    floor: 3,
+    floor: 4,
+    reactionTicks: 19,
+    lookahead: 1,
+    topK: 2,
+    rankWeights: [0.75, 0.25],
+    futureDiscount: 0.68,
+    weights: {
+      aggregateHeight: -0.4,
+      maxHeight: -1,
+      holes: -4.25,
+      bumpiness: -0.55,
+      clearedLines: 1.35,
+      combo: 1.35,
+      incomingOffset: 1.45,
+      itemGain: 1.35,
+      opponentPressure: 0.4,
+    },
+    itemPolicy: 'TACTICAL',
+  },
+  {
+    floor: 5,
     reactionTicks: 12,
     lookahead: 2,
     topK: 1,
@@ -62,3 +103,9 @@ export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
     itemPolicy: 'TACTICAL',
   },
 ];
+
+export function getAiFloorProfile(floor: Floor): AiFloorProfile {
+  const profile = AI_FLOOR_PROFILES.find((candidate) => candidate.floor === floor);
+  if (profile === undefined) throw new RangeError(`Missing AI profile for floor ${floor}`);
+  return profile;
+}

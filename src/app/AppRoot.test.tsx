@@ -136,7 +136,7 @@ function renderGame(
 }
 
 async function enterMatch(user: ReturnType<typeof userEvent.setup>, floor: 1 | 2 | 3) {
-  const reactionMs = { 1: 800, 2: 450, 3: 200 }[floor];
+  const reactionMs = { 1: 800, 2: 633, 3: 450 }[floor];
   await screen.findByTestId('tower-screen');
   await user.click(screen.getByRole('button', { name: `${floor}층 선택` }));
   expect(screen.getByTestId('floor-intro-screen')).toBeInTheDocument();

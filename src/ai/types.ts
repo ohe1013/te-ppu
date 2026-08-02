@@ -8,9 +8,9 @@ export interface AiController {
 
 export interface AiFloorProfile {
   readonly floor: Floor;
-  readonly reactionTicks: 48 | 27 | 12;
+  readonly reactionTicks: 48 | 38 | 27 | 19 | 12;
   readonly lookahead: 0 | 1 | 2;
-  readonly topK: 5 | 3 | 1;
+  readonly topK: 5 | 4 | 3 | 2 | 1;
   readonly rankWeights: readonly number[];
   readonly futureDiscount: number;
   readonly weights: Readonly<Record<HeuristicName, number>>;

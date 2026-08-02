@@ -28,6 +28,8 @@ import {
 const FLOOR_1 = AI_FLOOR_PROFILES[0]!;
 const FLOOR_2 = AI_FLOOR_PROFILES[1]!;
 const FLOOR_3 = AI_FLOOR_PROFILES[2]!;
+const FLOOR_4 = AI_FLOOR_PROFILES[3]!;
+const FLOOR_5 = AI_FLOOR_PROFILES[4]!;
 const VISIBLE_ROWS = 20;
 
 function emptyBoard(): (Cell | null)[] {
@@ -238,21 +240,23 @@ describe('floor-specific AI item policies', () => {
     }), FLOOR_2)).toEqual([{ type: 'use-freeze' }]);
   });
 
-  it('floor 3 freezes at own combo 2 or opponent height 13', () => {
+  it('floor 4 and 5 apply the tactical freeze policy at own combo 2 or opponent height 13', () => {
     const height12 = withCell(emptyBoard(), 0, 8);
     const height13 = withCell(emptyBoard(), 0, 7);
 
-    expect(planItemCommands(observation({
-      combo: 1,
-      opponentBoard: height12,
-      inventory: { freeze: 1 },
-    }), FLOOR_3)).toEqual([]);
-    expect(planItemCommands(observation({ combo: 2, inventory: { freeze: 1 } }), FLOOR_3))
-      .toEqual([{ type: 'use-freeze' }]);
-    expect(planItemCommands(observation({
-      opponentBoard: height13,
-      inventory: { freeze: 1 },
-    }), FLOOR_3)).toEqual([{ type: 'use-freeze' }]);
+    for (const profile of [FLOOR_4, FLOOR_5]) {
+      expect(planItemCommands(observation({
+        combo: 1,
+        opponentBoard: height12,
+        inventory: { freeze: 1 },
+      }), profile)).toEqual([]);
+      expect(planItemCommands(observation({ combo: 2, inventory: { freeze: 1 } }), profile))
+        .toEqual([{ type: 'use-freeze' }]);
+      expect(planItemCommands(observation({
+        opponentBoard: height13,
+        inventory: { freeze: 1 },
+      }), profile)).toEqual([{ type: 'use-freeze' }]);
+    }
   });
 
   it('applies the exact tactical row-clear score boundary and visible survival rule', () => {
@@ -264,7 +268,7 @@ describe('floor-specific AI item policies', () => {
     expect(shouldUseTacticalRowClear(10, 9, 1)).toBe(true);
   });
 
-  it('floor 3 simulates valid visible deletes and resolves equal scores to the lower row', () => {
+  it('floor 5 simulates valid visible deletes and resolves equal scores to the lower row', () => {
     let board = withFullRow(emptyBoard(), 18);
     board = withFullRow(board, 19);
 
@@ -272,7 +276,7 @@ describe('floor-specific AI item policies', () => {
       board,
       incoming: 1,
       inventory: { rowClear: 1 },
-    }), FLOOR_3)).toEqual([{ type: 'use-row-clear', row: 19 }]);
+    }), FLOOR_5)).toEqual([{ type: 'use-row-clear', row: 19 }]);
   });
 
   it('projects the same minimum active lift and one-line incoming offset as the real core', () => {
@@ -333,10 +337,10 @@ describe('floor-specific AI item policies', () => {
       inventory: acquireMarkers(state.sides.opponent.inventory, ['row-clear']),
     });
     const zeroWeights = {
-      ...FLOOR_3,
+      ...FLOOR_5,
       weights: Object.fromEntries(
-        Object.keys(FLOOR_3.weights).map((name) => [name, 0]),
-      ) as typeof FLOOR_3.weights,
+        Object.keys(FLOOR_5.weights).map((name) => [name, 0]),
+      ) as typeof FLOOR_5.weights,
     };
 
     expect(planItemCommands(createAiObservation(state, 'opponent'), zeroWeights)).toEqual([
@@ -344,26 +348,26 @@ describe('floor-specific AI item policies', () => {
     ]);
   }, 10_000);
 
-  it('applies exact floor 2 and floor 3 queue-swap score-gap boundaries', () => {
+  it('applies exact floor 2 and floor 5 queue-swap score-gap boundaries', () => {
     expect(shouldUseQueueSwap(FLOOR_2, 10, 12.999)).toBe(false);
     expect(shouldUseQueueSwap(FLOOR_2, 10, 13)).toBe(true);
-    expect(shouldUseQueueSwap(FLOOR_3, 10, 12.499)).toBe(false);
-    expect(shouldUseQueueSwap(FLOOR_3, 10, 12.5)).toBe(true);
+    expect(shouldUseQueueSwap(FLOOR_5, 10, 12.499)).toBe(false);
+    expect(shouldUseQueueSwap(FLOOR_5, 10, 12.5)).toBe(true);
   });
 
-  it('uses only visible projected survival for floor 3 and does not add it to floor 2', () => {
+  it('uses only visible projected survival for floor 5 and does not add it to floor 2', () => {
     expect(shouldUseQueueSwap(FLOOR_2, Number.NEGATIVE_INFINITY, -100)).toBe(false);
-    expect(shouldUseQueueSwap(FLOOR_3, Number.NEGATIVE_INFINITY, -100)).toBe(true);
-    expect(shouldUseQueueSwap(FLOOR_3, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY))
+    expect(shouldUseQueueSwap(FLOOR_5, Number.NEGATIVE_INFINITY, -100)).toBe(true);
+    expect(shouldUseQueueSwap(FLOOR_5, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY))
       .toBe(false);
   });
 
-  it('integrates the real one-preview evaluator for a beneficial and harmful floor-2 swap', () => {
+  it('integrates the real one-preview evaluator for a beneficial and harmful floor-3 swap', () => {
     const previewWeighted = {
-      ...FLOOR_2,
+      ...FLOOR_3,
       weights: Object.fromEntries(
-        Object.entries(FLOOR_2.weights).map(([name, weight]) => [name, weight * 6]),
-      ) as typeof FLOOR_2.weights,
+        Object.entries(FLOOR_3.weights).map(([name, weight]) => [name, weight * 6]),
+      ) as typeof FLOOR_3.weights,
     };
     const beneficial = observation({
       inventory: { queueSwap: 1 },
@@ -395,8 +399,8 @@ describe('floor-specific AI item policies', () => {
       };
     };
 
-    expect(planItemCommands(withThird('Z'), FLOOR_3))
-      .toEqual(planItemCommands(withThird('S'), FLOOR_3));
+    expect(planItemCommands(withThird('Z'), FLOOR_5))
+      .toEqual(planItemCommands(withThird('S'), FLOOR_5));
   });
 
   it('ignores non-contract hidden fields and plans from the sanitized observation only', () => {
@@ -411,7 +415,7 @@ describe('floor-specific AI item policies', () => {
       hiddenBoard: Array(BOARD_WIDTH * HIDDEN_ROWS).fill({ kind: 'Z' }),
     } as AiObservation;
 
-    expect(planItemCommands(view, FLOOR_3)).toEqual(planItemCommands(hiddenVariant, FLOOR_3));
+    expect(planItemCommands(view, FLOOR_5)).toEqual(planItemCommands(hiddenVariant, FLOOR_5));
   });
 });
 
