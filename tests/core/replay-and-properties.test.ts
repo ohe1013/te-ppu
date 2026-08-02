@@ -4,15 +4,24 @@ import {
   BOARD_ROWS,
   BOARD_WIDTH,
   CoreInvariantError,
+  HIDDEN_ROWS,
   RandomStream,
+  applySideCommands,
   assertMatchInvariants,
+  canPlace,
+  clearFullRows,
   counterU32,
   createMatch,
+  ghostY,
   hashMatchState,
+  lockPiece,
   makePieceToken,
-  pieceKindAt,
   runReplay,
+  stepMatch,
+  tryRotateClockwise,
+  type ActivePiece,
   type AppearedItems,
+  type Board,
   type GameCommand,
   type MatchState,
   type SideId,
@@ -26,24 +35,139 @@ const NO_ITEMS: AppearedItems = {
   'queue-swap': false,
 };
 
-const gameCommandArb: fc.Arbitrary<GameCommand> = fc.oneof(
-  fc.record({ type: fc.constant('move' as const), dx: fc.constantFrom(-1 as const, 1 as const) }),
-  fc.constant({ type: 'rotate-clockwise' as const }),
-  fc.record({ type: fc.constant('soft-drop' as const), active: fc.boolean() }),
-  fc.constant({ type: 'hard-drop' as const }),
-  fc.record({ type: fc.constant('use-row-clear' as const), row: fc.integer({ min: -2, max: 21 }) }),
-  fc.constant({ type: 'use-freeze' as const }),
-  fc.constant({ type: 'use-queue-swap' as const }),
-);
+type PlacementFrame = {
+  readonly playerTieBreak: number;
+  readonly opponentTieBreak: number;
+};
 
-const framesArb: fc.Arbitrary<readonly TimedCommand[]> = fc.array(
-  fc.record({
-    tick: fc.integer({ min: 1, max: 40 }),
-    side: fc.constantFrom<SideId>('player', 'opponent'),
-    command: gameCommandArb,
-  }),
-  { maxLength: 16 },
-);
+function boardPenalty(board: Board): number {
+  const heights: number[] = [];
+  let holes = 0;
+  for (let x = 0; x < BOARD_WIDTH; x += 1) {
+    let firstOccupied = BOARD_ROWS;
+    let foundBlock = false;
+    for (let y = 0; y < BOARD_ROWS; y += 1) {
+      const occupied = board.cells[y * BOARD_WIDTH + x] !== null;
+      if (occupied && !foundBlock) {
+        firstOccupied = y;
+        foundBlock = true;
+      } else if (!occupied && foundBlock) {
+        holes += 1;
+      }
+    }
+    heights.push(BOARD_ROWS - firstOccupied);
+  }
+
+  const aggregateHeight = heights.reduce((sum, height) => sum + height, 0);
+  const bumpiness = heights.slice(1).reduce(
+    (sum, height, index) => sum + Math.abs(height - heights[index]!),
+    0,
+  );
+  return holes * 1_000 + aggregateHeight * 10 + bumpiness * 5 + Math.max(...heights) * 20;
+}
+
+function itemCommands(side: SideState, finalFrame: boolean): GameCommand[] {
+  const commands: GameCommand[] = [];
+  if (side.inventory.rowClear > 0) {
+    for (let y = BOARD_ROWS - 1; y >= HIDDEN_ROWS; y -= 1) {
+      const row = side.board.cells.slice(y * BOARD_WIDTH, (y + 1) * BOARD_WIDTH);
+      if (row.some((cell) => cell !== null)) {
+        commands.push({ type: 'use-row-clear', row: y - HIDDEN_ROWS });
+        break;
+      }
+    }
+  }
+  if (side.inventory.queueSwap > 0) commands.push({ type: 'use-queue-swap' });
+  if (finalFrame && side.inventory.freeze > 0) commands.push({ type: 'use-freeze' });
+  return commands;
+}
+
+function bestPlacementCommands(
+  sideState: SideState,
+  tieBreak: number,
+): GameCommand[] {
+  const candidates: { readonly commands: GameCommand[]; readonly score: number }[] = [];
+  const seen = new Set<string>();
+  for (let rotations = 0; rotations < 4; rotations += 1) {
+    const rotationCommands = Array.from(
+      { length: rotations },
+      () => ({ type: 'rotate-clockwise' } as const),
+    );
+    for (const shift of [-3, -1, 1, 3]) {
+      const commands: GameCommand[] = [
+        ...rotationCommands,
+        ...Array.from(
+          { length: Math.abs(shift) },
+          () => ({ type: 'move', dx: shift < 0 ? -1 : 1 } as const),
+        ),
+      ];
+      const initialActive = sideState.active;
+      if (initialActive === null) continue;
+      let active: ActivePiece = initialActive;
+      for (let rotation = 0; rotation < rotations; rotation += 1) {
+        active = tryRotateClockwise(sideState.board, active);
+      }
+      for (let move = 0; move < Math.abs(shift); move += 1) {
+        const candidate: ActivePiece = {
+          ...active,
+          x: active.x + (shift < 0 ? -1 : 1),
+        };
+        if (canPlace(sideState.board, candidate)) active = candidate;
+      }
+      const key = `${active.x}:${active.rotation}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const landed = { ...active, y: ghostY(sideState.board, active) };
+      const cleared = clearFullRows(lockPiece(sideState.board, landed));
+      candidates.push({
+        commands,
+        score: boardPenalty(cleared.board) - cleared.rows.length * 100_000,
+      });
+    }
+  }
+
+  candidates.sort((left, right) => left.score - right.score);
+  const finalists = candidates.slice(0, Math.min(3, candidates.length));
+  return [...finalists[tieBreak % finalists.length]!.commands, { type: 'hard-drop' }];
+}
+
+const framesArb: fc.Arbitrary<readonly PlacementFrame[]> = fc.array(fc.record({
+  playerTieBreak: fc.nat({ max: 1_000 }),
+  opponentTieBreak: fc.nat({ max: 1_000 }),
+}), { minLength: 10, maxLength: 14 });
+
+function buildCommandFrames(
+  matchSeed: number,
+  frames: readonly PlacementFrame[],
+): readonly TimedCommand[] {
+  let state = createMatch({ matchSeed, countdownTicks: 0 });
+  const allCommands: TimedCommand[] = [];
+  for (let index = 0; index < frames.length && state.status === 'playing'; index += 1) {
+    const tick = state.tick + 1;
+    const finalFrame = index === frames.length - 1;
+    const commands: TimedCommand[] = [];
+    for (const side of ['player', 'opponent'] as const) {
+      const items = itemCommands(state.sides[side], finalFrame);
+      const afterItems = applySideCommands(
+        state.sides[side],
+        items.filter(({ type }) => type !== 'use-freeze'),
+        side,
+      ).state;
+      const tieBreak = side === 'player'
+        ? frames[index]!.playerTieBreak
+        : frames[index]!.opponentTieBreak;
+      const games = [
+        ...items,
+        ...bestPlacementCommands(afterItems, tieBreak),
+      ];
+      commands.push(...games.map((command) => ({ tick, side, command })));
+    }
+    allCommands.push(...commands);
+    state = stepMatch(state, commands).state;
+  }
+  return allCommands;
+}
 
 const uint32Arb = fc.integer({ min: 0, max: 0xffff_ffff });
 
@@ -113,16 +237,36 @@ describe('canonical replay', () => {
   });
 
   it('replays equal seeds and command frames to equal hashes and ordered events for 500 runs', () => {
+    const eventCoverage = new Map<string, number>();
+    const usedItems = new Set<string>();
     fc.assert(fc.property(uint32Arb, framesArb, (matchSeed, frames) => {
-      const endTick = frames.reduce((max, frame) => Math.max(max, frame.tick), 0) + 300;
-      const replay = { version: 1 as const, config: { matchSeed }, endTick, commands: frames };
+      const commands = buildCommandFrames(matchSeed, frames);
+      const endTick = commands.reduce((max, frame) => Math.max(max, frame.tick), 0) + 10;
+      const replay = {
+        version: 1 as const,
+        config: { matchSeed, countdownTicks: 0 },
+        endTick,
+        commands,
+      };
       const a = runReplay(replay);
       const b = runReplay(replay);
 
       expect(a.hash).toBe(b.hash);
       expect(a.events).toEqual(b.events);
       assertMatchInvariants(a.state);
-    }), { numRuns: 500 });
+      for (const event of a.events) {
+        eventCoverage.set(event.type, (eventCoverage.get(event.type) ?? 0) + 1);
+        if (event.type === 'item-used' && event.item !== undefined) usedItems.add(event.item);
+      }
+    }), { numRuns: 500, seed: 0x5eed });
+
+    expect(eventCoverage.get('piece-locked')).toBeGreaterThan(10_000);
+    expect(eventCoverage.get('lines-cleared')).toBeGreaterThan(30);
+    expect(eventCoverage.get('attack-sent')).toBeGreaterThan(30);
+    expect(eventCoverage.get('garbage-landed')).toBeGreaterThan(30);
+    expect(eventCoverage.get('item-acquired')).toBeGreaterThan(8);
+    expect(eventCoverage.get('item-used')).toBeGreaterThan(12);
+    expect(usedItems).toEqual(new Set(['row-clear', 'freeze', 'queue-swap']));
   });
 });
 
@@ -198,22 +342,23 @@ describe('authoritative match invariants', () => {
 });
 
 describe('random stream properties', () => {
-  it('keeps the first fifty piece kinds independent of garbage and AI-mistake indices', () => {
-    fc.assert(fc.property(
-      uint32Arb,
-      fc.nat({ max: 1_000_000 }),
-      fc.nat({ max: 1_000_000 }),
-      (seed, garbageIndex, mistakeIndex) => {
-        const before = Array.from({ length: 50 }, (_, serial) => pieceKindAt(seed, serial));
-        for (let serial = 0; serial < 50; serial += 1) {
-          counterU32(seed, RandomStream.GARBAGE_TO_PLAYER, garbageIndex + serial);
-          counterU32(seed, RandomStream.GARBAGE_TO_OPPONENT, garbageIndex + serial * 3);
-          counterU32(seed, RandomStream.AI_MISTAKE, mistakeIndex + serial * 5);
-        }
-        const after = Array.from({ length: 50 }, (_, serial) => pieceKindAt(seed, serial));
-        expect(after).toEqual(before);
-      },
-    ), { numRuns: 200 });
+  it('derives distinct locked results for piece, item, garbage, and AI streams', () => {
+    const atSameCoordinate = [
+      RandomStream.PIECE_BAG,
+      RandomStream.ITEM,
+      RandomStream.GARBAGE_TO_PLAYER,
+      RandomStream.GARBAGE_TO_OPPONENT,
+      RandomStream.AI_MISTAKE,
+    ].map((stream) => counterU32(0x1234_5678, stream, 7, 3));
+
+    expect(atSameCoordinate).toEqual([
+      2_728_845_410,
+      1_075_701_743,
+      230_197_295,
+      1_049_563_627,
+      2_838_615_929,
+    ]);
+    expect(new Set(atSameCoordinate).size).toBe(atSameCoordinate.length);
   });
 
   it('marks between fourteen and sixteen percent of 100,000 eligible first pieces', () => {
