@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ProgressLoadResult,
   ProgressRepository,
@@ -18,7 +18,14 @@ import {
 } from './AppRoot';
 import type { AppServices } from './app-services';
 
-afterEach(cleanup);
+vi.mock('../render/BattleCanvas', () => ({
+  BattleCanvas: () => null,
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const floorOneProgress: ProgressState = {
   schemaVersion: 1,
@@ -147,6 +154,33 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
     expect(screen.getByTestId('boot-screen')).toBeInTheDocument();
     unmount();
+  });
+
+  it('mounts the real match screen through the default production route', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const repository = new TestProgressRepository(floorOneProgress);
+    const services: AppServices = {
+      platform: createTestPlatform(),
+      progressRepository: repository,
+    };
+    render(
+      <AppRoot
+        services={services}
+        createMatchSeed={() => 117}
+      />,
+    );
+
+    await enterMatch(user, 1);
+
+    expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
+    expect(screen.getByRole('region', { name: 'PLAYER battle status' }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'RIVAL battle status' }))
+      .toBeInTheDocument();
+    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
 
   it('routes tower to intro, match, result, retry, and back to tower', async () => {

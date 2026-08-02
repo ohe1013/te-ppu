@@ -8,6 +8,7 @@ import {
 import { EndingScreen } from '../ui/screens/EndingScreen';
 import { FloorIntroScreen } from '../ui/screens/FloorIntroScreen';
 import { BootScreen } from '../ui/screens/BootScreen';
+import { MatchScreen } from '../ui/screens/MatchScreen';
 import { ResultScreen } from '../ui/screens/ResultScreen';
 import { TowerScreen } from '../ui/screens/TowerScreen';
 import '../ui/screens/screens.css';
@@ -39,15 +40,6 @@ function createDefaultMatchSeed(): number {
   return value[0]!;
 }
 
-function DefaultMatchRoute({ floor }: MatchRouteViewProps) {
-  return (
-    <section className="screen-shell" data-testid="match-screen">
-      <p className="eyebrow">{floor}층 대전</p>
-      <h1>대전 화면을 준비하고 있습니다</h1>
-    </section>
-  );
-}
-
 function toControllerResult(result: MatchResult): 'WIN' | 'LOSS' | 'DRAW' {
   if (result === 'win') return 'WIN';
   if (result === 'loss') return 'LOSS';
@@ -56,7 +48,7 @@ function toControllerResult(result: MatchResult): 'WIN' | 'LOSS' | 'DRAW' {
 
 export function AppRoot({
   createMatchSeed = createDefaultMatchSeed,
-  renderMatch = (props) => <DefaultMatchRoute {...props} />,
+  renderMatch = (props) => <MatchScreen {...props} />,
   services,
 }: AppRootProps) {
   const boot = useBoot(services);
