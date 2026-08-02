@@ -94,6 +94,10 @@ describe('core consumer integration script', () => {
       command(state, 'opponent', { type: 'hard-drop' }),
     ]);
 
+    expect(result.events.filter(({ type }) => type === 'lines-cleared')).toEqual([
+      { type: 'lines-cleared', side: 'player', amount: 1, rows: [19] },
+      { type: 'lines-cleared', side: 'opponent', amount: 1, rows: [19] },
+    ]);
     expect(result.events).toContainEqual({ type: 'attack-sent', side: 'opponent', amount: 5 });
     expect(result.events.filter(({ type, side }) => type === 'garbage-landed' && side === 'player'))
       .toHaveLength(5);

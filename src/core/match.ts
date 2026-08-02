@@ -12,6 +12,7 @@ import {
   FREEZE_TICKS,
   HIDDEN_ROWS,
   BOARD_WIDTH,
+  VISIBLE_ROWS,
   type AiObservation,
   type GameCommand,
   type GameEvent,
@@ -234,7 +235,10 @@ export function stepMatch(
       outgoing[side] += normal.attack;
       readyForGarbage[side] = true;
       if (cleared.rows.length > 0) {
-        clearEvents.push({ type: 'lines-cleared', side, amount: cleared.rows.length });
+        const rows = cleared.rows
+          .map((row) => row - HIDDEN_ROWS)
+          .filter((row) => row >= 0 && row < VISIBLE_ROWS);
+        clearEvents.push({ type: 'lines-cleared', side, amount: cleared.rows.length, rows });
       }
       for (const item of cleared.markers) {
         clearEvents.push({ type: 'item-acquired', side, item });

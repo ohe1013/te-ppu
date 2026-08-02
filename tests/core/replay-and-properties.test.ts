@@ -6,6 +6,7 @@ import {
   CoreInvariantError,
   HIDDEN_ROWS,
   RandomStream,
+  VISIBLE_ROWS,
   applySideCommands,
   assertMatchInvariants,
   canPlace,
@@ -257,6 +258,20 @@ describe('canonical replay', () => {
       for (const event of a.events) {
         eventCoverage.set(event.type, (eventCoverage.get(event.type) ?? 0) + 1);
         if (event.type === 'item-used' && event.item !== undefined) usedItems.add(event.item);
+        if (event.type === 'lines-cleared') {
+          expect(event.rows).toBeDefined();
+          expect(event.rows).toEqual([...event.rows!].sort((left, right) => left - right));
+          expect(event.rows!.every((row) => Number.isInteger(row) && row >= 0 && row < VISIBLE_ROWS))
+            .toBe(true);
+        }
+        if (event.type === 'garbage-landed') {
+          expect(Number.isInteger(event.column)).toBe(true);
+          expect(event.column).toBeGreaterThanOrEqual(0);
+          expect(event.column).toBeLessThan(BOARD_WIDTH);
+          expect(Number.isInteger(event.landingRow)).toBe(true);
+          expect(event.landingRow).toBeGreaterThanOrEqual(-HIDDEN_ROWS);
+          expect(event.landingRow).toBeLessThan(VISIBLE_ROWS);
+        }
       }
     }), { numRuns: 500, seed: 0x5eed });
 
