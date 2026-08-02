@@ -604,7 +604,7 @@ Run `git add src/platform src/ui/match src/ui/screens/MatchScreen.tsx src/app/Ap
 
 ### Task 9: Add Playwright Coverage and the `.ait`/Sandbox/QR Release Gate
 
-**Files:** Create `playwright.config.ts`, `.env.e2e`, `src/test-support/e2e-driver.ts`, `src/test-support/e2e-platform.ts`, `tests/e2e/app-flow.spec.ts`, `tests/e2e/portrait-layout.spec.ts`, `tests/e2e/lifecycle-controls.spec.ts`, `scripts/verify-ait-package.mjs`, and `docs/qa/apps-in-toss-private-qr.md`; modify `src/app/app-services.ts`.
+**Files:** Create `playwright.config.ts`, `.env.e2e`, `src/test-support/e2e-driver.ts`, `src/test-support/e2e-platform.ts`, `tests/e2e/app-flow.spec.ts`, `tests/e2e/portrait-layout.spec.ts`, `tests/e2e/lifecycle-controls.spec.ts`, `scripts/verify-ait-package.mjs`, and `docs/qa/apps-in-toss-private-qr.md`; modify `src/app/app-services.ts`. Consume the checked-in `security/dependency-audit-baseline.json` and `docs/security/dependency-audit-exception.md` without regenerating the reviewed baseline.
 
 **Interfaces:**
 - Consumes: dependency-injected platform/match services from prior tasks.
@@ -653,7 +653,7 @@ Expected before driver: FAIL because `window.__TE_PPU_E2E__` is absent.
 
 Implement the E2E driver only behind `import.meta.env.VITE_E2E_DRIVER === 'true'`, rerun, and expect both portrait projects to pass with no horizontal overflow and equal board rectangles.
 
-- [ ] **Step 4: Add a deterministic `.ait` size gate**
+- [ ] **Step 4: Add a deterministic `.ait` size and dependency-content gate**
 
 ```js
 import { readFile, readdir } from 'node:fs/promises';
@@ -676,14 +676,43 @@ const [path] = files;
 const entries = unzipSync(new Uint8Array(await readFile(path)));
 const bytes = Object.values(entries).reduce((sum, value) => sum + value.byteLength, 0);
 if (bytes > 100 * 1024 * 1024) throw new Error(`Uncompressed bundle is ${bytes} bytes; limit is 104857600`);
-console.log(`AIT_OK ${path} ${bytes}`);
+
+const vulnerablePackages = [
+  '@fastify/middie',
+  'fastify',
+  'find-my-way',
+  'fast-uri',
+  'ip',
+  '@react-native-community/cli',
+  '@react-native-community/cli-doctor',
+  '@react-native-community/cli-hermes',
+];
+const decoder = new TextDecoder();
+const findings = [];
+for (const [entryName, data] of Object.entries(entries)) {
+  const normalizedName = entryName.replaceAll('\\', '/');
+  for (const packageName of vulnerablePackages) {
+    if (normalizedName.includes(`node_modules/${packageName}/`)) findings.push(`${entryName}:path:${packageName}`);
+  }
+  if (!/\.(?:js|cjs|mjs|json|map)$/i.test(entryName)) continue;
+  const source = decoder.decode(data);
+  for (const packageName of vulnerablePackages) {
+    if (source.includes(`"${packageName}"`) || source.includes(`'${packageName}'`)) {
+      findings.push(`${entryName}:content:${packageName}`);
+    }
+  }
+}
+if (findings.length > 0) throw new Error(`Vulnerable package marker found in .ait: ${findings.join(', ')}`);
+console.log(`AIT_OK ${path} ${bytes} vulnerablePackageMarkers=0`);
 ```
+
+First test this gate with a synthetic archive containing a quoted `@fastify/middie` module marker and require failure with the entry name, then test a marker-free archive and require `AIT_OK`. A passing artifact scan does not resolve the installed toolchain findings; it only supports the private-prototype reachability decision.
 
 - [ ] **Step 5: Run the automated preflight**
 
-Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build:ait`, and `npm run check:ait` separately; each must exit 0. Then scan all authored runtime/config surfaces, case-insensitively, for `eval(`, `new Function`, `webgpu`, `navigator.gpu`, `ReactDOMServer`, iframe markup, and dynamic iframe creation; require no findings in `src`, `index.html`, `public`, and the build configuration files.
+Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run check:dependency-audit`, `npm run build:ait`, and `npm run check:ait` separately under the supported Node 24 runtime; each must exit 0. Then scan all authored runtime/config surfaces, case-insensitively, for `eval(`, `new Function`, `webgpu`, `navigator.gpu`, `ReactDOMServer`, iframe markup, and dynamic iframe creation; require no findings in `src`, `index.html`, `public`, and the build configuration files.
 
-Expected: both Playwright projects pass; exactly one generated `.ait` exists; `check:ait` prints `AIT_OK` below 104857600 bytes; the source-policy scan finds nothing.
+Expected: both Playwright projects pass; `check:dependency-audit` prints each accepted finding as `KNOWN_EXCEPTION` and ends with `DEPENDENCY_AUDIT_BASELINE_MATCH ... status=PENDING_UPSTREAM` without claiming a clean audit; exactly one generated `.ait` exists; `check:ait` prints `AIT_OK` below 104857600 bytes with `vulnerablePackageMarkers=0`; the source-policy scan finds nothing.
 
 - [ ] **Step 6: Prepare and, when credentials/devices are available, record the private-device gate**
 
@@ -697,8 +726,9 @@ Write `docs/qa/apps-in-toss-private-qr.md` with checkboxes and exact expected re
 6. A ten-minute match shows no sustained frame collapse, white screen, runaway memory growth, or lost WebGL context; decorative particles reduce before critical effects disappear.
 7. The first usable screen appears within 10 seconds and no bottom sheet opens automatically.
 8. The build remains marked private and is not submitted for public review.
+9. Attach the Node 24 dependency-audit output and final `.ait` entry/content scan. Mark the accepted toolchain risk `PENDING_UPSTREAM`; a passing archive scan must not be recorded as zero dependency vulnerabilities.
 
-Expected for repository completion: every automated command passes and the checklist clearly marks device-only items `PENDING_EXTERNAL` rather than inventing evidence. Expected before any Apps-in-Toss release claim: a workspace member runs the sandbox and real-Toss private QR checks and attaches device/build/deployment evidence for every checkbox.
+Expected for repository completion: every automated command passes, device-only items are `PENDING_EXTERNAL`, and the reviewed dependency exception remains `PENDING_UPSTREAM` rather than inventing resolution. Expected before any private Apps-in-Toss QR claim: a workspace member runs the sandbox and real-Toss private QR checks and attaches device/build/deployment evidence for every checkbox. Public submission remains blocked by `docs/security/dependency-audit-exception.md` until an official compatible fix, a fully revalidated major migration, or separate formal risk acceptance.
 
 - [ ] **Step 7: Commit**
 
@@ -711,5 +741,6 @@ Run `git add playwright.config.ts .env.e2e src/test-support tests/e2e scripts/ve
 - [ ] Run `npm run typecheck` — expected: exit 0.
 - [ ] Run `npm test` — expected: all Vitest suites pass with 0 failures.
 - [ ] Run `npm run test:e2e` — expected: both 360x640 Chromium and 430x932 WebKit projects pass.
-- [ ] Run `npm run build:ait`, then run `npm run check:ait` — expected: exactly one `.ait` exists and prints `AIT_OK` under the 100 MB uncompressed limit.
-- [ ] Review `docs/qa/apps-in-toss-private-qr.md` — expected: automated evidence is recorded, unavailable sandbox/real-Toss device checks are explicitly `PENDING_EXTERNAL`, and public-release submission remains excluded.
+- [ ] Run `npm run check:dependency-audit` under Node 24 — expected: exact reviewed exceptions are printed, exit 0, and final status is `PENDING_UPSTREAM`, never a clean-audit claim.
+- [ ] Run `npm run build:ait`, then run `npm run check:ait` — expected: exactly one `.ait` exists and prints `AIT_OK` under the 100 MB uncompressed limit with zero vulnerable package markers in archive paths or textual payloads.
+- [ ] Review `docs/qa/apps-in-toss-private-qr.md` — expected: automated evidence is recorded, unavailable sandbox/real-Toss device checks are explicitly `PENDING_EXTERNAL`, dependency findings remain `PENDING_UPSTREAM`, and public-release submission remains excluded.

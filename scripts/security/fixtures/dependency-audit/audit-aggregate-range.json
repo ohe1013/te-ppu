@@ -1,0 +1,37 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "alpha": {
+      "name": "alpha",
+      "severity": "critical",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1001,
+          "name": "alpha",
+          "dependency": "alpha",
+          "title": "fixture alpha advisory",
+          "url": "https://github.com/advisories/GHSA-test-alpha",
+          "severity": "critical",
+          "cwe": ["CWE-100"],
+          "cvss": { "score": 9.1, "vectorString": "CVSS:3.1/AV:N" },
+          "range": "<=1.0.0"
+        }
+      ],
+      "effects": ["tool"],
+      "range": "<=0.0.0-registry-derived-churn",
+      "nodes": ["node_modules/alpha"],
+      "fixAvailable": false
+    },
+    "beta": {
+      "name": "beta",
+      "severity": "high",
+      "isDirect": false,
+      "via": ["alpha"],
+      "effects": ["tool"],
+      "range": "2.0.0 - 2.0.0",
+      "nodes": ["node_modules/beta"],
+      "fixAvailable": false
+    }
+  }
+}

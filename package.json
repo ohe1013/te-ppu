@@ -17,7 +17,8 @@
     "build:web": "vite build --mode browser",
     "build:ait": "ait build",
     "test:e2e": "playwright test",
-    "check:ait": "node scripts/verify-ait-package.mjs"
+    "check:ait": "node scripts/verify-ait-package.mjs",
+    "check:dependency-audit": "npm audit --omit=dev --json | node scripts/security/check-dependency-audit.mjs --baseline security/dependency-audit-baseline.json --lock package-lock.json"
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "2.10.8",
