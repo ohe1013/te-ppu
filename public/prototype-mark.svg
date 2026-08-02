@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" role="img" aria-label="탑 블록 대전 프로토타입 표시">
+  <rect width="600" height="600" fill="#6c5ce7" />
+  <rect x="105" y="345" width="110" height="150" fill="#ffffff" />
+  <rect x="245" y="255" width="110" height="240" fill="#ffffff" />
+  <rect x="385" y="150" width="110" height="345" fill="#ffffff" />
+</svg>
