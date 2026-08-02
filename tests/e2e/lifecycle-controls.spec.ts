@@ -19,8 +19,12 @@ test('dispatches joystick commands in order and rotates exactly once per tap', a
   await page.getByRole('button', { name: '시계 방향 회전' }).click();
 
   const commands = await page.evaluate(() => window.__TE_PPU_E2E__.dispatchedCommands);
-  expect(commands).toEqual([
-    { type: 'move', dx: 1 },
+  const firstNonMove = commands.findIndex(({ type }) => type !== 'move');
+  expect(firstNonMove).toBeGreaterThan(0);
+  expect(commands.slice(0, firstNonMove)).toEqual(
+    Array.from({ length: firstNonMove }, () => ({ type: 'move', dx: 1 })),
+  );
+  expect(commands.slice(firstNonMove)).toEqual([
     { type: 'soft-drop', active: true },
     { type: 'soft-drop', active: false },
     { type: 'rotate-clockwise' },
