@@ -1,4 +1,6 @@
-export type Floor = 1 | 2 | 3;
+import { isFinalFloor, type Floor } from '../progression';
+
+export type { Floor } from '../progression';
 
 export type MatchResult = 'win' | 'loss' | 'draw';
 
@@ -44,7 +46,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
         return { name: 'match', floor: route.floor, seed: event.seed };
       }
       if (event.type === 'continue') {
-        return route.floor === 3 && route.result === 'win'
+        return isFinalFloor(route.floor) && route.result === 'win'
           ? { name: 'ending' }
           : { name: 'tower' };
       }

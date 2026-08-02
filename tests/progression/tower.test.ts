@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PROGRESS,
+  FINAL_FLOOR,
+  FLOORS,
   applyFloorResult,
   canSelectFloor,
+  isFinalFloor,
+  isFloor,
   type ProgressState,
 } from '../../src/progression/index';
 
@@ -16,6 +20,14 @@ function unlockedProgress(): ProgressState {
 }
 
 describe('tower progression transitions', () => {
+  it('owns the exact five-floor domain in one contract', () => {
+    expect(FLOORS).toEqual([1, 2, 3, 4, 5]);
+    expect(FINAL_FLOOR).toBe(5);
+    expect([0, 6, '5', null].map(isFloor)).toEqual([false, false, false, false]);
+    expect(FLOORS.map(isFloor)).toEqual([true, true, true, true, true]);
+    expect(FLOORS.map(isFinalFloor)).toEqual([false, false, false, false, true]);
+  });
+
   it('unlocks floors 1 to 2 to 3 without relocking cleared or unlocked floors', () => {
     const afterFloor1 = applyFloorResult(DEFAULT_PROGRESS, 1, 'WIN');
     const afterFloor2 = applyFloorResult(afterFloor1, 2, 'WIN');

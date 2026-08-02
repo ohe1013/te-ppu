@@ -83,15 +83,22 @@ describe('reduceRoute', () => {
     )).toEqual({ name: 'tower' });
   });
 
-  it('ends only after continuing from a floor-three victory', () => {
+  it('returns to the tower after continuing from floor-three and floor-four victories', () => {
     expect(reduceRoute(
       { name: 'result', floor: 3, result: 'win' },
       { type: 'continue' },
-    )).toEqual({ name: 'ending' });
+    )).toEqual({ name: 'tower' });
     expect(reduceRoute(
-      { name: 'result', floor: 2, result: 'win' },
+      { name: 'result', floor: 4, result: 'win' },
       { type: 'continue' },
     )).toEqual({ name: 'tower' });
+  });
+
+  it('ends only after continuing from a floor-five victory', () => {
+    expect(reduceRoute(
+      { name: 'result', floor: 5, result: 'win' },
+      { type: 'continue' },
+    )).toEqual({ name: 'ending' });
   });
 
   it('returns to the tower from non-boot routes', () => {

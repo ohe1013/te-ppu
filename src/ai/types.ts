@@ -1,4 +1,5 @@
 import type { AiObservation, SideId, TimedCommand } from '../core/index';
+import type { Floor } from '../progression';
 
 export interface AiController {
   readonly side: SideId;
@@ -6,7 +7,7 @@ export interface AiController {
 }
 
 export interface AiFloorProfile {
-  readonly floor: 1 | 2 | 3;
+  readonly floor: Floor;
   readonly reactionTicks: 48 | 27 | 12;
   readonly lookahead: 0 | 1 | 2;
   readonly topK: 5 | 3 | 1;

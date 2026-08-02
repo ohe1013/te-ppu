@@ -1,7 +1,7 @@
 import type { ProgressState } from '../../progression/index';
 import type { Floor } from '../../app/app-route';
 
-const FLOORS: readonly Floor[] = [1, 2, 3];
+const FLOORS = [1, 2, 3] as const;
 
 export interface TowerScreenProps {
   readonly progress: ProgressState;

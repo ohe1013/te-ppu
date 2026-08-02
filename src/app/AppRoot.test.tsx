@@ -284,7 +284,7 @@ describe('AppRoot', () => {
     });
   });
 
-  it('shows the ending after a floor-three victory', async () => {
+  it('returns to the tower after a floor-three victory', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorThreeProgress);
     renderGame(repository);
@@ -294,7 +294,7 @@ describe('AppRoot', () => {
     await screen.findByTestId('result-screen');
     await user.click(screen.getByRole('button', { name: '계속' }));
 
-    expect(screen.getByTestId('ending-screen')).toBeInTheDocument();
+    expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
   });
 
   it('renders in-memory progress and retries a failed save through TowerController', async () => {
