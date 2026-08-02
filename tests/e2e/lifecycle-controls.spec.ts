@@ -65,11 +65,11 @@ test('pauses hidden match time and resumes only after the visible 3-2-1 countdow
   await expect(tick).not.toHaveText('0');
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('hidden'));
+  await expect(page.getByRole('group', { name: '게임 조작' }))
+    .toHaveAttribute('disabled', '');
   const hiddenTick = await tick.textContent();
   await page.waitForTimeout(250);
   await expect(tick).toHaveText(hiddenTick ?? '');
-  await expect(page.getByRole('group', { name: '게임 조작' }))
-    .toHaveAttribute('disabled', '');
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('visible'));
   const countdown = page.getByRole('status', { name: '게임 재개 카운트다운' });
