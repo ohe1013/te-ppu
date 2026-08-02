@@ -201,10 +201,12 @@ describe('lifecycle UI', () => {
     expect(audio.unlock).not.toHaveBeenCalled();
 
     visibilityState = 'visible';
-    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    });
     expect(screen.getByRole('status', { name: '게임 재개 카운트다운' }))
       .toHaveTextContent('3');
-    fireEvent.pointerDown(screen.getByTestId('match-screen'));
     expect(audio.unlock).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
     expect(screen.getByRole('status', { name: '게임 재개 카운트다운' }))

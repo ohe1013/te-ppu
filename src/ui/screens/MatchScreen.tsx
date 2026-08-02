@@ -157,6 +157,7 @@ export function MatchScreen({
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
   const [backgroundPaused, setBackgroundPaused] = useState(false);
+  const backgroundPausedRef = useRef(false);
   const [exitOpen, setExitOpen] = useState(false);
   const pendingAudioDestroyRef = useRef<{
     readonly audio: AudioPort;
@@ -174,6 +175,11 @@ export function MatchScreen({
     handleRowSelectionChange(false);
   }, [handleRowSelectionChange, resetBus]);
 
+  const handleBackgroundChange = useCallback((paused: boolean) => {
+    backgroundPausedRef.current = paused;
+    setBackgroundPaused(paused);
+  }, []);
+
   useEffect(() => {
     audio.setEnabled(settings.soundEnabled);
   }, [audio, settings.soundEnabled]);
@@ -181,13 +187,13 @@ export function MatchScreen({
   useEffect(() => {
     const lifecycle = createAppLifecycleCoordinator({
       audio,
-      onBackgroundChange: setBackgroundPaused,
+      onBackgroundChange: handleBackgroundChange,
       onCountdownChange: setResumeCountdown,
       resetAll: resetEveryInput,
       setPaused: match.setPaused,
     });
     return () => lifecycle.destroy();
-  }, [audio, match.setPaused, resetEveryInput]);
+  }, [audio, handleBackgroundChange, match.setPaused, resetEveryInput]);
 
   useEffect(() => {
     const pending = pendingAudioDestroyRef.current;
@@ -263,6 +269,7 @@ export function MatchScreen({
   function unlockAudio(): void {
     if (
       resumeCountdown !== null
+      || backgroundPausedRef.current
       || document.visibilityState !== 'visible'
     ) return;
     ignoreEffect(() => audio.unlock());
