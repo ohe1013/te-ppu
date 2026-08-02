@@ -145,11 +145,11 @@ describe('tower controller', () => {
     expect(controller.progress.highestUnlockedFloor).toBe(result === 'WIN' ? 2 : 1);
   });
 
-  it('routes a floor 3 win to the ending and keeps cleared floors replayable', async () => {
+  it('routes a floor 3 win to the result and keeps cleared floors replayable', async () => {
     const controller = new TowerController(unlockedFloor3(), new RecordingRepository());
     controller.startFloor(3, 30);
 
-    expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'ENDING' });
+    expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
     expect(controller.progress.clearedFloors).toEqual({ 1: true, 2: true, 3: true });
     expect(controller.startFloor(1, 31).ok).toBe(true);
   });

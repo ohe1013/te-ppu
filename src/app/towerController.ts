@@ -12,6 +12,7 @@ import {
 import {
   applyFloorResult,
   canSelectFloor,
+  isFinalFloor,
   type Floor,
   type FloorResult,
   type ProgressRepository,
@@ -56,7 +57,7 @@ function cloneProgress(state: ProgressState): ProgressState {
 function routeFor(floor: Floor, result: FloorResult): TowerRoute {
   if (result === 'LOSS') return 'RESULT_LOSS';
   if (result === 'DRAW') return 'RESULT_DRAW';
-  return floor === 3 ? 'ENDING' : 'RESULT_WIN';
+  return isFinalFloor(floor) ? 'ENDING' : 'RESULT_WIN';
 }
 
 function deriveAiSeed(matchSeed: number): number {
