@@ -337,7 +337,24 @@ describe('MatchScreen', () => {
     clock.install();
 
     const { unmount } = render(
-      <MatchScreen floor={2} seed={73} onFinished={vi.fn()} />,
+      <MatchScreen
+        floor={2}
+        onFinished={vi.fn()}
+        onRetrySettingsSave={async () => true}
+        onSettingsChange={async () => true}
+        platform={{
+          close: async () => undefined,
+          getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
+          getInitialSafeArea: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+          haptic: async () => undefined,
+          kind: 'browser',
+          lockPortrait: async () => undefined,
+          subscribeSafeArea: () => () => undefined,
+        }}
+        seed={73}
+        settings={{ hapticsEnabled: true, soundEnabled: true }}
+        settingsSaveFailed={false}
+      />,
     );
 
     expect(aiSpies.createAiController).toHaveBeenCalledWith(AI_FLOOR_PROFILES[1], 73);

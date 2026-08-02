@@ -1,4 +1,5 @@
 .match-screen {
+  position: relative;
   width: min(100%, 30rem);
   height: 100dvh;
   min-height: 0;
@@ -10,6 +11,149 @@
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   align-content: stretch;
   gap: 0.5rem;
+}
+
+.match-header__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.match-header__button,
+.exit-confirmation button,
+.settings-panel button {
+  min-height: 2rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 0.55rem;
+  color: #fff;
+  background: rgb(67 53 120 / 82%);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.settings-panel {
+  position: fixed;
+  z-index: 20;
+  top: max(3.25rem, calc(var(--safe-area-top, 0px) + 2.5rem));
+  right: max(0.75rem, var(--safe-area-right, 0px));
+  width: min(15rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+  color: #fff;
+  background: rgb(34 27 61 / 96%);
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 32%);
+}
+
+.settings-panel h2,
+.settings-panel p {
+  margin: 0;
+}
+
+.settings-panel h2 {
+  font-size: 0.9rem;
+}
+
+.settings-panel label {
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.settings-panel input {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.settings-panel__save-error {
+  display: grid;
+  gap: 0.45rem;
+  color: #ffd2dc;
+  font-size: 0.7rem;
+}
+
+.resume-countdown,
+.exit-confirmation__backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(16 12 31 / 68%);
+}
+
+.resume-countdown {
+  pointer-events: none;
+}
+
+.resume-countdown span {
+  display: grid;
+  width: 5rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 0.2rem solid rgb(255 255 255 / 78%);
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(105 84 232 / 86%);
+  box-shadow: 0 0 2rem rgb(105 84 232 / 55%);
+  font-size: 2.5rem;
+  font-weight: 900;
+}
+
+.exit-confirmation {
+  width: min(20rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 1rem;
+  color: #fff;
+  background: #241d3f;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 42%);
+}
+
+.exit-confirmation h2,
+.exit-confirmation p {
+  margin: 0;
+}
+
+.exit-confirmation h2 {
+  font-size: 1.05rem;
+}
+
+.exit-confirmation p {
+  margin-top: 0.45rem;
+  color: #d8d2e8;
+  font-size: 0.78rem;
+}
+
+.exit-confirmation__error {
+  color: #ffb7c8 !important;
+}
+
+.exit-confirmation__actions {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.exit-confirmation__actions button:last-child {
+  background: #d94b73;
+}
+
+.match-header__button:focus-visible,
+.exit-confirmation button:focus-visible,
+.settings-panel button:focus-visible,
+.settings-panel input:focus-visible {
+  outline: 0.2rem solid #fff;
+  outline-offset: 0.15rem;
 }
 
 .match-header {

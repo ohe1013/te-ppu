@@ -183,6 +183,46 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
 
+  it('passes live settings to a match and persists match settings through TowerController', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    const services: AppServices = {
+      platform: createTestPlatform(),
+      progressRepository: repository,
+    };
+    render(
+      <AppRoot
+        services={services}
+        createMatchSeed={() => 119}
+        renderMatch={(props) => (
+          <section data-testid="settings-match">
+            <span>{String(props.settings.soundEnabled)}</span>
+            <button
+              type="button"
+              onClick={() => void props.onSettingsChange({ soundEnabled: false })}
+            >
+              disable sound
+            </button>
+          </section>
+        )}
+      />,
+    );
+
+    await screen.findByTestId('tower-screen');
+    await user.click(screen.getByRole('button', { name: '1층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(screen.getByTestId('settings-match')).toBeInTheDocument();
+    expect(screen.getByText('true')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'disable sound' }));
+
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    expect(repository.saves[0]?.settings).toEqual({
+      hapticsEnabled: true,
+      soundEnabled: false,
+    });
+    expect(screen.getByText('false')).toBeInTheDocument();
+  });
+
   it('routes tower to intro, match, result, retry, and back to tower', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository({

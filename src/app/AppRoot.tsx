@@ -19,6 +19,8 @@ import {
   type MatchResult,
 } from './app-route';
 import type { AppServices } from './app-services';
+import type { ProgressState } from '../progression/index';
+import type { PlatformPort } from '../platform/platform-port';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
 
@@ -26,6 +28,13 @@ export interface MatchRouteViewProps {
   readonly floor: Floor;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => Promise<void>;
+  readonly onRetrySettingsSave: () => Promise<boolean>;
+  readonly onSettingsChange: (
+    settings: Partial<ProgressState['settings']>,
+  ) => Promise<boolean>;
+  readonly platform: PlatformPort;
+  readonly settings: ProgressState['settings'];
+  readonly settingsSaveFailed: boolean;
 }
 
 export interface AppRootProps {
@@ -109,13 +118,25 @@ export function AppRoot({
     refreshControllerView();
   }
 
-  async function retrySave(): Promise<void> {
-    if (controller === null || saveRetrying) return;
+  async function retrySave(): Promise<boolean> {
+    if (controller === null || saveRetrying) return false;
     setSaveRetrying(true);
-    await controller.retrySave();
-    if (!mountedRef.current) return;
+    const result = await controller.retrySave();
+    if (!mountedRef.current) return result.ok;
     setSaveRetrying(false);
     refreshControllerView();
+    return result.ok;
+  }
+
+  async function updateSettings(
+    settings: Partial<ProgressState['settings']>,
+  ): Promise<boolean> {
+    if (controller === null) return false;
+    const save = controller.updateSettings(settings);
+    refreshControllerView();
+    const result = await save;
+    if (mountedRef.current) refreshControllerView();
+    return result.ok;
   }
 
   let content: ReactNode;
@@ -146,6 +167,11 @@ export function AppRoot({
           floor: route.floor,
           seed: route.seed,
           onFinished: finishMatch,
+          onRetrySettingsSave: retrySave,
+          onSettingsChange: updateSettings,
+          platform: services.platform,
+          settings: controller.progress.settings,
+          settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
         });
         break;
       case 'result':

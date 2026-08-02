@@ -5,9 +5,33 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMatch, createPublicMatchView } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
+import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
 const useMatchLoopMock = vi.hoisted(() => vi.fn());
+
+const lifecycleProps: Pick<
+  MatchScreenProps,
+  | 'onRetrySettingsSave'
+  | 'onSettingsChange'
+  | 'platform'
+  | 'settings'
+  | 'settingsSaveFailed'
+> = {
+  onRetrySettingsSave: async () => true,
+  onSettingsChange: async () => true,
+  platform: {
+    close: async () => undefined,
+    getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
+    getInitialSafeArea: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+    haptic: async () => undefined,
+    kind: 'browser',
+    lockPortrait: async () => undefined,
+    subscribeSafeArea: () => () => undefined,
+  },
+  settings: { hapticsEnabled: true, soundEnabled: true },
+  settingsSaveFailed: false,
+};
 
 vi.mock('../../app/use-match-loop', () => ({
   useMatchLoop: useMatchLoopMock,
@@ -74,7 +98,7 @@ afterEach(() => {
 
 describe('MatchScreen', () => {
   it('composes two symmetric public HUDs around the single battle canvas', () => {
-    render(<MatchScreen floor={2} seed={17} onFinished={vi.fn()} />);
+    render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
     expect(screen.getByRole('region', { name: 'PLAYER battle status' }))
       .toBeInTheDocument();
@@ -92,7 +116,7 @@ describe('MatchScreen', () => {
   it('connects item actions, row highlighting, joystick, and rotation to the match loop', () => {
     const loop = activeLoop();
     useMatchLoopMock.mockReturnValue(loop);
-    render(<MatchScreen floor={2} seed={17} onFinished={vi.fn()} />);
+    render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: '상대 정지 · 1회' }));
     fireEvent.click(screen.getByRole('button', { name: '다음 교환 · 3회' }));
@@ -131,7 +155,7 @@ describe('MatchScreen', () => {
     const loop = activeLoop();
     useMatchLoopMock.mockReturnValue(loop);
     const result = render(
-      <MatchScreen floor={2} seed={17} onFinished={vi.fn()} />,
+      <MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole('button', { name: '행 제거 · 1회' }));
     expect(screen.getByRole('group', { name: '행 제거 대상 선택' })).toBeVisible();
@@ -146,7 +170,9 @@ describe('MatchScreen', () => {
         },
       },
     });
-    result.rerender(<MatchScreen floor={2} seed={17} onFinished={vi.fn()} />);
+    result.rerender(
+      <MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />,
+    );
 
     expect(screen.queryByRole('group', { name: '행 제거 대상 선택' }))
       .not.toBeInTheDocument();
