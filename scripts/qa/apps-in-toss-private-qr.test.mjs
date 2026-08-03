@@ -5,20 +5,26 @@ import test from 'node:test';
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 const checklistUrl = new URL('../../docs/qa/apps-in-toss-private-qr.md', import.meta.url);
 
-test('exposes the delivery gate tests and source-policy scan as package commands', () => {
+test('exposes asset, QR-config, isolated-build, and delivery gate commands', () => {
   assert.equal(packageJson.devDependencies['@apps-in-toss/ait-format'], '1.0.0');
+  assert.equal(packageJson.scripts['check:assets'], 'node scripts/validate-assets.mjs');
+  assert.equal(packageJson.scripts['check:ait-config'], 'node scripts/qa/check-ait-icon-env.mjs');
+  assert.equal(packageJson.scripts['build:web'], 'npm run check:assets && vite build --mode browser');
+  assert.equal(packageJson.scripts['build:ait'], 'npm run check:ait-config && node scripts/build-ait.mjs');
+  assert.equal(packageJson.scripts['check:ait'], 'node scripts/verify-ait-package.mjs');
   assert.equal(
     packageJson.scripts['check:source-policy'],
     'node scripts/security/check-authored-source-policy.mjs',
   );
-  assert.match(
-    packageJson.scripts['test:delivery-gates'],
-    /scripts\/verify-ait-package\.test\.mjs/,
-  );
-  assert.match(
-    packageJson.scripts['test:delivery-gates'],
-    /scripts\/security\/check-authored-source-policy\.test\.mjs/,
-  );
+  for (const testPath of [
+    'scripts/validate-assets.test.mjs',
+    'scripts/qa/check-ait-icon-env.test.mjs',
+    'scripts/build-ait.test.mjs',
+    'scripts/verify-ait-package.test.mjs',
+    'scripts/security/check-authored-source-policy.test.mjs',
+  ]) {
+    assert.ok(packageJson.scripts['test:delivery-gates'].includes(testPath), testPath);
+  }
 });
 
 test('keeps external, upstream, and public-release states explicit in the QR checklist', () => {
@@ -34,11 +40,28 @@ test('keeps external, upstream, and public-release states explicit in the QR che
     'npm test',
     'npm run test:delivery-gates',
     'npm run test:e2e',
+    'npm run check:assets',
+    'npm run check:ait-config',
     'npm run check:dependency-audit',
     'npm run build:ait',
-    'npm run check:ait',
+    'npm run check:ait -- artifacts/ait/game.ait',
     'npm run check:source-policy',
   ]) {
     assert.ok(checklist.includes(`\`${command}\``), `missing evidence placeholder for ${command}`);
   }
+});
+
+test('records QR metadata as automated config/package proof while retaining console and device evidence externally', () => {
+  const checklist = readFileSync(checklistUrl, 'utf8');
+  for (const variable of [
+    'QR_EVIDENCE',
+    'AIT_APP_NAME',
+    'AIT_DISPLAY_NAME',
+    'AIT_ICON_URL',
+    'AIT_ARTIFACT_PATH',
+  ]) {
+    assert.ok(checklist.includes(variable), 'missing ' + variable + ' in checklist');
+  }
+  assert.match(checklist, /automated config\/package proof/i);
+  assert.match(checklist, /PENDING_EXTERNAL.*console|console.*PENDING_EXTERNAL/is);
 });

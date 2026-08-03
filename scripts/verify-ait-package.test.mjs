@@ -83,8 +83,8 @@ async function writeArchiveWithZip(root, relativePath, zipBytes) {
   writeFileSync(archivePath, Buffer.from(archive));
 }
 
-function runChecker(root) {
-  const result = spawnSync(process.execPath, [checkerPath], {
+function runChecker(root, ...artifactPaths) {
+  const result = spawnSync(process.execPath, [checkerPath, ...artifactPaths], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -98,7 +98,7 @@ test('accepts one marker-free archive and reports every entry in stable order', 
       'manifest.json': strToU8('{"app":"te-ppu"}'),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'release/game.ait');
 
     assert.equal(result.status, 0, result.output);
     assert.equal(result.output, [
@@ -117,7 +117,7 @@ test('rejects vulnerable package markers in paths and textual content with exact
       'vendor/node_modules/fast-uri/index.js': strToU8('export const version = 1;'),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     assert.match(
@@ -135,7 +135,7 @@ test('rejects duplicate ZIP entry names before one payload can overwrite another
     ]);
     await writeArchiveWithZip(root, 'game.ait', zipBytes);
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     assert.match(result.output, /AIT_FAIL Duplicate ZIP entry in \.ait: dup\.js/);
@@ -161,7 +161,7 @@ test('checks every reviewed vulnerable package marker', async () => {
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     for (const packageName of packageNames) {
@@ -188,7 +188,7 @@ test('rejects template-literal package markers in every scanned JavaScript forma
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     for (const finding of [
@@ -215,61 +215,77 @@ test('applies the uncompressed limit while reading the embedded AIT zip', async 
     await writeArchive(root, 'game.ait', { 'large.bin': new Uint8Array(3) });
 
     await assert.rejects(
-      () => verifyAitPackage(root, 2),
+      () => verifyAitPackage(join(root, 'game.ait'), 2),
       /Uncompressed bundle is 3 bytes; limit is 2/,
     );
   });
 });
 
-test('rejects multiple archives and lists them in deterministic relative-path order', async () => {
+test('requires exactly one explicit artifact path and never scans a workspace', async () => {
   await withWorkspace(async (root) => {
-    await writeArchive(root, 'z/game.ait', { 'z.js': strToU8('z') });
-    await writeArchive(root, 'a.ait', { 'a.js': strToU8('a') });
+    await writeArchive(root, 'release/game.ait', { 'main.js': strToU8('ready') });
+    await writeArchive(root, 'stale.ait', { 'old.js': strToU8('stale') });
 
     const result = runChecker(root);
 
     assert.equal(result.status, 1, result.output);
-    assert.match(
-      result.output,
-      /AIT_FAIL Expected exactly one \.ait file, found 2: a\.ait, z\/game\.ait/,
-    );
+    assert.match(result.output, /AIT_FAIL.*explicit.*\.ait.*path/i);
   });
 });
 
-test('rejects a workspace with no AIT artifact', () => (
-  withWorkspace((root) => {
-    const result = runChecker(root);
-
-    assert.equal(result.status, 1, result.output);
-    assert.equal(result.output, 'AIT_FAIL Expected exactly one .ait file, found 0\n');
-  })
-));
-
-test('ignores artifacts belonging to sibling git worktrees', async () => {
+test('inspects only the supplied artifact and ignores stale sibling AIT files', async () => {
   await withWorkspace(async (root) => {
     await writeArchive(root, 'release/game.ait', { 'main.js': strToU8('ready') });
-    await writeArchive(root, '.worktrees/other/stale.ait', { 'old.js': strToU8('stale') });
+    await writeArchive(root, 'stale.ait', {
+      'node_modules/fast-uri/index.js': strToU8('stale marker'),
+    });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'release/game.ait');
 
     assert.equal(result.status, 0, result.output);
     assert.match(result.output, /AIT_OK release\/game\.ait /);
-    assert.doesNotMatch(result.output, /stale\.ait|old\.js/);
+    assert.doesNotMatch(result.output, /stale\.ait|fast-uri/);
   });
 });
 
-test('discovers AIT extensions and skips tool directories case-insensitively', async () => {
+test('requires the local logo and every authored manifest ref when an explicit archive ships assets', async () => {
   await withWorkspace(async (root) => {
-    await writeArchive(root, 'RELEASE/GAME.AIT', { 'main.js': strToU8('ready') });
-    await writeArchive(root, '.GIT/stale.ait', { 'git.js': strToU8('stale') });
-    await writeArchive(root, '.WORKTREES/stale.ait', { 'tree.js': strToU8('stale') });
-    await writeArchive(root, 'NODE_MODULES/stale.ait', { 'dependency.js': strToU8('stale') });
+    const manifest = {
+      schemaVersion: 1,
+      mode: 'assets',
+      brand: { logo: { path: 'brand/app-logo.png' } },
+      common: { tile: { path: 'blocks/tile-i.png' } },
+    };
+    await writeArchive(root, 'game.ait', {
+      'web/assets/manifest.json': strToU8(JSON.stringify(manifest)),
+      'web/assets/brand/app-logo.png': new Uint8Array([1]),
+      'web/assets/blocks/tile-i.png': new Uint8Array([2]),
+    });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 0, result.output);
-    assert.match(result.output, /AIT_OK RELEASE\/GAME\.AIT /);
-    assert.doesNotMatch(result.output, /stale\.ait/);
+    assert.match(result.output, /AIT_OK game\.ait /);
+  });
+});
+
+test('rejects an explicitly selected assets archive with an absent authored manifest ref', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = {
+      schemaVersion: 1,
+      mode: 'assets',
+      brand: { logo: { path: 'brand/app-logo.png' } },
+      common: { tile: { path: 'blocks/tile-i.png' } },
+    };
+    await writeArchive(root, 'game.ait', {
+      'web/assets/manifest.json': strToU8(JSON.stringify(manifest)),
+      'web/assets/brand/app-logo.png': new Uint8Array([1]),
+    });
+
+    const result = runChecker(root, 'game.ait');
+
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /authored asset.*blocks\/tile-i\.png/i);
   });
 });
 
@@ -285,7 +301,7 @@ test('does not confuse a source-map identifier named ip with the ip package', as
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 0, result.output);
     assert.match(result.output, /AIT_OK game\.ait /);
@@ -310,7 +326,7 @@ test('does not confuse nested indexed source-map names with package markers', as
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 0, result.output);
     assert.match(result.output, /AIT_OK game\.ait /);
@@ -329,7 +345,7 @@ test('rejects a vulnerable package path carried inside source-map content', asyn
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     assert.match(result.output, /bundle\.js\.map:content:ip/);
@@ -348,7 +364,7 @@ test('rejects a quoted package marker inside source-map sourcesContent', async (
       })),
     });
 
-    const result = runChecker(root);
+    const result = runChecker(root, 'game.ait');
 
     assert.equal(result.status, 1, result.output);
     assert.match(result.output, /bundle\.js\.map:content:@fastify\/middie/);
