@@ -4,6 +4,7 @@ import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { runAiSimulation } from '../src/sim/aiSimulation';
+import { FLOORS, isFloor, type Floor } from '../src/progression/index';
 
 const VALIDATION_MATCHES_PER_FLOOR = 1_000;
 const HEAP_SAMPLE_INTERVAL = 250;
@@ -13,14 +14,14 @@ const MAX_VALIDATION_WORKERS = 4;
 const MAX_HEAP_DELTA = 32 * 1024 * 1024;
 const MAX_LINEAR_BYTES_PER_1_000 = 256 * 1024;
 
-interface ValidationTask {
+export interface ValidationTask {
   readonly index: number;
-  readonly floor: 1 | 2 | 3;
+  readonly floor: Floor;
   readonly seed: number;
 }
 
-interface ValidationSelection {
-  readonly floor?: 1 | 2 | 3;
+export interface ValidationSelection {
+  readonly floor?: Floor;
   readonly seedFrom?: number;
   readonly seedTo?: number;
 }
@@ -33,10 +34,39 @@ interface MatchResult extends ValidationTask {
   readonly durationMs: number;
 }
 
-interface WorkerHeapSample {
+export interface WorkerCounters {
+  localMatches: number;
+  readonly wins: Record<Floor, number>;
+  readonly completedByFloor: Record<Floor, number>;
+  rejectedCommands: number;
+  cappedMatches: number;
+}
+
+export interface WorkerHeapSample {
   readonly checkpoint: number;
   readonly localMatches: number;
   readonly heapUsed: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+}
+
+export interface WorkerCheckpointAggregate {
+  readonly completed: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+  readonly heapUsed: number;
+}
+
+export interface ResultDerivedValidationCounters {
+  readonly totalMatches: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
 }
 
 interface HeapSample {
@@ -67,8 +97,9 @@ export interface ValidationReport {
   readonly cappedMatches: number;
   readonly rejectedCases: readonly Pick<MatchResult, 'floor' | 'seed' | 'rejectedCommands'>[];
   readonly cappedCases: readonly Pick<MatchResult, 'floor' | 'seed' | 'ticks'>[];
-  readonly winRates: Readonly<Record<1 | 2 | 3, number>>;
-  readonly floorDurationsMs: Readonly<Record<1 | 2 | 3, number>>;
+  readonly winRates: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly floorDurationsMs: Readonly<Record<Floor, number>>;
   readonly elapsedMs: number;
   readonly workers: readonly WorkerReport[];
   readonly heapSamples: readonly HeapSample[];
@@ -81,14 +112,14 @@ export interface ValidationCheckpoint {
   readonly total: number;
   readonly rejectedCommands: number;
   readonly cappedMatches: number;
-  readonly wins: Readonly<Record<1 | 2 | 3, number>>;
-  readonly completedByFloor: Readonly<Record<1 | 2 | 3, number>>;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
   readonly heapUsed: number;
   readonly heapDelta: number;
 }
 
 export interface ValidationProblemCase {
-  readonly floor: 1 | 2 | 3;
+  readonly floor: Floor;
   readonly seed: number;
   readonly ticks: number;
   readonly rejectedCommands: number;
@@ -100,26 +131,210 @@ export interface ValidationOptions extends ValidationSelection {
   readonly onProblemCase?: (result: ValidationProblemCase) => void;
 }
 
-function tasksFor(matchesPerFloor: number): readonly ValidationTask[] {
+export interface ValidationArguments extends ValidationSelection {
+  readonly tickLimit?: number;
+}
+
+function assertPositiveSafeInteger(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive safe integer`);
+  }
+}
+
+const zeroByFloor = (): Record<Floor, number> => ({
+  1: 0,
+  2: 0,
+  3: 0,
+  4: 0,
+  5: 0,
+});
+
+export function updateWorkerCounters(
+  counters: WorkerCounters,
+  result: Pick<MatchResult, 'floor' | 'outcome' | 'rejectedCommands' | 'exceededTickLimit'>,
+): void {
+  counters.localMatches += 1;
+  counters.completedByFloor[result.floor] += 1;
+  if (result.outcome === 'player') counters.wins[result.floor] += 1;
+  counters.rejectedCommands += result.rejectedCommands;
+  if (result.exceededTickLimit) counters.cappedMatches += 1;
+}
+
+export function aggregateWorkerCheckpointSamples(
+  checkpoint: number,
+  samples: ReadonlyMap<number, WorkerHeapSample>,
+): WorkerCheckpointAggregate {
+  const wins = zeroByFloor();
+  const completedByFloor = zeroByFloor();
+  let completed = 0;
+  let rejectedCommands = 0;
+  let cappedMatches = 0;
+  let heapUsed = 0;
+  for (const [workerIndex, sample] of samples) {
+    if (sample.checkpoint !== checkpoint) {
+      throw new Error(
+        `worker ${workerIndex} sample checkpoint ${sample.checkpoint} `
+          + `does not match aggregate checkpoint ${checkpoint}`,
+      );
+    }
+    const sampleCompleted = Object.values(sample.completedByFloor)
+      .reduce((sum, count) => sum + count, 0);
+    if (sampleCompleted !== sample.localMatches) {
+      throw new Error(
+        `worker ${workerIndex} heap checkpoint ${checkpoint} completedByFloor `
+          + `${sampleCompleted} does not match localMatches ${sample.localMatches}`,
+      );
+    }
+    completed += sample.localMatches;
+    for (const floor of FLOORS) {
+      wins[floor] += sample.wins[floor];
+      completedByFloor[floor] += sample.completedByFloor[floor];
+    }
+    rejectedCommands += sample.rejectedCommands;
+    cappedMatches += sample.cappedMatches;
+    heapUsed += sample.heapUsed;
+  }
+  const completedFromFloors = Object.values(completedByFloor)
+    .reduce((sum, count) => sum + count, 0);
+  if (completedFromFloors !== completed) {
+    throw new Error(
+      `heap checkpoint ${checkpoint} completedByFloor ${completedFromFloors} `
+        + `does not match completed ${completed}`,
+    );
+  }
+  return {
+    completed,
+    wins,
+    completedByFloor,
+    rejectedCommands,
+    cappedMatches,
+    heapUsed,
+  };
+}
+
+export function assertFinalWorkerSnapshotCountersMatchResults(
+  checkpoint: number,
+  samples: ReadonlyMap<number, WorkerHeapSample>,
+  expected: ResultDerivedValidationCounters,
+): void {
+  const aggregate = aggregateWorkerCheckpointSamples(checkpoint, samples);
+  const compare = (name: string, actual: number, resultDerived: number) => {
+    if (actual !== resultDerived) {
+      throw new Error(
+        `final worker ${name} ${actual} does not match result-derived ${resultDerived}`,
+      );
+    }
+  };
+  compare('totalMatches', aggregate.completed, expected.totalMatches);
+  for (const floor of FLOORS) {
+    compare(`floor ${floor} wins`, aggregate.wins[floor], expected.wins[floor]);
+    compare(
+      `floor ${floor} completed`,
+      aggregate.completedByFloor[floor],
+      expected.completedByFloor[floor],
+    );
+  }
+  compare('rejectedCommands', aggregate.rejectedCommands, expected.rejectedCommands);
+  compare('cappedMatches', aggregate.cappedMatches, expected.cappedMatches);
+}
+
+export function buildSelectedValidationTasks(
+  matchesPerFloor: number,
+  selection: ValidationSelection,
+): readonly ValidationTask[] {
+  assertPositiveSafeInteger('matchesPerFloor', matchesPerFloor);
+  if (selection.floor !== undefined && !isFloor(selection.floor)) {
+    throw new RangeError(`floor must be one of ${FLOORS.join(', ')}`);
+  }
+  const seedFrom = selection.seedFrom ?? 1;
+  const seedTo = selection.seedTo ?? matchesPerFloor;
+  assertPositiveSafeInteger('seedFrom', seedFrom);
+  assertPositiveSafeInteger('seedTo', seedTo);
+  if (seedFrom > seedTo) throw new RangeError('seedFrom must not exceed seedTo');
+  if (seedTo > matchesPerFloor) {
+    throw new RangeError('seedTo must not exceed matchesPerFloor');
+  }
+
+  const selectedFloors: readonly Floor[] = selection.floor === undefined
+    ? FLOORS
+    : [selection.floor];
   const tasks: ValidationTask[] = [];
-  for (const floor of [1, 2, 3] as const) {
-    for (let seedIndex = 0; seedIndex < matchesPerFloor; seedIndex += 1) {
-      tasks.push({ index: tasks.length, floor, seed: seedIndex + 1 });
+  for (const floor of selectedFloors) {
+    for (let seed = seedFrom; seed <= seedTo; seed += 1) {
+      tasks.push({ index: tasks.length, floor, seed });
     }
   }
   return tasks;
 }
 
-function selectedTasks(
-  matchesPerFloor: number,
-  selection: ValidationSelection,
+export function assertExactValidationTaskCoverage(
+  expectedTasks: readonly ValidationTask[],
+  results: readonly Pick<ValidationTask, 'index' | 'floor' | 'seed'>[],
+): void {
+  const resultsByIndex = new Map<number, Pick<ValidationTask, 'index' | 'floor' | 'seed'>>();
+  for (const result of results) {
+    if (resultsByIndex.has(result.index)) {
+      throw new Error(`duplicate validation result index ${result.index}`);
+    }
+    resultsByIndex.set(result.index, result);
+  }
+  const expectedIndices = new Set<number>();
+  for (const expected of expectedTasks) {
+    expectedIndices.add(expected.index);
+    const result = resultsByIndex.get(expected.index);
+    if (result === undefined) {
+      throw new Error(
+        `missing validation result index ${expected.index} `
+          + `(floor ${expected.floor}, seed ${expected.seed})`,
+      );
+    }
+    if (result.floor !== expected.floor || result.seed !== expected.seed) {
+      throw new Error(
+        `validation result index ${expected.index} expected floor ${expected.floor} `
+          + `seed ${expected.seed}, received floor ${result.floor} seed ${result.seed}`,
+      );
+    }
+  }
+  for (const result of results) {
+    if (!expectedIndices.has(result.index)) {
+      throw new Error(
+        `unexpected validation result index ${result.index} `
+          + `(floor ${result.floor}, seed ${result.seed})`,
+      );
+    }
+  }
+}
+
+export function selectValidationTasksForWorker(
+  tasks: readonly ValidationTask[],
+  workerIndex: number,
+  workerCount: number,
 ): readonly ValidationTask[] {
-  const seedFrom = selection.seedFrom ?? 1;
-  const seedTo = selection.seedTo ?? matchesPerFloor;
-  return tasksFor(matchesPerFloor).filter(({ floor, seed }) =>
-    (selection.floor === undefined || floor === selection.floor)
-      && seed >= seedFrom
-      && seed <= seedTo);
+  if (!Number.isSafeInteger(workerIndex) || workerIndex < 0) {
+    throw new RangeError('workerIndex must be a non-negative safe integer');
+  }
+  assertPositiveSafeInteger('workerCount', workerCount);
+  if (workerIndex >= workerCount) {
+    throw new RangeError('workerIndex must be less than workerCount');
+  }
+  return tasks.filter(({ index }) => index % workerCount === workerIndex);
+}
+
+export function recordValidationWorkerTasksDone(
+  doneWorkers: Set<number>,
+  workerIndex: number,
+  workerCount: number,
+): boolean {
+  if (!Number.isSafeInteger(workerIndex) || workerIndex < 0) {
+    throw new RangeError('workerIndex must be a non-negative safe integer');
+  }
+  assertPositiveSafeInteger('workerCount', workerCount);
+  if (workerIndex >= workerCount) {
+    throw new RangeError('workerIndex must be less than workerCount');
+  }
+  if (doneWorkers.has(workerIndex)) return false;
+  doneWorkers.add(workerIndex);
+  return doneWorkers.size === workerCount;
 }
 
 function collectHeap(): number {
@@ -166,13 +381,24 @@ async function runWorkerProcess(options: {
   readonly workerCount: number;
   readonly matchesPerFloor: number;
   readonly totalTasks: number;
-  readonly floor?: 1 | 2 | 3;
+  readonly floor?: Floor;
   readonly seedFrom?: number;
   readonly seedTo?: number;
   readonly tickLimit?: number;
 }): Promise<void> {
-  const tasks = selectedTasks(options.matchesPerFloor, options)
-    .filter(({ index }) => index % options.workerCount === options.workerIndex);
+  assertPositiveSafeInteger('totalTasks', options.totalTasks);
+  if (options.tickLimit !== undefined) assertPositiveSafeInteger('tickLimit', options.tickLimit);
+  const selected = buildSelectedValidationTasks(options.matchesPerFloor, options);
+  if (selected.length !== options.totalTasks) {
+    throw new Error(
+      `worker totalTasks ${options.totalTasks} does not match selected task count ${selected.length}`,
+    );
+  }
+  const tasks = selectValidationTasksForWorker(
+    selected,
+    options.workerIndex,
+    options.workerCount,
+  );
   const controls: ControlMessage[] = [];
   let wake: (() => void) | undefined;
   const controlsInput = createInterface({ input: process.stdin });
@@ -186,6 +412,13 @@ async function runWorkerProcess(options: {
     wake?.();
     wake = undefined;
   });
+  const counters: WorkerCounters = {
+    localMatches: 0,
+    wins: zeroByFloor(),
+    completedByFloor: zeroByFloor(),
+    rejectedCommands: 0,
+    cappedMatches: 0,
+  };
   const drainControls = (): boolean => {
     let shouldExit = false;
     for (const control of controls.splice(0)) {
@@ -196,8 +429,12 @@ async function runWorkerProcess(options: {
           type: 'heap',
           workerIndex: options.workerIndex,
           checkpoint: control.checkpoint,
-          localMatches: completed,
+          localMatches: counters.localMatches,
           heapUsed: collectHeap(),
+          wins: { ...counters.wins },
+          completedByFloor: { ...counters.completedByFloor },
+          rejectedCommands: counters.rejectedCommands,
+          cappedMatches: counters.cappedMatches,
         });
         if (control.checkpoint === options.totalTasks) shouldExit = true;
       }
@@ -208,13 +445,16 @@ async function runWorkerProcess(options: {
   if (tasks[0] !== undefined) {
     runAiSimulation({ seed: tasks[0].seed, floor: tasks[0].floor, tickLimit: 240 });
   }
-  let completed = 0;
   emit({
     type: 'heap',
     workerIndex: options.workerIndex,
     checkpoint: 0,
     localMatches: 0,
     heapUsed: collectHeap(),
+    wins: { ...counters.wins },
+    completedByFloor: { ...counters.completedByFloor },
+    rejectedCommands: counters.rejectedCommands,
+    cappedMatches: counters.cappedMatches,
   });
 
   let finalCheckpointHandled = false;
@@ -225,7 +465,12 @@ async function runWorkerProcess(options: {
       floor: task.floor,
       ...(options.tickLimit === undefined ? {} : { tickLimit: options.tickLimit }),
     });
-    completed += 1;
+    updateWorkerCounters(counters, {
+      floor: task.floor,
+      outcome: summary.outcome,
+      rejectedCommands: summary.rejectedCommands,
+      exceededTickLimit: summary.exceededTickLimit,
+    });
     emit({
       type: 'match',
       result: {
@@ -264,7 +509,7 @@ function launchWorker(
     readonly workerCount: number;
     readonly matchesPerFloor: number;
     readonly totalTasks: number;
-    readonly floor?: 1 | 2 | 3;
+    readonly floor?: Floor;
     readonly seedFrom?: number;
     readonly seedTo?: number;
     readonly tickLimit?: number;
@@ -278,7 +523,10 @@ function launchWorker(
     fileURLToPath(import.meta.url),
     '--worker',
     JSON.stringify(options),
-  ], { stdio: ['pipe', 'pipe', 'pipe'] });
+  ], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, AI_VALIDATION_WORKER: '1' },
+  });
   const heapSamples: WorkerHeapSample[] = [];
   const completion = new Promise<void>((resolveWorker, rejectWorker) => {
     let stderr = '';
@@ -311,10 +559,9 @@ export async function runValidation(
   onCheckpoint?: (checkpoint: ValidationCheckpoint) => void,
   options: ValidationOptions = {},
 ): Promise<ValidationReport> {
-  if (!Number.isInteger(matchesPerFloor) || matchesPerFloor <= 0) {
-    throw new RangeError('matchesPerFloor must be a positive integer');
-  }
-  const tasks = selectedTasks(matchesPerFloor, options);
+  assertPositiveSafeInteger('matchesPerFloor', matchesPerFloor);
+  if (options.tickLimit !== undefined) assertPositiveSafeInteger('tickLimit', options.tickLimit);
+  const tasks = buildSelectedValidationTasks(matchesPerFloor, options);
   if (tasks.length === 0) throw new RangeError('validation selection must contain at least one match');
   const workerCount = Math.min(
     MAX_VALIDATION_WORKERS,
@@ -326,6 +573,7 @@ export async function runValidation(
   const results: MatchResult[] = [];
   const heaps = new Map<number, Map<number, WorkerHeapSample>>();
   const requestedCheckpoints = new Set<number>([0]);
+  const doneWorkers = new Set<number>();
   const handles: WorkerHandle[] = [];
 
   const aggregateCheckpoint = (checkpoint: number) => {
@@ -333,32 +581,18 @@ export async function runValidation(
     if (checkpointHeaps?.size !== workerCount) return;
     const baselineHeaps = heaps.get(0);
     if (baselineHeaps?.size !== workerCount) return;
-    const completedResults = results;
-    const wins: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
-    const completedByFloor: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
-    let rejectedCommands = 0;
-    let cappedMatches = 0;
-    for (const result of completedResults) {
-      completedByFloor[result.floor] += 1;
-      if (result.outcome === 'player') wins[result.floor] += 1;
-      rejectedCommands += result.rejectedCommands;
-      if (result.exceededTickLimit) cappedMatches += 1;
-    }
-    const actualMatches = [...checkpointHeaps.values()]
-      .reduce((sum, sample) => sum + sample.localMatches, 0);
-    const heapUsed = [...checkpointHeaps.values()]
-      .reduce((sum, sample) => sum + sample.heapUsed, 0);
+    const aggregate = aggregateWorkerCheckpointSamples(checkpoint, checkpointHeaps);
     const baseline = [...baselineHeaps.values()]
       .reduce((sum, sample) => sum + sample.heapUsed, 0);
     onCheckpoint?.({
-      completed: actualMatches,
+      completed: aggregate.completed,
       total,
-      rejectedCommands,
-      cappedMatches,
-      wins,
-      completedByFloor,
-      heapUsed,
-      heapDelta: heapUsed - baseline,
+      rejectedCommands: aggregate.rejectedCommands,
+      cappedMatches: aggregate.cappedMatches,
+      wins: aggregate.wins,
+      completedByFloor: aggregate.completedByFloor,
+      heapUsed: aggregate.heapUsed,
+      heapDelta: aggregate.heapUsed - baseline,
     });
   };
 
@@ -381,7 +615,7 @@ export async function runValidation(
         });
       }
       const completed = results.length;
-      if (completed % HEAP_SAMPLE_INTERVAL === 0 || completed === total) requestHeap(completed);
+      if (completed < total && completed % HEAP_SAMPLE_INTERVAL === 0) requestHeap(completed);
       return;
     }
     if (message.type === 'heap') {
@@ -390,6 +624,10 @@ export async function runValidation(
       heaps.set(message.checkpoint, checkpoint);
       aggregateCheckpoint(message.checkpoint);
       return;
+    }
+    if (message.type === 'tasks-done'
+      && recordValidationWorkerTasksDone(doneWorkers, message.workerIndex, workerCount)) {
+      requestHeap(total);
     }
   };
 
@@ -420,16 +658,26 @@ export async function runValidation(
   );
 
   const ordered = results.sort((left, right) => left.index - right.index);
-  const wins: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
-  const floorDurationsMs: Record<1 | 2 | 3, number> = { 1: 0, 2: 0, 3: 0 };
+  assertExactValidationTaskCoverage(tasks, ordered);
+  const wins = zeroByFloor();
+  const completedByFloor = zeroByFloor();
+  const floorDurationsMs = zeroByFloor();
   let rejectedCommands = 0;
   let cappedMatches = 0;
   for (const result of ordered) {
+    completedByFloor[result.floor] += 1;
     if (result.outcome === 'player') wins[result.floor] += 1;
     rejectedCommands += result.rejectedCommands;
     if (result.exceededTickLimit) cappedMatches += 1;
     floorDurationsMs[result.floor] += result.durationMs;
   }
+  assertFinalWorkerSnapshotCountersMatchResults(total, heaps.get(total)!, {
+    totalMatches: ordered.length,
+    wins,
+    completedByFloor,
+    rejectedCommands,
+    cappedMatches,
+  });
   const heapSamples = [...heaps.entries()]
     .filter(([, values]) => values.size === workerCount)
     .map(([, values]) => ({
@@ -445,8 +693,13 @@ export async function runValidation(
       finalHeapDelta: samples.at(-1)!.heapUsed - samples[0]!.heapUsed,
     };
   });
+  const winRates = zeroByFloor();
+  for (const floor of FLOORS) {
+    const completed = completedByFloor[floor];
+    winRates[floor] = completed === 0 ? 0 : wins[floor] / completed;
+  }
   return {
-    matchesPerFloor,
+    matchesPerFloor: Math.max(...Object.values(completedByFloor)),
     totalMatches: ordered.length,
     rejectedCommands,
     cappedMatches,
@@ -456,11 +709,8 @@ export async function runValidation(
     cappedCases: ordered
       .filter(({ exceededTickLimit }) => exceededTickLimit)
       .map(({ floor, seed, ticks }) => ({ floor, seed, ticks })),
-    winRates: {
-      1: wins[1] / ordered.filter(({ floor }) => floor === 1).length,
-      2: wins[2] / ordered.filter(({ floor }) => floor === 2).length,
-      3: wins[3] / ordered.filter(({ floor }) => floor === 3).length,
-    },
+    winRates,
+    completedByFloor,
     floorDurationsMs,
     elapsedMs: performance.now() - started,
     workers,
@@ -470,18 +720,37 @@ export async function runValidation(
   };
 }
 
-function assertValidation(report: ValidationReport): void {
-  if (report.totalMatches !== VALIDATION_MATCHES_PER_FLOOR * 3) {
-    throw new Error(`expected 3000 matches, received ${report.totalMatches}`);
+export function assertCanonicalFloorMatchCounts(
+  completedByFloor: Readonly<Record<Floor, number>>,
+): void {
+  for (const floor of FLOORS) {
+    if (completedByFloor[floor] !== VALIDATION_MATCHES_PER_FLOOR) {
+      throw new Error(
+        `expected ${VALIDATION_MATCHES_PER_FLOOR} floor ${floor} matches, `
+          + `received ${completedByFloor[floor]}`,
+      );
+    }
   }
+}
+
+function assertValidation(report: ValidationReport): void {
+  const expectedMatches = VALIDATION_MATCHES_PER_FLOOR * FLOORS.length;
+  if (report.totalMatches !== expectedMatches) {
+    throw new Error(`expected ${expectedMatches} matches, received ${report.totalMatches}`);
+  }
+  assertCanonicalFloorMatchCounts(report.completedByFloor);
   if (report.rejectedCommands !== 0) {
     throw new Error(`expected zero rejected commands: ${JSON.stringify(report.rejectedCases)}`);
   }
   if (report.cappedMatches !== 0) {
     throw new Error(`expected zero capped matches: ${JSON.stringify(report.cappedCases)}`);
   }
-  if (!(report.winRates[1] < report.winRates[2] && report.winRates[2] < report.winRates[3])) {
-    throw new Error(`win rates are not strictly ordered: ${JSON.stringify(report.winRates)}`);
+  for (let index = 1; index < FLOORS.length; index += 1) {
+    const lower = FLOORS[index - 1]!;
+    const upper = FLOORS[index]!;
+    if (!(report.winRates[lower] < report.winRates[upper])) {
+      throw new Error(`win rates are not strictly ordered: ${JSON.stringify(report.winRates)}`);
+    }
   }
   if (report.finalHeapDelta > MAX_HEAP_DELTA) {
     throw new Error(`aggregate heap delta ${report.finalHeapDelta} exceeds 32 MiB`);
@@ -500,19 +769,62 @@ function formatRate(wins: number, completed: number): string {
   return completed === 0 ? '-' : `${(wins / completed * 100).toFixed(1)}%`;
 }
 
-function argumentValue(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  return index < 0 ? undefined : process.argv[index + 1];
-}
+const VALIDATION_ARGUMENT_NAMES = [
+  '--floor',
+  '--seed-from',
+  '--seed-to',
+  '--tick-limit',
+] as const;
 
-function positiveIntegerArgument(name: string): number | undefined {
-  const raw = argumentValue(name);
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new RangeError(`${name} must be a positive integer`);
+type ValidationArgumentName = typeof VALIDATION_ARGUMENT_NAMES[number];
+
+export function parseValidationArguments(args: readonly string[]): ValidationArguments {
+  const values: Partial<Record<ValidationArgumentName, number>> = {};
+  const seen = new Set<ValidationArgumentName>();
+  for (let index = 0; index < args.length; index += 2) {
+    const argument = args[index]!;
+    if (!argument.startsWith('--')) {
+      throw new Error(`unexpected positional argument: ${argument}`);
+    }
+    if (argument.includes('=')) {
+      throw new Error(`equals syntax is not supported: ${argument}`);
+    }
+    if (!VALIDATION_ARGUMENT_NAMES.includes(argument as ValidationArgumentName)) {
+      throw new Error(`unknown argument: ${argument}`);
+    }
+    const name = argument as ValidationArgumentName;
+    if (seen.has(name)) throw new Error(`duplicate argument: ${name}`);
+    const raw = args[index + 1];
+    if (raw === undefined || raw.startsWith('--')) {
+      throw new Error(`missing value for argument: ${name}`);
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new RangeError(`${name} must be a positive safe integer`);
+    }
+    seen.add(name);
+    values[name] = value;
   }
-  return value;
+
+  const floorValue = values['--floor'];
+  if (floorValue !== undefined && !isFloor(floorValue)) {
+    throw new RangeError(`--floor must be one of ${FLOORS.join(', ')}`);
+  }
+  const seedFrom = values['--seed-from'];
+  const seedTo = values['--seed-to'];
+  const filtered = floorValue !== undefined || seedFrom !== undefined || seedTo !== undefined;
+  if (filtered && (floorValue === undefined || seedFrom === undefined || seedTo === undefined)) {
+    throw new Error('filtered validation requires --floor, --seed-from, and --seed-to');
+  }
+  if (seedFrom !== undefined && seedTo !== undefined && seedFrom > seedTo) {
+    throw new RangeError('--seed-from must not exceed --seed-to');
+  }
+  return {
+    ...(floorValue === undefined ? {} : { floor: floorValue }),
+    ...(seedFrom === undefined ? {} : { seedFrom }),
+    ...(seedTo === undefined ? {} : { seedTo }),
+    ...(values['--tick-limit'] === undefined ? {} : { tickLimit: values['--tick-limit'] }),
+  };
 }
 
 function logProblemCase(problem: ValidationProblemCase): void {
@@ -523,24 +835,11 @@ function logProblemCase(problem: ValidationProblemCase): void {
 }
 
 async function main(): Promise<void> {
-  const floorValue = positiveIntegerArgument('--floor');
-  if (floorValue !== undefined && floorValue !== 1 && floorValue !== 2 && floorValue !== 3) {
-    throw new RangeError('--floor must be 1, 2, or 3');
-  }
-  const floor = floorValue as 1 | 2 | 3 | undefined;
-  const seedFrom = positiveIntegerArgument('--seed-from');
-  const seedTo = positiveIntegerArgument('--seed-to');
-  const tickLimit = positiveIntegerArgument('--tick-limit');
+  const { floor, seedFrom, seedTo, tickLimit } = parseValidationArguments(process.argv.slice(2));
   const filtered = floor !== undefined || seedFrom !== undefined || seedTo !== undefined;
-  if (filtered && (floor === undefined || seedFrom === undefined || seedTo === undefined)) {
-    throw new Error('filtered validation requires --floor, --seed-from, and --seed-to');
-  }
-  if (seedFrom !== undefined && seedTo !== undefined && seedFrom > seedTo) {
-    throw new RangeError('--seed-from must not exceed --seed-to');
-  }
   const matchesPerFloor = filtered ? seedTo! : VALIDATION_MATCHES_PER_FLOOR;
   const report = await runValidation(matchesPerFloor, (checkpoint) => {
-    const rates = ([1, 2, 3] as const).map((floor) =>
+    const rates = FLOORS.map((floor) =>
       formatRate(checkpoint.wins[floor], checkpoint.completedByFloor[floor]));
     console.error(
       `checkpoint=${checkpoint.completed}/${checkpoint.total}; rates=${rates.join('/')}; `
@@ -565,17 +864,24 @@ async function main(): Promise<void> {
     return;
   }
   assertValidation(report);
-  const rate = (floor: 1 | 2 | 3) => (report.winRates[floor] * 100).toFixed(1);
+  const rates = FLOORS.map((floor) => (report.winRates[floor] * 100).toFixed(1));
+  const ordering = FLOORS.map((floor) => `floor${floor}`).join(' < ');
   console.log(
-    `3000 matches; rejected=0; capped=0; floor1 < floor2 < floor3; heap=PASS; `
-      + `wins=${rate(1)}%<${rate(2)}%<${rate(3)}%; elapsed=${(report.elapsedMs / 1000).toFixed(1)}s`,
+    `${report.totalMatches} matches; rejected=0; capped=0; ${ordering}; heap=PASS; `
+      + `wins=${rates.join('%<')}%; elapsed=${(report.elapsedMs / 1000).toFixed(1)}s`,
   );
 }
 
-const workerArgument = process.argv.indexOf('--worker');
-if (workerArgument >= 0) {
-  await runWorkerProcess(JSON.parse(process.argv[workerArgument + 1]!));
-} else if (process.argv[1] !== undefined
-  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  await main();
+const isExecutedScript = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+if (isExecutedScript) {
+  const args = process.argv.slice(2);
+  if (process.env.AI_VALIDATION_WORKER === '1') {
+    if (args.length !== 2 || args[0] !== '--worker') {
+      throw new Error('validation worker requires exactly --worker <json-options>');
+    }
+    await runWorkerProcess(JSON.parse(args[1]!));
+  } else {
+    await main();
+  }
 }

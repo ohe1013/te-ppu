@@ -87,12 +87,21 @@ describe('headless AI simulation', () => {
   });
 
   it('repeats the outcome, tick count, and SHA-256 hashes for one seed and floor', () => {
-    const first = runAiSimulation({ seed: 91, floor: 2, tickLimit: 240 });
-    const second = runAiSimulation({ seed: 91, floor: 2, tickLimit: 240 });
+    const first = runAiSimulation({ seed: 91, floor: 3, tickLimit: 240 });
+    const second = runAiSimulation({ seed: 91, floor: 3, tickLimit: 240 });
 
     expect(second).toEqual(first);
     expect(first.stateHash).toMatch(/^[0-9a-f]{64}$/);
     expect(first.eventHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.rejectedCommands).toBe(0);
+    expect(first.exceededTickLimit).toBe(true);
+  });
+
+  it.each([4, 5] as const)('runs canonical floor %i deterministically', (floor) => {
+    const first = runAiSimulation({ seed: 91, floor, tickLimit: 240 });
+    const second = runAiSimulation({ seed: 91, floor, tickLimit: 240 });
+
+    expect(second).toEqual(first);
     expect(first.rejectedCommands).toBe(0);
     expect(first.exceededTickLimit).toBe(true);
   });
@@ -162,9 +171,9 @@ describe('headless AI simulation', () => {
     expect(summary.exceededTickLimit).toBe(true);
   });
 
-  it('resolves the known long floor-2 benchmark matches before the production cap', () => {
+  it('resolves the known long floor-3 benchmark matches before the production cap', () => {
     for (const seed of [75, 111]) {
-      const summary = runAiSimulation({ seed, floor: 2 });
+      const summary = runAiSimulation({ seed, floor: 3 });
 
       expect(summary.exceededTickLimit).toBe(false);
       expect(summary.ticks).toBeLessThan(MAX_SIMULATION_TICKS);
@@ -172,11 +181,21 @@ describe('headless AI simulation', () => {
   }, 60_000);
 
   it('resolves calibration regression seed 552 before the production cap', () => {
-    const summary = runAiSimulation({ seed: 552, floor: 2 });
+    const summary = runAiSimulation({ seed: 552, floor: 3 });
 
     expect(summary.exceededTickLimit).toBe(false);
     expect(summary.ticks).toBeLessThan(MAX_SIMULATION_TICKS);
   }, 60_000);
+
+  it('resolves all floor-4 capped regression seeds before the production cap', () => {
+    for (const seed of [27, 61, 85, 86, 111, 129, 150, 169, 272, 406, 429, 435, 608, 620, 642, 832, 881]) {
+      const summary = runAiSimulation({ seed, floor: 4 });
+
+      expect(summary.rejectedCommands).toBe(0);
+      expect(summary.exceededTickLimit).toBe(false);
+      expect(summary.ticks).toBeLessThan(MAX_SIMULATION_TICKS);
+    }
+  }, 3_600_000);
 
   it('audits an unowned item command as rejected from authoritative behavior', () => {
     let emitted = false;

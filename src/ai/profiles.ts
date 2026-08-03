@@ -72,8 +72,8 @@ export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
     weights: {
       aggregateHeight: -0.4,
       maxHeight: -1,
-      holes: -4.25,
-      bumpiness: -0.55,
+      holes: -4.27,
+      bumpiness: -0.63,
       clearedLines: 1.35,
       combo: 1.35,
       incomingOffset: 1.45,

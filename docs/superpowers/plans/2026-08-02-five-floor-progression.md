@@ -287,7 +287,7 @@ const expectedWeights = [
   [-0.25, -0.5, -2, -0.25, 0.8, 0.3, 0.4, 0.5, 0],
   [-0.3, -0.65, -2.75, -0.35, 1, 0.6, 0.75, 0.8, 0.1],
   [-0.35, -0.8, -3.5, -0.45, 1.2, 0.9, 1.1, 1.2, 0.2],
-  [-0.4, -1, -4.25, -0.55, 1.35, 1.35, 1.45, 1.35, 0.4],
+  [-0.4, -1, -4.27, -0.63, 1.35, 1.35, 1.45, 1.35, 0.4],
   [-0.45, -1.2, -5, -0.65, 1.5, 1.8, 1.8, 1.5, 0.6],
 ] as const;
 ```
@@ -400,10 +400,13 @@ git commit -m "feat: present all five tower floors"
 ### Task 6: Five-Floor Deterministic Simulation Gate
 
 **Files:**
+- Modify: `src/ai/profiles.ts`
 - Modify: `src/sim/aiSimulation.ts`
 - Modify: `scripts/validate-ai-simulations.ts`
+- Modify: `tests/ai/profiles.test.ts`
 - Modify: `tests/sim/aiSimulation.test.ts`
 - Modify: `tests/sim/validation-workers.test.ts`
+- Modify: `docs/superpowers/specs/2026-08-02-hybrid-fantasy-pixel-asset-design.md`
 
 **Interfaces:**
 - Consumes: `FLOORS`, `Floor`, `isFloor`, and `getAiFloorProfile`.
@@ -428,16 +431,16 @@ Expected: FAIL with totals/record keys limited to floors 1–3.
 - [ ] **Step 3: Generalize simulation and validation records**
 
 ```ts
-const zeroByFloor = (): Record<Floor, number> => ({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+const selectedFloors = selection.floor === undefined ? FLOORS : [selection.floor];
 
-for (const floor of FLOORS) {
-  for (let seedIndex = 0; seedIndex < matchesPerFloor; seedIndex += 1) {
-    tasks.push({ index: tasks.length, floor, seed: seedIndex + 1 });
+for (const floor of selectedFloors) {
+  for (let seed = seedFrom; seed <= seedTo; seed += 1) {
+    tasks.push({ index: tasks.length, floor, seed });
   }
 }
 ```
 
-Use `getAiFloorProfile` and `isFloor` for runtime lookup/CLI validation. Replace hard-coded three-floor comparisons with an adjacent-pair loop over `FLOORS`. Full validation expects `VALIDATION_MATCHES_PER_FLOOR * FLOORS.length`, exactly 5,000 matches.
+Use `getAiFloorProfile` and `isFloor` for runtime lookup/CLI validation. Build only the selected floor/seed window, require positive safe integers before allocation, and distribute compact task indices exactly once across workers. The parent requests the final heap checkpoint after every distinct worker reports `tasks-done`, then asserts exact task index/floor/seed coverage and reconciles final worker counters with result-derived counters. Internal `--worker` mode requires the spawn-only environment gate and exact worker argv. Replace hard-coded three-floor comparisons with an adjacent-pair loop over `FLOORS`. Full validation expects `VALIDATION_MATCHES_PER_FLOOR * FLOORS.length`, exactly 5,000 matches.
 
 - [ ] **Step 4: Run focused simulation tests and five-floor smoke validation**
 
@@ -454,7 +457,7 @@ Expected: PASS with `floor1 < floor2 < floor3 < floor4 < floor5`, zero rejected/
 - [ ] **Step 6: Commit simulation validation**
 
 ```powershell
-git add src/sim/aiSimulation.ts scripts/validate-ai-simulations.ts tests/sim
+git add src/ai/profiles.ts src/sim/aiSimulation.ts scripts/validate-ai-simulations.ts tests/ai/profiles.test.ts tests/sim/aiSimulation.test.ts tests/sim/validation-workers.test.ts docs/superpowers/plans/2026-08-02-five-floor-progression.md docs/superpowers/specs/2026-08-02-hybrid-fantasy-pixel-asset-design.md
 git commit -m "test: validate five-floor AI progression"
 ```
 

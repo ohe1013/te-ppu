@@ -12,13 +12,14 @@ import {
   type TimedCommand,
 } from '../core/index';
 import {
-  AI_FLOOR_PROFILES,
   createAiController,
+  getAiFloorProfile,
   type AiController,
 } from '../ai/index';
+import type { Floor } from '../progression/index';
 
 export const MAX_SIMULATION_TICKS = 36_000;
-export const AI_SIMULATION_BENCHMARK_FLOOR = 2 as const;
+export const AI_SIMULATION_BENCHMARK_FLOOR = 3 as const;
 export const AI_SIMULATION_BENCHMARK_BASE_TICKS = 27;
 export const AI_SIMULATION_BENCHMARK_REAL_TICKS = 23;
 
@@ -37,7 +38,7 @@ export interface SimulationSummary {
 
 export interface AiSimulationOptions {
   readonly seed: number;
-  readonly floor: 1 | 2 | 3;
+  readonly floor: Floor;
   readonly tickLimit?: number;
   readonly controllers?: Readonly<Record<SideId, SimulationController>>;
 }
@@ -72,10 +73,6 @@ function appendFramedJson(hash: Hash, value: unknown): void {
   hash.update(String(Buffer.byteLength(json)));
   hash.update(':');
   hash.update(json);
-}
-
-function profileFor(floor: 1 | 2 | 3) {
-  return AI_FLOOR_PROFILES[floor - 1]!;
 }
 
 function deriveControllerSeed(matchSeed: number, side: SideId): number {
@@ -113,17 +110,17 @@ export function createBenchmarkController(
 
 function defaultControllers(
   matchSeed: number,
-  testedFloor: 1 | 2 | 3,
+  testedFloor: Floor,
 ): Readonly<Record<SideId, SimulationController>> {
   return {
     player: createAiController(
-      profileFor(testedFloor),
+      getAiFloorProfile(testedFloor),
       deriveControllerSeed(matchSeed, 'player'),
       'player',
     ),
     opponent: createBenchmarkController(
       createAiController(
-        profileFor(AI_SIMULATION_BENCHMARK_FLOOR),
+        getAiFloorProfile(AI_SIMULATION_BENCHMARK_FLOOR),
         deriveControllerSeed(matchSeed, 'opponent'),
         'opponent',
       ),
