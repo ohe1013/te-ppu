@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -195,5 +196,31 @@ test('rejects a stale exact root archive when a zero-exit CLI produces no fresh 
 
     assert.equal(read(source), 'stale exact archive');
     assert.equal(read(destination), 'old destination archive');
+  });
+});
+
+test('removes a stale exact root archive and private stash after staging fresh CLI output', async () => {
+  await withWorkspace(async (root) => {
+    const frameworkPackagePath = writeFakeFramework(root);
+    const source = join(root, 'te-ppu-prototype.ait');
+    const destination = join(root, 'artifacts', 'ait', 'game.ait');
+    const staleSibling = join(root, 'stale-sibling.ait');
+    writeFile(source, 'stale exact archive');
+    writeFile(destination, 'old destination archive');
+    writeFile(staleSibling, 'stale sibling archive');
+
+    await buildAit({
+      root,
+      frameworkPackagePath,
+      env: { FAKE_AIT_CONTENT: 'fresh archive' },
+    });
+
+    assert.equal(read(destination), 'fresh archive');
+    assert.equal(read(staleSibling), 'stale sibling archive');
+    assert.equal(existsSync(source), false);
+    assert.deepEqual(
+      readdirSync(root).filter((name) => name.startsWith('.ait-source-stash-')),
+      [],
+    );
   });
 });

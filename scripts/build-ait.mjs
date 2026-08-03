@@ -115,7 +115,7 @@ export async function buildAit(options = {}) {
   await regularFile(aitScript, 'local Apps-in-Toss ait CLI is missing');
   const sourceStash = await stashExistingSource(source);
   let destinationReplaced = false;
-  let stashRestored = false;
+  let stashFinalized = false;
 
   try {
     const launch = spawnSync(process.execPath, [aitScript, 'build'], {
@@ -145,12 +145,12 @@ export async function buildAit(options = {}) {
       throw error;
     }
     await rm(source);
-    await restoreStashedSource(source, sourceStash);
-    stashRestored = true;
+    if (sourceStash) await rm(sourceStash, { force: true });
+    stashFinalized = true;
   } catch (error) {
-    if (sourceStash && !destinationReplaced && !stashRestored) {
+    if (sourceStash && !destinationReplaced && !stashFinalized) {
       await restoreStashedSource(source, sourceStash);
-      stashRestored = true;
+      stashFinalized = true;
     }
     throw error;
   }
