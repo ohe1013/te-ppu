@@ -186,23 +186,39 @@ describe('tower controller', () => {
   });
 
   it('routes a floor 5 win to the ending without unlocking beyond floor 5', async () => {
-    const controller = new TowerController(progressUnlockedThrough(5), new RecordingRepository());
+    const repository = new RecordingRepository();
+    const controller = new TowerController(progressUnlockedThrough(5), repository);
     const started = controller.startFloor(5, 50);
     if (!started.ok) throw new Error('floor 5 should start');
 
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'ENDING' });
-    expect(controller.progress.highestUnlockedFloor).toBe(5);
+    expect(controller.progress).toEqual({
+      schemaVersion: 2,
+      highestUnlockedFloor: 5,
+      clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: true },
+      settings: { soundEnabled: true, hapticsEnabled: true },
+    });
+    expect(repository.saved).toEqual([controller.progress]);
   });
 
-  it.each(['LOSS', 'DRAW'] as const)('does not unlock floor 4 after a floor 3 %s', async (result) => {
-    const controller = new TowerController(progressUnlockedThrough(3), new RecordingRepository());
-    const started = controller.startFloor(3, 30);
-    if (!started.ok) throw new Error('floor 3 should start');
+  it.each([
+    { floor: 3 as const, result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
+    { floor: 3 as const, result: 'DRAW' as const, route: 'RESULT_DRAW' as const },
+    { floor: 4 as const, result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
+    { floor: 4 as const, result: 'DRAW' as const, route: 'RESULT_DRAW' as const },
+    { floor: 5 as const, result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
+    { floor: 5 as const, result: 'DRAW' as const, route: 'RESULT_DRAW' as const },
+  ])('does not unlock or clear floor $floor after $result', async ({ floor, result, route }) => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(progressUnlockedThrough(floor), repository);
+    const started = controller.startFloor(floor, 30);
+    if (!started.ok) throw new Error(`floor ${floor} should start`);
 
-    await controller.completeFloor(result);
+    expect(await controller.completeFloor(result)).toEqual({ ok: true, route });
 
-    expect(controller.progress.highestUnlockedFloor).toBe(3);
-    expect(controller.progress.clearedFloors[3]).toBe(false);
+    expect(controller.progress.highestUnlockedFloor).toBe(floor);
+    expect(controller.progress.clearedFloors[floor]).toBe(false);
+    expect(repository.saved).toEqual([controller.progress]);
   });
 
   it('returns a detached progress snapshot that cannot mutate controller state', () => {

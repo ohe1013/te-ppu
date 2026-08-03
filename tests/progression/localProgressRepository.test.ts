@@ -106,14 +106,14 @@ describe('local progress repository', () => {
   });
 
   it('migrates a cleared legacy third floor and immediately persists v2', async () => {
-    const legacyCleared = JSON.stringify({
+    const legacyV1Cleared = JSON.stringify({
       schemaVersion: 1,
       highestUnlockedFloor: 3,
       clearedFloors: { 1: true, 2: true, 3: true },
       settings: { soundEnabled: false, hapticsEnabled: true },
     });
     const storage = new TestStorage();
-    storage.values.set(PROGRESS_KEY, legacyCleared);
+    storage.values.set(PROGRESS_KEY, legacyV1Cleared);
 
     const result = await createLocalProgressRepository(storage).load();
 
@@ -134,14 +134,14 @@ describe('local progress repository', () => {
   });
 
   it('migrates an uncleared legacy third floor without changing its highest unlocked floor', async () => {
-    const legacyUncleared = JSON.stringify({
+    const legacyV1Uncleared = JSON.stringify({
       schemaVersion: 1,
       highestUnlockedFloor: 3,
       clearedFloors: { 1: true, 2: true, 3: false },
       settings: { soundEnabled: true, hapticsEnabled: false },
     });
     const storage = new TestStorage();
-    storage.values.set(PROGRESS_KEY, legacyUncleared);
+    storage.values.set(PROGRESS_KEY, legacyV1Uncleared);
 
     expect(await createLocalProgressRepository(storage).load()).toEqual({
       ok: true,
@@ -158,14 +158,14 @@ describe('local progress repository', () => {
   });
 
   it('returns migrated state with WRITE_FAILED when the v2 migration write fails', async () => {
-    const legacyCleared = JSON.stringify({
+    const legacyV1Cleared = JSON.stringify({
       schemaVersion: 1,
       highestUnlockedFloor: 3,
       clearedFloors: { 1: true, 2: true, 3: true },
       settings: { soundEnabled: false, hapticsEnabled: true },
     });
     const storage = new TestStorage();
-    storage.values.set(PROGRESS_KEY, legacyCleared);
+    storage.values.set(PROGRESS_KEY, legacyV1Cleared);
     storage.writeErrorFor = (key) => key === PROGRESS_KEY ? new Error('canonical denied') : null;
 
     expect(await createLocalProgressRepository(storage).load()).toEqual({
@@ -179,7 +179,7 @@ describe('local progress repository', () => {
       error: error('WRITE_FAILED'),
     });
     expect(storage.writes).toEqual([]);
-    expect(storage.values.get(PROGRESS_KEY)).toBe(legacyCleared);
+    expect(storage.values.get(PROGRESS_KEY)).toBe(legacyV1Cleared);
   });
 
   it.each([
