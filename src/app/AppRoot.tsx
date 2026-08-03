@@ -19,6 +19,7 @@ import {
   type MatchResult,
 } from './app-route';
 import type { AppServices } from './app-services';
+import type { AssetManager } from '../assets';
 import type { ProgressState } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { TowerController } from './towerController';
@@ -42,6 +43,11 @@ export interface AppRootProps {
   readonly createMatchSeed?: () => number;
   readonly renderMatch?: (props: MatchRouteViewProps) => ReactNode;
 }
+
+const assetDestroyFinalizers = new WeakMap<
+  AssetManager,
+  { handle: ReturnType<typeof setTimeout>; token: object }
+>();
 
 function createDefaultMatchSeed(): number {
   const value = new Uint32Array(1);
@@ -85,6 +91,25 @@ export function AppRoot({
       completionTokenRef.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    const manager = services.assetManager;
+    const existing = assetDestroyFinalizers.get(manager);
+    if (existing !== undefined) {
+      clearTimeout(existing.handle);
+      assetDestroyFinalizers.delete(manager);
+    }
+    return () => {
+      const token = {};
+      const handle = setTimeout(() => {
+        const current = assetDestroyFinalizers.get(manager);
+        if (current === undefined || current.token !== token) return;
+        assetDestroyFinalizers.delete(manager);
+        manager.destroy();
+      }, 300);
+      assetDestroyFinalizers.set(manager, { handle, token });
+    };
+  }, [services.assetManager]);
 
   const controller = controllerRef.current;
 

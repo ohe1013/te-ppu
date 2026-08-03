@@ -38,7 +38,7 @@ function blockedCode(
   return null;
 }
 
-export function useBoot({ platform, progressRepository }: AppServices): BootState {
+export function useBoot({ platform, progressRepository, assetManager }: AppServices): BootState {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<BootState>({ status: 'loading' });
   const retry = useCallback(() => {
@@ -51,10 +51,14 @@ export function useBoot({ platform, progressRepository }: AppServices): BootStat
 
     async function boot() {
       try {
+        const assetLoad = Promise.resolve()
+          .then(() => assetManager.loadCommon())
+          .catch((): 'fallback' => 'fallback');
         const [, identity, loadResult] = await Promise.all([
           platform.lockPortrait(),
           platform.getIdentity(),
           progressRepository.load(),
+          assetLoad,
         ]);
         if (!active) return;
 
@@ -84,7 +88,7 @@ export function useBoot({ platform, progressRepository }: AppServices): BootStat
     return () => {
       active = false;
     };
-  }, [attempt, platform, progressRepository, retry]);
+  }, [assetManager, attempt, platform, progressRepository, retry]);
 
   return state;
 }

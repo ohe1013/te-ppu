@@ -2,8 +2,9 @@
 
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AssetManager } from '../assets';
 import type {
   ProgressLoadResult,
   ProgressRepository,
@@ -26,6 +27,7 @@ vi.mock('../render/BattleCanvas', () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const floorOneProgress: ProgressState = {
@@ -124,6 +126,20 @@ function createTestPlatform(
   };
 }
 
+function createAssetManager(
+  loadCommon: AssetManager['loadCommon'] = async () => 'fallback',
+): AssetManager {
+  return {
+    loadCommon,
+    loadFloor: async () => 'fallback',
+    prefetchFloor: () => undefined,
+    releaseFloor: () => undefined,
+    getCommonAssets: () => null,
+    getFloorAssets: () => null,
+    destroy: vi.fn(),
+  };
+}
+
 function TestMatch({ floor, onFinished }: MatchRouteViewProps): ReactNode {
   return (
     <section data-testid="match-screen">
@@ -138,9 +154,10 @@ function TestMatch({ floor, onFinished }: MatchRouteViewProps): ReactNode {
 function renderGame(
   repository: ProgressRepository,
   platform: PlatformPort = createTestPlatform(),
+  assetManager: AssetManager = createAssetManager(),
 ) {
   let seed = 100;
-  const services: AppServices = { platform, progressRepository: repository };
+  const services: AppServices = { platform, progressRepository: repository, assetManager };
   return render(
     <AppRoot
       services={services}
@@ -182,6 +199,7 @@ describe('AppRoot', () => {
     const services: AppServices = {
       platform: createTestPlatform(),
       progressRepository: repository,
+      assetManager: createAssetManager(),
     };
     render(
       <AppRoot
@@ -207,6 +225,7 @@ describe('AppRoot', () => {
     const services: AppServices = {
       platform: createTestPlatform(),
       progressRepository: repository,
+      assetManager: createAssetManager(),
     };
     render(
       <AppRoot
@@ -454,5 +473,49 @@ describe('AppRoot', () => {
 
     await screen.findByTestId('tower-screen');
     expect(attempts).toBe(2);
+  });
+
+  it('reaches the tower when non-blocking common asset loading falls back', async () => {
+    renderGame(
+      new TestProgressRepository(floorOneProgress),
+      createTestPlatform(),
+      createAssetManager(async () => 'fallback'),
+    );
+
+    expect(await screen.findByTestId('tower-screen')).toBeInTheDocument();
+  });
+
+  it('delays manager destruction across StrictMode root unmounts without cross-manager cancellation', () => {
+    vi.useFakeTimers();
+    const firstManager = createAssetManager();
+    const secondManager = createAssetManager();
+    const servicesFor = (assetManager: AssetManager): AppServices => ({
+      platform: createTestPlatform(),
+      progressRepository: new TestProgressRepository(floorOneProgress),
+      assetManager,
+    });
+    const renderRoot = (assetManager: AssetManager) => render(
+      <StrictMode>
+        <AppRoot
+          services={servicesFor(assetManager)}
+          createMatchSeed={() => 1}
+          renderMatch={(props) => <TestMatch {...props} />}
+        />
+      </StrictMode>,
+    );
+
+    const firstRoot = renderRoot(firstManager);
+    firstRoot.unmount();
+    const remountedFirstRoot = renderRoot(firstManager);
+    act(() => vi.advanceTimersByTime(300));
+    expect(firstManager.destroy).not.toHaveBeenCalled();
+
+    remountedFirstRoot.unmount();
+    const secondRoot = renderRoot(secondManager);
+    secondRoot.unmount();
+    act(() => vi.advanceTimersByTime(300));
+
+    expect(firstManager.destroy).toHaveBeenCalledTimes(1);
+    expect(secondManager.destroy).toHaveBeenCalledTimes(1);
   });
 });

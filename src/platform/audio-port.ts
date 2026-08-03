@@ -8,6 +8,13 @@ export type SoundCue =
   | 'win'
   | 'loss';
 
+export type MusicTrack =
+  | 'tower'
+  | 'early-floors'
+  | 'late-floors'
+  | 'demon-king'
+  | 'ending';
+
 export interface AudioPort {
   unlock(): Promise<void>;
   play(cue: SoundCue): void;

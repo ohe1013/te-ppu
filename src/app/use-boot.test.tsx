@@ -2,6 +2,7 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import type { AssetManager } from '../assets';
 import type { ProgressLoadResult, ProgressRepository, ProgressState } from '../progression';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { PlatformPort } from '../platform/platform-port';
@@ -37,11 +38,28 @@ function createRepository(load: () => Promise<ProgressLoadResult>): ProgressRepo
   };
 }
 
+function createAssetManager(
+  loadCommon: AssetManager['loadCommon'] = async () => 'fallback',
+): AssetManager {
+  return {
+    loadCommon,
+    loadFloor: async () => 'fallback',
+    prefetchFloor: () => undefined,
+    releaseFloor: () => undefined,
+    getCommonAssets: () => null,
+    getFloorAssets: () => null,
+    destroy: () => undefined,
+  };
+}
+
+const defaultAssetManager = createAssetManager();
+
 function services(
   platform: PlatformPort,
   progressRepository: ProgressRepository,
+  assetManager: AssetManager = defaultAssetManager,
 ): AppServices {
-  return { platform, progressRepository };
+  return { platform, progressRepository, assetManager };
 }
 
 describe('useBoot', () => {
@@ -156,5 +174,29 @@ describe('useBoot', () => {
       identity: { kind: 'apps-in-toss', key: 'user-7' },
     });
     expect(attempt).toBe(2);
+  });
+
+  it.each([
+    ['a synchronous asset manager throw', () => {
+      throw new Error('asset manager synchronous failure');
+    }],
+    ['a cached structural asset rejection', () => Promise.reject(new Error('structural manifest failure'))],
+  ] as const)('reaches ready boot after %s', async (_name, loadCommon) => {
+    const platform = createPlatform(async () => ({ kind: 'local', key: 'local-browser' }));
+    const repository = createRepository(async () => ({
+      ok: true,
+      state: progress,
+      recoveredFromCorruption: false,
+    }));
+    const { result } = renderHook(() => useBoot(
+      services(platform, repository, createAssetManager(loadCommon)),
+    ));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current).toMatchObject({
+      status: 'ready',
+      identity: { kind: 'local', key: 'local-browser' },
+      progress,
+    });
   });
 });
