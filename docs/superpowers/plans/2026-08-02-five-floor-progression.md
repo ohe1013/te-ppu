@@ -18,6 +18,7 @@
 - Profile reaction ticks remain exactly `[48, 38, 27, 19, 12]`, lookahead `[0, 0, 1, 1, 2]`, and `topK` `[5, 4, 3, 2, 1]`.
 - `rankWeights.length` equals `topK`, each rank vector sums to 1, and AI selection consumes exactly one mistake-RNG draw per decision.
 - The validation metric is the win rate of the AI controlled by the selected floor profile; it must increase strictly from floor 1 through floor 5.
+- The canonical 5,000-match validator remains supported, but its 2026-08-03 execution was stopped at the user-approved hardened evidence threshold described in Task 6 Step 5. That stopped run is not a canonical 5,000-match PASS and does not require a rerun unless a later explicit calibration decision says otherwise.
 - Starting or restarting any floor creates a fresh match, inventory, item-spawn history, combo, and incoming queue.
 - Do not change the approved combat rules, board dimensions, equal opponent-board layout, joystick behavior, or deterministic replay boundary.
 
@@ -410,7 +411,7 @@ git commit -m "feat: present all five tower floors"
 
 **Interfaces:**
 - Consumes: `FLOORS`, `Floor`, `isFloor`, and `getAiFloorProfile`.
-- Produces: five-floor `ValidationReport` records and a 5,000-match full gate.
+- Produces: five-floor `ValidationReport` records, a still-available 5,000-match capability, and the dated accepted execution evidence in Step 5.
 
 - [ ] **Step 1: Add failing simulation type and aggregation tests**
 
@@ -448,11 +449,21 @@ Run: `npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.
 
 Expected: PASS with zero rejected commands and zero capped matches.
 
-- [ ] **Step 5: Run the full 5,000-match validation and tune only intermediate profiles if necessary**
+- [ ] **Step 5: Apply the dated user-requested execution override at sufficient hardened evidence**
 
-Run: `npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:ai`
+**Execution override — 2026-08-03, explicitly requested by the user:** the canonical 5,000-match run was stopped at hardened checkpoint `3504` (3,504 completed matches). Do **not** record or describe it as a canonical 5,000-match PASS. Retain these accepted evidence records exactly:
 
-Expected: PASS with `floor1 < floor2 < floor3 < floor4 < floor5`, zero rejected/capped matches, aggregate and per-worker heap delta under 32 MiB, and linear heap growth under 256 KiB/1,000 matches. If the strict order fails, change only floors 2 or 4 heuristic weights within the approved tuning role; preserve reaction endpoints 48/12, lookahead, topK, rank vectors, and item policies, then record the final exact values back into the spec in the same commit.
+- The stopped 3,504-match long run reported controlled-AI rates `2.5% < 4.4% < 50.0% < 93.5%`, `rejected=0`, `capped=0`, aggregate heap delta `+0.83 MiB`, and peak heap delta `+5.08 MiB`.
+- The exact final floor-4 run over seeds `1..1000` reported `93.9%`, `rejected=0`, and `capped=0`.
+- The hardened floor-5 run over seeds `1..100` reported `100/100`, `rejected=0`, `capped=0`, and heap delta `+0.43 MiB`.
+
+Together these retained records are the accepted ordering and long-memory evidence for this implementation checkpoint. The existing unfiltered command remains available as a canonical 5,000-match capability:
+
+```powershell
+npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:ai
+```
+
+It is capability documentation only, not a mandatory rerun or a PASS claim. Do not resume it or retune profiles merely to complete 5,000 matches. If an AI profile or simulation implementation changes later, require a new explicit calibration/evidence-count decision instead of silently reinstating the 5,000-match run.
 
 - [ ] **Step 6: Commit simulation validation**
 

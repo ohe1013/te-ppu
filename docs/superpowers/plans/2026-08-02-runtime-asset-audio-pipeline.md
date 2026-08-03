@@ -32,6 +32,7 @@
 - Runtime authored assets stay under 30 MB and the unpacked `.ait` stays under 100 MB.
 - A `QR_EVIDENCE=1` Apps build requires `AIT_APP_NAME`, `AIT_DISPLAY_NAME`, and a public-HTTPS-shaped `AIT_ICON_URL` intended to be the console-hosted copy of the same 600×600 opaque PNG. Automation validates syntax/config only; reachability, console ownership, upload status, and byte equality remain external evidence. Env-less builds use local metadata and are local-browser/package evidence only.
 - Execute in this exact order: Runtime Tasks 1–7, every task in `2026-08-03-identity-aware-progress.md`, then Runtime Task 8. Task 8 is the only identity-inclusive final `.ait` build and evidence-classification gate.
+- Final AI verification follows the 2026-08-03 user-requested execution override: Task 8 runs the focused 50-test simulation regressions plus a fresh 500-match filtered smoke, not the default unfiltered 5,000-match command. The fresh smoke is not a canonical 5,000-match PASS; ordering and long-memory claims refer only to retained hardened evidence from the five-floor progression plan's Task 6.
 
 ---
 
@@ -1245,11 +1246,31 @@ npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" ru
 
 Expected: all tests, typecheck, Vite build, and Playwright scenarios PASS.
 
-- [ ] **Step 4: Run the five-floor simulation gate**
+- [ ] **Step 4: Run focused simulation regressions and a 500-match five-floor smoke**
 
-Run: `npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" run validate:ai`
+Run the focused three-file regression set first; Vitest must report exactly 50 passing tests:
 
-Expected: 5,000 matches, zero rejected/capped cases, strict floor-1-to-floor-5 controlled-AI win-rate increase, and all heap limits PASS.
+```powershell
+npx -y node@24.15.0 "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" test -- tests/ai/profiles.test.ts tests/sim/aiSimulation.test.ts tests/sim/validation-workers.test.ts
+```
+
+This includes the known-cap unit matrix: the deliberate floor-1/seed-5 cap sentinel at test tick limit 5; floor-3 seeds `75`, `111`, and `552` resolving below the production cap; and floor-4 seeds `27`, `61`, `85`, `86`, `111`, `129`, `150`, `169`, `272`, `406`, `429`, `435`, `608`, `620`, `642`, `832`, and `881` resolving with zero rejected commands below the production cap.
+
+Then run exactly 100 filtered results for each floor under Node 24, 500 fresh matches total:
+
+```powershell
+$npmCli = 'C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js'
+foreach ($floor in 1..5) {
+  npx -y node@24.15.0 $npmCli run validate:ai -- --floor $floor --seed-from 1 --seed-to 100
+  if ($LASTEXITCODE -ne 0) {
+    throw "AI smoke failed for floor $floor with exit code $LASTEXITCODE"
+  }
+}
+```
+
+Expected: the harness proves exact index/floor/seed result coverage and each invocation reports exactly 100 results for its selected floor and seeds `1..100`; across all five invocations there are exactly 500 results, `rejected=0`, and `capped=0`. The known-cap unit matrix and all 50 focused tests PASS.
+
+This fresh 500-match smoke is not a canonical 5,000-match PASS. Any ordering or long-memory statement must cite the retained evidence from the five-floor progression plan's Task 6: stopped checkpoint `3504` with rates `2.5% < 4.4% < 50.0% < 93.5%`, `rejected=0`, `capped=0`, heap `+0.83 MiB`, peak `+5.08 MiB`; final floor-4 seeds `1..1000` at `93.9%` with zero rejected/capped; and hardened floor-5 seeds `1..100` at `100/100`, zero rejected/capped, heap `+0.43 MiB`. If an AI profile or simulation implementation changes later, make a new explicit calibration/evidence-count decision instead of silently restoring the 5,000-match default.
 
 - [ ] **Step 5: Build and inspect the local `.ait`**
 
