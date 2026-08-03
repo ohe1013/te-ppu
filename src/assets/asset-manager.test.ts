@@ -231,6 +231,38 @@ describe('createAssetManager', () => {
     expect(manager.getFloorAssets(2)).toMatchObject({ floor: 2, opponent: 'alchemist' });
   });
 
+  it('retries a prefetched floor once through its entry wrapper after manifest I/O rejection', async () => {
+    const fetchManifest = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(COMPLETE_ASSET_MANIFEST);
+    const manager = createAssetManager(loaders({ fetchManifest }));
+
+    manager.prefetchFloor(1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const entryA = manager.loadFloor(1);
+    const entryB = manager.loadFloor(1);
+
+    expect(entryA).toBe(entryB);
+    await expect(entryA).resolves.toBe('ready');
+    expect(fetchManifest).toHaveBeenCalledTimes(2);
+    expect(manager.getFloorAssets(1)).toMatchObject({ floor: 1, generation: 2 });
+  });
+
+  it('propagates a prefetched structural manifest rejection through the entry wrapper without retrying', async () => {
+    const fetchManifest = vi.fn().mockResolvedValue({ schemaVersion: 1, mode: 'assets' });
+    const manager = createAssetManager(loaders({ fetchManifest }));
+
+    manager.prefetchFloor(1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const entryA = manager.loadFloor(1);
+    const entryB = manager.loadFloor(1);
+    const error = await entryA.catch((reason: unknown) => reason);
+
+    expect(entryA).toBe(entryB);
+    await expect(entryB).rejects.toBe(error);
+    expect(fetchManifest).toHaveBeenCalledTimes(1);
+  });
+
   it('caches intentional procedural fallback without attempting authored URLs or entry retries', async () => {
     const fetchManifest = vi.fn().mockResolvedValue({
       schemaVersion: 1,
@@ -327,6 +359,34 @@ describe('createAssetManager', () => {
     expect(lateSource.close).toHaveBeenCalledTimes(1);
   });
 
+  it('closes an atlas image that resolved before its JSON misses the shared deadline', async () => {
+    vi.useFakeTimers();
+    const atlasJson = deferred<unknown>();
+    const atlasImage = closeableImage();
+    const loadImage = vi.fn((url: string) => url.endsWith('battle-atlas.png')
+      ? Promise.resolve(atlasImage)
+      : Promise.resolve(closeableImage()));
+    const manager = createAssetManager(loaders({
+      loadImage,
+      loadAtlasJson: vi.fn(() => atlasJson.promise),
+      loadTimeoutMs: 5,
+    }));
+
+    const common = manager.loadCommon();
+    await flushPromises();
+    await flushPromises();
+    expect(loadImage).toHaveBeenCalledWith('/assets/effects/battle-atlas.png');
+    expect(atlasImage.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5);
+
+    await expect(common).resolves.toBe('fallback');
+    expect(manager.getCommonAssets()?.atlas).toBeUndefined();
+    expect(atlasImage.close).toHaveBeenCalledTimes(1);
+    atlasJson.resolve(validAtlasJson());
+    await flushPromises();
+    expect(atlasImage.close).toHaveBeenCalledTimes(1);
+  });
+
   it('uses one absolute common deadline and closes late image results without publishing them', async () => {
     vi.useFakeTimers();
     const manifest = deferred<unknown>();
@@ -393,6 +453,70 @@ describe('createAssetManager', () => {
     const immediateResult = immediate.loadCommon();
     await vi.advanceTimersByTimeAsync(0);
     await expect(immediateResult).resolves.toBe('fallback');
+  });
+
+  it('starts an entry retry with a fresh absolute deadline after a prefetched timeout', async () => {
+    vi.useFakeTimers();
+    const manifest = deferred<unknown>();
+    const scheduler: AssetLoadScheduler = {
+      setTimeout: vi.fn((callback, delayMs) => setTimeout(callback, delayMs)),
+      clearTimeout: vi.fn((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)),
+    };
+    const fetchManifest = vi.fn(() => manifest.promise);
+    const manager = createAssetManager(loaders({
+      fetchManifest,
+      loadTimeoutMs: 5,
+      scheduler,
+    }));
+
+    manager.prefetchFloor(4);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(5);
+    const entry = manager.loadFloor(4);
+    let settled: 'ready' | 'fallback' | null = null;
+    void entry.then((result) => { settled = result; });
+    await flushPromises();
+
+    expect(scheduler.setTimeout).toHaveBeenCalledTimes(2);
+    expect(scheduler.setTimeout).toHaveBeenNthCalledWith(2, expect.any(Function), 5);
+    await vi.advanceTimersByTimeAsync(4);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(entry).resolves.toBe('fallback');
+    expect(fetchManifest).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears an attempt timer after natural completion', async () => {
+    vi.useFakeTimers();
+    const scheduler: AssetLoadScheduler = {
+      setTimeout: vi.fn((callback, delayMs) => setTimeout(callback, delayMs)),
+      clearTimeout: vi.fn((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)),
+    };
+    const manager = createAssetManager(loaders({ scheduler }));
+
+    await expect(manager.loadCommon()).resolves.toBe('ready');
+    expect(scheduler.clearTimeout).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(manager.loadCommon()).resolves.toBe('ready');
+  });
+
+  it('schedules the documented 5,000ms deadline when no timeout override is supplied', async () => {
+    vi.useFakeTimers();
+    const manifest = deferred<unknown>();
+    const scheduler: AssetLoadScheduler = {
+      setTimeout: vi.fn((callback, delayMs) => setTimeout(callback, delayMs)),
+      clearTimeout: vi.fn((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)),
+    };
+    const manager = createAssetManager(loaders({
+      fetchManifest: vi.fn(() => manifest.promise),
+      scheduler,
+    }));
+
+    const common = manager.loadCommon();
+    await flushPromises();
+    expect(scheduler.setTimeout).toHaveBeenCalledWith(expect.any(Function), 5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(common).resolves.toBe('fallback');
   });
 
   it('retries one settled operational floor prefetch once and closes the old partial sources', async () => {
@@ -464,5 +588,17 @@ describe('createAssetManager', () => {
     image.resolve(source);
     await flushPromises();
     expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke a queued manifest seam after destroy seals its common load', async () => {
+    const fetchManifest = vi.fn().mockResolvedValue(COMPLETE_ASSET_MANIFEST);
+    const manager = createAssetManager(loaders({ fetchManifest }));
+
+    const common = manager.loadCommon();
+    manager.destroy();
+    await flushPromises();
+
+    await expect(common).resolves.toBe('fallback');
+    expect(fetchManifest).not.toHaveBeenCalled();
   });
 });

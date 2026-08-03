@@ -365,7 +365,12 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
   function manifest(): ManifestRecord {
     if (manifestRecord !== null) return manifestRecord;
     let record!: ManifestRecord;
-    const acquisition = Promise.resolve().then(() => options.fetchManifest(GAME_ASSET_PATH));
+    const acquisition = Promise.resolve().then(() => {
+      if (destroyed || manifestRecord !== record) {
+        throw new Error('Manifest acquisition is no longer current.');
+      }
+      return options.fetchManifest(GAME_ASSET_PATH);
+    });
     const parsed = acquisition.then((value) => {
       try {
         return parseAssetManifest(value);

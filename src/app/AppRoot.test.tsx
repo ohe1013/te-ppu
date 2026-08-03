@@ -518,4 +518,42 @@ describe('AppRoot', () => {
     expect(firstManager.destroy).toHaveBeenCalledTimes(1);
     expect(secondManager.destroy).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores a queued stale finalizer callback after a newer same-manager finalizer replaces it', () => {
+    const callbacks: (() => void)[] = [];
+    let nextHandle = 0;
+    vi.stubGlobal('setTimeout', vi.fn((callback: () => void, delayMs: number) => {
+      const handle = ++nextHandle;
+      if (delayMs === 300) callbacks.push(callback);
+      return handle;
+    }));
+    vi.stubGlobal('clearTimeout', vi.fn());
+    const manager = createAssetManager(() => new Promise(() => undefined));
+    const services: AppServices = {
+      platform: createTestPlatform(),
+      progressRepository: new TestProgressRepository(floorOneProgress),
+      assetManager: manager,
+    };
+    const renderRoot = () => render(
+      <AppRoot
+        services={services}
+        createMatchSeed={() => 1}
+        renderMatch={(props) => <TestMatch {...props} />}
+      />,
+    );
+
+    const firstRoot = renderRoot();
+    firstRoot.unmount();
+    const stale = callbacks[0];
+    const secondRoot = renderRoot();
+    secondRoot.unmount();
+    const current = callbacks[1];
+
+    expect(stale).toBeDefined();
+    expect(current).toBeDefined();
+    stale?.();
+    expect(manager.destroy).not.toHaveBeenCalled();
+    current?.();
+    expect(manager.destroy).toHaveBeenCalledTimes(1);
+  });
 });
