@@ -78,6 +78,20 @@ for (const url of [
   });
 }
 
+test('rejects IPv6 loopback icon URLs in the QR function and CLI gate', () => {
+  const env = {
+    QR_EVIDENCE: '1',
+    AIT_APP_NAME: 'te-ppu-console-id',
+    AIT_DISPLAY_NAME: 'Tower Block Battle',
+    AIT_ICON_URL: 'https://[::1]/icon.png',
+  };
+
+  assert.throws(() => checkAitIconEnv(env), /public HTTPS/i);
+  const cli = runChecker(env);
+  assert.equal(cli.status, 1, cli.output);
+  assert.match(cli.output, /AIT_CONFIG_FAIL.*public HTTPS/i);
+});
+
 test('accepts explicit nonblank QR evidence metadata without making a network request', () => {
   const result = checkAitIconEnv({
     QR_EVIDENCE: '1',

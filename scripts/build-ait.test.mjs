@@ -175,3 +175,25 @@ test('keeps a previous destination untouched when a successful CLI omits its exa
     assert.equal(read(join(root, 'stale.ait')), 'stale archive');
   });
 });
+
+test('rejects a stale exact root archive when a zero-exit CLI produces no fresh output', async () => {
+  await withWorkspace(async (root) => {
+    const frameworkPackagePath = writeFakeFramework(root);
+    const source = join(root, 'te-ppu-prototype.ait');
+    const destination = join(root, 'artifacts', 'ait', 'game.ait');
+    writeFile(source, 'stale exact archive');
+    writeFile(destination, 'old destination archive');
+
+    await assert.rejects(
+      () => buildAit({
+        root,
+        frameworkPackagePath,
+        env: { FAKE_AIT_MODE: 'missing' },
+      }),
+      /expected CLI output is missing/i,
+    );
+
+    assert.equal(read(source), 'stale exact archive');
+    assert.equal(read(destination), 'old destination archive');
+  });
+});

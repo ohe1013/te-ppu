@@ -236,7 +236,7 @@ function allPaths(value) {
 }
 
 function frameName(group, index) {
-  return group + '-' + String(index).padStart(2, '0') + '.png';
+  return group + '/' + String(index).padStart(2, '0') + '.png';
 }
 
 function atlasJson() {
@@ -271,6 +271,16 @@ function atlasJson() {
       size: { w: 2048, h: 2048 },
     },
   };
+}
+
+function legacyHyphenatedAtlasJson() {
+  const atlas = atlasJson();
+  const frames = {};
+  for (const [name, frame] of Object.entries(atlas.frames)) {
+    frames[name.replace('/', '-')] = frame;
+  }
+  atlas.frames = frames;
+  return atlas;
 }
 
 function bytesFor(path) {
@@ -342,10 +352,22 @@ test('accepts an ID3-skipped complete MPEG audio frame', async () => {
 
 test('rejects an authored manifest that references a missing runtime file', async () => {
   await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rmSync(join(root, 'public', 'assets', 'blocks', 'tile-i.png'));
+    await assert.rejects(() => validateAssets(root), /missing referenced asset.*blocks\/tile-i\.png/i);
+  });
+});
+
+test('rejects a duplicate asset path assigned to two canonical manifest slots', async () => {
+  await withWorkspace(async (root) => {
     const manifest = writeCompleteAssets(root);
-    manifest.common.tiles.I.path = 'blocks/missing.png';
+    manifest.common.tiles.I.path = manifest.common.tiles.J.path;
     writeManifest(root, manifest);
-    await assert.rejects(() => validateAssets(root), /missing referenced asset.*blocks\/missing\.png/i);
+
+    await assert.rejects(
+      () => validateAssets(root),
+      /canonical asset path.*common\.tiles\.I/i,
+    );
   });
 });
 
@@ -459,25 +481,34 @@ test('rejects an MP3 without a direct or ID3-skipped complete MPEG frame', async
 test('rejects forbidden atlas rotation and exact frame-set drift', async () => {
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
-    rewriteAtlas(root, (atlas) => { atlas.frames['move-dust-00.png'].rotated = true; });
+    rewriteAtlas(root, (atlas) => { atlas.frames['move-dust/00.png'].rotated = true; });
     await assert.rejects(() => validateAssets(root), /rotated/i);
   });
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
-    rewriteAtlas(root, (atlas) => { delete atlas.frames['move-dust-03.png']; });
+    rewriteAtlas(root, (atlas) => { delete atlas.frames['move-dust/03.png']; });
     await assert.rejects(() => validateAssets(root), /frame names/i);
+  });
+});
+
+test('rejects legacy hyphenated atlas frame names', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'effects/battle-atlas.json', JSON.stringify(legacyHyphenatedAtlasJson()));
+
+    await assert.rejects(() => validateAssets(root), /atlas frame names/i);
   });
 });
 
 test('rejects atlas source-size and sprite-source geometry drift', async () => {
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
-    rewriteAtlas(root, (atlas) => { atlas.frames['line-clear-00.png'].sourceSize.w = 639; });
+    rewriteAtlas(root, (atlas) => { atlas.frames['line-clear/00.png'].sourceSize.w = 639; });
     await assert.rejects(() => validateAssets(root), /sourceSize/i);
   });
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
-    rewriteAtlas(root, (atlas) => { atlas.frames['attack-shot-00.png'].spriteSourceSize.w = 63; });
+    rewriteAtlas(root, (atlas) => { atlas.frames['attack-shot/00.png'].spriteSourceSize.w = 63; });
     await assert.rejects(() => validateAssets(root), /frame.*spriteSourceSize/i);
   });
 });
@@ -485,7 +516,7 @@ test('rejects atlas source-size and sprite-source geometry drift', async () => {
 test('rejects inconsistent untrimmed atlas offsets and the wrong atlas metadata image', async () => {
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
-    rewriteAtlas(root, (atlas) => { atlas.frames['combo-pop-00.png'].spriteSourceSize.x = 1; });
+    rewriteAtlas(root, (atlas) => { atlas.frames['combo-pop/00.png'].spriteSourceSize.x = 1; });
     await assert.rejects(() => validateAssets(root), /untrimmed/i);
   });
   await withWorkspace(async (root) => {

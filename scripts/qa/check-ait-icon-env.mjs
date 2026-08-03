@@ -16,7 +16,7 @@ function publicHttpsUrl(value) {
   } catch {
     throw new Error('AIT_ICON_URL must be a public HTTPS URL');
   }
-  const host = url.hostname.toLowerCase();
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const localHost = host === 'localhost'
     || host.endsWith('.localhost')
     || host === '127.0.0.1'

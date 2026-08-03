@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, rename, rm, stat } from 'node:fs/promises';
 import {
   basename,
@@ -79,6 +80,29 @@ async function regularFile(path, message) {
   }
 }
 
+async function stashExistingSource(source) {
+  let sourceInfo;
+  try {
+    sourceInfo = await stat(source);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+  if (!sourceInfo.isFile()) {
+    fail('pre-existing CLI output is not a regular file: ' + basename(source));
+  }
+
+  const stash = join(dirname(source), '.ait-source-stash-' + randomUUID());
+  await rename(source, stash);
+  return stash;
+}
+
+async function restoreStashedSource(source, stash) {
+  if (!stash) return;
+  await rm(source, { force: true });
+  await rename(stash, source);
+}
+
 export async function buildAit(options = {}) {
   const root = resolve(options.root ?? process.cwd());
   const suppliedEnv = options.env ?? process.env;
@@ -89,33 +113,47 @@ export async function buildAit(options = {}) {
   const frameworkPackagePath = packagePathFromOptions(options.frameworkPackagePath);
   const aitScript = join(dirname(frameworkPackagePath), 'bin', 'ait.js');
   await regularFile(aitScript, 'local Apps-in-Toss ait CLI is missing');
+  const sourceStash = await stashExistingSource(source);
+  let destinationReplaced = false;
+  let stashRestored = false;
 
-  const launch = spawnSync(process.execPath, [aitScript, 'build'], {
-    cwd: root,
-    env: {
-      ...process.env,
-      ...suppliedEnv,
-      AIT_APP_NAME: appName,
-    },
-    stdio: 'inherit',
-  });
-  if (launch.error) fail('ait build failed: ' + launch.error.message);
-  if (launch.status !== 0) fail('ait build failed with exit code ' + launch.status);
-
-  await regularFile(source, 'expected CLI output is missing: ' + appName + '.ait');
-  await mkdir(dirname(artifact.destination), { recursive: true });
-  const temporary = join(
-    dirname(artifact.destination),
-    '.' + basename(artifact.destination) + '.' + process.pid + '.' + Date.now() + '.tmp',
-  );
   try {
-    await copyFile(source, temporary);
-    await rename(temporary, artifact.destination);
+    const launch = spawnSync(process.execPath, [aitScript, 'build'], {
+      cwd: root,
+      env: {
+        ...process.env,
+        ...suppliedEnv,
+        AIT_APP_NAME: appName,
+      },
+      stdio: 'inherit',
+    });
+    if (launch.error) fail('ait build failed: ' + launch.error.message);
+    if (launch.status !== 0) fail('ait build failed with exit code ' + launch.status);
+
+    await regularFile(source, 'expected CLI output is missing: ' + appName + '.ait');
+    await mkdir(dirname(artifact.destination), { recursive: true });
+    const temporary = join(
+      dirname(artifact.destination),
+      '.' + basename(artifact.destination) + '.' + process.pid + '.' + Date.now() + '.tmp',
+    );
+    try {
+      await copyFile(source, temporary);
+      await rename(temporary, artifact.destination);
+      destinationReplaced = true;
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+    await rm(source);
+    await restoreStashedSource(source, sourceStash);
+    stashRestored = true;
   } catch (error) {
-    await rm(temporary, { force: true });
+    if (sourceStash && !destinationReplaced && !stashRestored) {
+      await restoreStashedSource(source, sourceStash);
+      stashRestored = true;
+    }
     throw error;
   }
-  await rm(source);
   return {
     appName,
     artifactPath: artifact.relativePath,

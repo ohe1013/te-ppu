@@ -27,6 +27,95 @@ const ATLAS_GROUPS = [
   ['freeze-overlay', 8, 64, 64],
   ['combo-pop', 6, 256, 128],
 ];
+const CANONICAL_ASSET_PATHS = [
+  ['asset manifest.brand.logo', 'brand/app-logo.png'],
+  ['asset manifest.common.backgrounds.tower', 'backgrounds/tower-exterior.webp'],
+  ['asset manifest.common.characters.hero-engineer.fullArt', 'characters/hero-engineer/full.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.idle', 'characters/hero-engineer/portrait-idle.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.focus', 'characters/hero-engineer/portrait-focus.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.attack', 'characters/hero-engineer/portrait-attack.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.hit', 'characters/hero-engineer/portrait-hit.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.win', 'characters/hero-engineer/portrait-win.webp'],
+  ['asset manifest.common.characters.hero-engineer.portraits.loss', 'characters/hero-engineer/portrait-loss.webp'],
+  ['asset manifest.common.characters.owl-companion.fullArt', 'characters/owl-companion/full.webp'],
+  ['asset manifest.common.characters.owl-companion.portraits.idle', 'characters/owl-companion/portrait-idle.webp'],
+  ['asset manifest.common.characters.owl-companion.portraits.worry', 'characters/owl-companion/portrait-worry.webp'],
+  ['asset manifest.common.characters.owl-companion.portraits.cheer', 'characters/owl-companion/portrait-cheer.webp'],
+  ['asset manifest.common.tiles.I', 'blocks/tile-i.png'],
+  ['asset manifest.common.tiles.J', 'blocks/tile-j.png'],
+  ['asset manifest.common.tiles.L', 'blocks/tile-l.png'],
+  ['asset manifest.common.tiles.O', 'blocks/tile-o.png'],
+  ['asset manifest.common.tiles.S', 'blocks/tile-s.png'],
+  ['asset manifest.common.tiles.T', 'blocks/tile-t.png'],
+  ['asset manifest.common.tiles.Z', 'blocks/tile-z.png'],
+  ['asset manifest.common.tiles.garbage', 'blocks/garbage.png'],
+  ['asset manifest.common.items.row-clear', 'items/row-clear.png'],
+  ['asset manifest.common.items.freeze', 'items/freeze.png'],
+  ['asset manifest.common.items.queue-swap', 'items/queue-swap.png'],
+  ['asset manifest.common.icons.rotate', 'ui/rotate.svg'],
+  ['asset manifest.common.icons.settings', 'ui/settings.svg'],
+  ['asset manifest.common.icons.sound-on', 'ui/sound-on.svg'],
+  ['asset manifest.common.icons.sound-off', 'ui/sound-off.svg'],
+  ['asset manifest.common.icons.haptics-on', 'ui/haptics-on.svg'],
+  ['asset manifest.common.icons.haptics-off', 'ui/haptics-off.svg'],
+  ['asset manifest.common.icons.exit', 'ui/exit.svg'],
+  ['asset manifest.common.atlas.image', 'effects/battle-atlas.png'],
+  ['asset manifest.common.atlas.data', 'effects/battle-atlas.json'],
+  ['asset manifest.common.audio.sfx.move', 'audio/sfx/move.mp3'],
+  ['asset manifest.common.audio.sfx.rotate', 'audio/sfx/rotate.mp3'],
+  ['asset manifest.common.audio.sfx.land', 'audio/sfx/land.mp3'],
+  ['asset manifest.common.audio.sfx.clear', 'audio/sfx/clear.mp3'],
+  ['asset manifest.common.audio.sfx.attack', 'audio/sfx/attack.mp3'],
+  ['asset manifest.common.audio.sfx.item', 'audio/sfx/item.mp3'],
+  ['asset manifest.common.audio.sfx.win', 'audio/sfx/win.mp3'],
+  ['asset manifest.common.audio.sfx.loss', 'audio/sfx/loss.mp3'],
+  ['asset manifest.common.audio.bgm.tower', 'audio/bgm/tower.mp3'],
+  ['asset manifest.common.audio.bgm.early-floors', 'audio/bgm/early-floors.mp3'],
+  ['asset manifest.common.audio.bgm.late-floors', 'audio/bgm/late-floors.mp3'],
+  ['asset manifest.common.audio.bgm.demon-king', 'audio/bgm/demon-king.mp3'],
+  ['asset manifest.common.audio.bgm.ending', 'audio/bgm/ending.mp3'],
+  ['asset manifest.floors.1.background', 'backgrounds/floor-01.webp'],
+  ['asset manifest.floors.1.character.fullArt', 'characters/quartermaster/full.webp'],
+  ['asset manifest.floors.1.character.portraits.idle', 'characters/quartermaster/portrait-idle.webp'],
+  ['asset manifest.floors.1.character.portraits.smug', 'characters/quartermaster/portrait-smug.webp'],
+  ['asset manifest.floors.1.character.portraits.attack', 'characters/quartermaster/portrait-attack.webp'],
+  ['asset manifest.floors.1.character.portraits.hit', 'characters/quartermaster/portrait-hit.webp'],
+  ['asset manifest.floors.1.character.portraits.panic', 'characters/quartermaster/portrait-panic.webp'],
+  ['asset manifest.floors.1.character.portraits.defeat', 'characters/quartermaster/portrait-defeat.webp'],
+  ['asset manifest.floors.2.background', 'backgrounds/floor-02.webp'],
+  ['asset manifest.floors.2.character.fullArt', 'characters/alchemist/full.webp'],
+  ['asset manifest.floors.2.character.portraits.idle', 'characters/alchemist/portrait-idle.webp'],
+  ['asset manifest.floors.2.character.portraits.smug', 'characters/alchemist/portrait-smug.webp'],
+  ['asset manifest.floors.2.character.portraits.attack', 'characters/alchemist/portrait-attack.webp'],
+  ['asset manifest.floors.2.character.portraits.hit', 'characters/alchemist/portrait-hit.webp'],
+  ['asset manifest.floors.2.character.portraits.panic', 'characters/alchemist/portrait-panic.webp'],
+  ['asset manifest.floors.2.character.portraits.defeat', 'characters/alchemist/portrait-defeat.webp'],
+  ['asset manifest.floors.3.background', 'backgrounds/floor-03.webp'],
+  ['asset manifest.floors.3.character.fullArt', 'characters/guard-captain/full.webp'],
+  ['asset manifest.floors.3.character.portraits.idle', 'characters/guard-captain/portrait-idle.webp'],
+  ['asset manifest.floors.3.character.portraits.smug', 'characters/guard-captain/portrait-smug.webp'],
+  ['asset manifest.floors.3.character.portraits.attack', 'characters/guard-captain/portrait-attack.webp'],
+  ['asset manifest.floors.3.character.portraits.hit', 'characters/guard-captain/portrait-hit.webp'],
+  ['asset manifest.floors.3.character.portraits.panic', 'characters/guard-captain/portrait-panic.webp'],
+  ['asset manifest.floors.3.character.portraits.defeat', 'characters/guard-captain/portrait-defeat.webp'],
+  ['asset manifest.floors.4.background', 'backgrounds/floor-04.webp'],
+  ['asset manifest.floors.4.character.fullArt', 'characters/dark-engineer/full.webp'],
+  ['asset manifest.floors.4.character.portraits.idle', 'characters/dark-engineer/portrait-idle.webp'],
+  ['asset manifest.floors.4.character.portraits.smug', 'characters/dark-engineer/portrait-smug.webp'],
+  ['asset manifest.floors.4.character.portraits.attack', 'characters/dark-engineer/portrait-attack.webp'],
+  ['asset manifest.floors.4.character.portraits.hit', 'characters/dark-engineer/portrait-hit.webp'],
+  ['asset manifest.floors.4.character.portraits.panic', 'characters/dark-engineer/portrait-panic.webp'],
+  ['asset manifest.floors.4.character.portraits.defeat', 'characters/dark-engineer/portrait-defeat.webp'],
+  ['asset manifest.floors.5.background', 'backgrounds/floor-05.webp'],
+  ['asset manifest.floors.5.character.fullArt', 'characters/demon-king/full.webp'],
+  ['asset manifest.floors.5.character.portraits.idle', 'characters/demon-king/portrait-idle.webp'],
+  ['asset manifest.floors.5.character.portraits.attack', 'characters/demon-king/portrait-attack.webp'],
+  ['asset manifest.floors.5.character.portraits.hit', 'characters/demon-king/portrait-hit.webp'],
+  ['asset manifest.floors.5.character.portraits.rage', 'characters/demon-king/portrait-rage.webp'],
+  ['asset manifest.floors.5.character.portraits.defeat', 'characters/demon-king/portrait-defeat.webp'],
+];
+const CANONICAL_PATH_BY_SLOT = new Map(CANONICAL_ASSET_PATHS);
+const REQUIRED_UNIQUE_ASSET_COUNT = 85;
 
 function fail(message) {
   throw new Error(message);
@@ -63,9 +152,19 @@ function runtimePath(value) {
   return value;
 }
 
+function canonicalAssetPath(context) {
+  const path = CANONICAL_PATH_BY_SLOT.get(context);
+  if (path === undefined) fail('missing canonical asset path table entry: ' + context);
+  return path;
+}
+
 function collectRef(value, references, context) {
   const ref = exactObject(value, ['path'], context);
-  references.push(runtimePath(ref.path));
+  const path = runtimePath(ref.path);
+  if (path !== canonicalAssetPath(context)) {
+    fail('invalid canonical asset path: ' + context);
+  }
+  references.push(path);
 }
 
 function collectRefs(value, keys, references, context) {
@@ -101,7 +200,6 @@ function parseManifest(value) {
   const references = [];
   const brand = exactObject(manifest.brand, ['logo'], 'asset manifest.brand');
   collectRef(brand.logo, references, 'asset manifest.brand.logo');
-  if (references[0] !== 'brand/app-logo.png') fail('invalid asset manifest logo path');
 
   const common = exactObject(
     manifest.common,
@@ -133,6 +231,12 @@ function parseManifest(value) {
   collectFloor(floors['3'], 'guard-captain', 'late-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.3');
   collectFloor(floors['4'], 'dark-engineer', 'late-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.4');
   collectFloor(floors['5'], 'demon-king', 'demon-king', DEMON_PORTRAITS, references, 'asset manifest.floors.5');
+  if (
+    references.length !== REQUIRED_UNIQUE_ASSET_COUNT
+    || new Set(references).size !== REQUIRED_UNIQUE_ASSET_COUNT
+  ) {
+    fail('invalid asset manifest required unique asset count');
+  }
   return { mode: 'assets', references };
 }
 
@@ -358,7 +462,7 @@ function nonNegativeInteger(value, context) {
 }
 
 function frameName(group, index) {
-  return group + '-' + String(index).padStart(2, '0') + '.png';
+  return group + '/' + String(index).padStart(2, '0') + '.png';
 }
 
 function expectedAtlasFrames() {
