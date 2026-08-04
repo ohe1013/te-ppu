@@ -119,10 +119,12 @@ function fakeAi(commands: readonly TimedCommand[] = []): AiController & {
 
 function renderLoop({
   ai = fakeAi(),
+  onEventBatches,
   onEvents,
   onFinished = vi.fn(),
 }: {
   readonly ai?: AiController;
+  readonly onEventBatches?: (batches: readonly unknown[]) => void;
   readonly onEvents?: Parameters<typeof useMatchLoop>[0]['onEvents'];
   readonly onFinished?: (result: 'win' | 'loss' | 'draw') => void | Promise<void>;
 } = {}) {
@@ -131,6 +133,7 @@ function renderLoop({
   const hook = renderHook(() => useMatchLoop({
     ai,
     config: { matchSeed: 17, countdownTicks: 0 },
+    onEventBatches,
     onEvents,
     onFinished,
   }));
@@ -230,6 +233,44 @@ describe('useMatchLoop', () => {
 
     expect(result.current.view.tick).toBe(3);
     expect(result.current.events).toEqual(earlyEvents);
+  });
+
+  it('publishes strictly ascending event batches with their own catch-up views', () => {
+    const firstEvents: readonly GameEvent[] = [
+      { type: 'lines-cleared', side: 'player', amount: 2 },
+    ];
+    const secondEvents: readonly GameEvent[] = [
+      { type: 'attack-sent', side: 'opponent', amount: 1 },
+    ];
+    coreSpies.stepMatch
+      .mockImplementationOnce((state: MatchState) => ({
+        events: firstEvents,
+        state: { ...state, tick: state.tick + 1 },
+      }))
+      .mockImplementationOnce((state: MatchState) => ({
+        events: secondEvents,
+        state: { ...state, tick: state.tick + 1 },
+      }));
+    const onEventBatches = vi.fn();
+    const { clock, result } = renderLoop({ onEventBatches });
+
+    clock.advanceBy(STEP_MS * 3);
+
+    const published = result.current as typeof result.current & {
+      readonly eventBatches?: readonly {
+        readonly events: readonly GameEvent[];
+        readonly tick: number;
+        readonly view: { readonly tick: number };
+      }[];
+    };
+    expect(published.eventBatches).toEqual([
+      { events: firstEvents, tick: 1, view: expect.objectContaining({ tick: 1 }) },
+      { events: secondEvents, tick: 2, view: expect.objectContaining({ tick: 2 }) },
+    ]);
+    for (const batch of published.eventBatches ?? []) {
+      expect(batch.tick).toBe(batch.view.tick);
+    }
+    expect(onEventBatches).toHaveBeenCalledWith(published.eventBatches);
   });
 
   it('composes pause reasons and resets the timestamp before resuming', () => {

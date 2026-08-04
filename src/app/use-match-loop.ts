@@ -26,8 +26,15 @@ const MAX_STEPS_PER_FRAME = 8;
 
 export type PauseReason = 'background' | 'exit-confirmation';
 
+export interface GameEventBatch {
+  readonly tick: number;
+  readonly events: readonly GameEvent[];
+  readonly view: PublicMatchView;
+}
+
 export interface MatchLoopView {
   readonly view: PublicMatchView;
+  readonly eventBatches: readonly GameEventBatch[];
   readonly events: readonly GameEvent[];
   dispatch(command: GameCommand): void;
   setPaused(reason: PauseReason, paused: boolean): void;
@@ -41,15 +48,20 @@ export interface UseMatchLoopOptions {
     events: readonly GameEvent[],
     view: PublicMatchView,
   ) => void;
+  readonly onEventBatches?: (batches: readonly GameEventBatch[]) => void;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
 }
 
 interface PublishedMatch {
   readonly view: PublicMatchView;
+  readonly eventBatches: readonly GameEventBatch[];
   readonly events: readonly GameEvent[];
 }
 
-interface AdvancedTick extends PublishedMatch {
+interface AdvancedTick {
+  readonly view: PublicMatchView;
+  readonly eventBatch: GameEventBatch | null;
+  readonly events: readonly GameEvent[];
   readonly result: MatchResult | null;
 }
 
@@ -63,6 +75,7 @@ function resultFor(status: PublicMatchView['status']): MatchResult | null {
 export function useMatchLoop({
   ai,
   config,
+  onEventBatches,
   onEvents,
   onFinished,
 }: UseMatchLoopOptions): MatchLoopView {
@@ -70,10 +83,12 @@ export function useMatchLoop({
   if (stateRef.current === null) stateRef.current = createMatch(config);
 
   const [published, setPublished] = useState<PublishedMatch>(() => ({
+    eventBatches: [],
     events: [],
     view: createPublicMatchView(stateRef.current!),
   }));
   const aiRef = useRef(ai);
+  const onEventBatchesRef = useRef(onEventBatches);
   const onEventsRef = useRef(onEvents);
   const onFinishedRef = useRef(onFinished);
   const commandQueueRef = useRef<TimedCommand[]>([]);
@@ -85,6 +100,7 @@ export function useMatchLoop({
   const finishedRef = useRef(false);
 
   aiRef.current = ai;
+  onEventBatchesRef.current = onEventBatches;
   onEventsRef.current = onEvents;
   onFinishedRef.current = onFinished;
 
@@ -142,6 +158,11 @@ export function useMatchLoop({
       const step: MatchStep = stepMatch(state, [...playerCommands, ...aiCommands]);
       stateRef.current = step.state;
       const view = createPublicMatchView(step.state);
+      const eventBatch = step.events.length === 0 ? null : {
+        events: step.events,
+        tick: view.tick,
+        view,
+      } satisfies GameEventBatch;
 
       const result = resultFor(view.status);
       let completion: MatchResult | null = null;
@@ -155,7 +176,7 @@ export function useMatchLoop({
         accumulatorRef.current = 0;
         previousTimestampRef.current = null;
       }
-      return { view, events: step.events, result: completion };
+      return { view, eventBatch, events: step.events, result: completion };
     }
 
     function scheduleNextFrame(): void {
@@ -184,6 +205,7 @@ export function useMatchLoop({
       let latestView: PublicMatchView | null = null;
       let terminalResult: MatchResult | null = null;
       const frameEvents: GameEvent[] = [];
+      const frameEventBatches: GameEventBatch[] = [];
       while (
         accumulatorRef.current + STEP_EPSILON_MS >= STEP_MS
         && steps < MAX_STEPS_PER_FRAME
@@ -193,14 +215,26 @@ export function useMatchLoop({
         const advanced = advanceOneTick();
         latestView = advanced.view;
         frameEvents.push(...advanced.events);
+        if (advanced.eventBatch !== null) frameEventBatches.push(advanced.eventBatch);
         terminalResult = advanced.result;
         steps += 1;
       }
       if (latestView !== null) {
-        setPublished({ view: latestView, events: frameEvents });
+        setPublished({
+          eventBatches: frameEventBatches,
+          view: latestView,
+          events: frameEvents,
+        });
         if (frameEvents.length > 0) {
           try {
             onEventsRef.current?.(frameEvents, latestView);
+          } catch {
+            // Optional presentation feedback cannot own the match clock.
+          }
+        }
+        if (frameEventBatches.length > 0) {
+          try {
+            onEventBatchesRef.current?.(frameEventBatches);
           } catch {
             // Optional presentation feedback cannot own the match clock.
           }
@@ -224,6 +258,7 @@ export function useMatchLoop({
 
   return {
     view: published.view,
+    eventBatches: published.eventBatches,
     events: published.events,
     dispatch,
     setPaused,

@@ -15,6 +15,7 @@ import {
   type MatchLoopView,
   type UseMatchLoopOptions,
 } from '../../app/use-match-loop';
+import type { PortraitState } from '../../assets/index';
 import type {
   GameCommand,
   GameEvent,
@@ -27,6 +28,15 @@ import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { ProgressState } from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
+import {
+  createPortraitMemory,
+  createPortraitPresentation,
+  reducePortraitBatches,
+  resolvePortraitState,
+  type PortraitMemory,
+  type PortraitPresentation,
+  type PortraitRole,
+} from '../match/portrait-state';
 import { ExitConfirmation } from '../match/ExitConfirmation';
 import { InputResetBus } from '../match/input-reset-bus';
 import { ItemControls } from '../match/ItemControls';
@@ -49,6 +59,10 @@ export interface MatchScreenProps {
   readonly platform: PlatformPort;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
+  readonly portraitSources?: {
+    readonly player?: Partial<Record<PortraitState, string>>;
+    readonly opponent?: Partial<Record<PortraitState, string>>;
+  };
   readonly useMatchLoopImpl?: MatchLoopHook;
 }
 
@@ -93,6 +107,91 @@ function ignoreEffect(operation: () => Promise<void>): void {
   }
 }
 
+function portraitRoleFor(side: 'player' | 'opponent', floor: Floor): PortraitRole {
+  if (side === 'player') return 'hero';
+  return floor === 5 ? 'demon-king' : 'lieutenant';
+}
+
+function presentationFor(
+  memory: PortraitMemory,
+  {
+    floor,
+    role,
+    side,
+    sources,
+    view,
+  }: {
+    readonly floor: Floor;
+    readonly role: PortraitRole;
+    readonly side: 'player' | 'opponent';
+    readonly sources: MatchScreenProps['portraitSources'];
+    readonly view: PublicMatchView;
+  },
+): PortraitPresentation {
+  const state = resolvePortraitState({
+    ...memory,
+    dangerState: role === 'demon-king' ? 'rage' : 'panic',
+    tick: view.tick,
+  });
+  return createPortraitPresentation(
+    state,
+    sources?.[side],
+    side === 'player' ? 'PLAYER' : 'RIVAL',
+  );
+}
+
+function usePortraitPresentations(
+  floor: Floor,
+  match: Pick<MatchLoopView, 'eventBatches' | 'view'>,
+  sources: MatchScreenProps['portraitSources'],
+): { readonly player: PortraitPresentation; readonly opponent: PortraitPresentation } {
+  const memoriesRef = useRef<{
+    readonly floor: Floor;
+    readonly player: PortraitMemory;
+    readonly opponent: PortraitMemory;
+  } | null>(null);
+  const previous = memoriesRef.current?.floor === floor
+    ? memoriesRef.current
+    : {
+      floor,
+      opponent: createPortraitMemory(),
+      player: createPortraitMemory(),
+    };
+  const playerRole = portraitRoleFor('player', floor);
+  const opponentRole = portraitRoleFor('opponent', floor);
+  const player = reducePortraitBatches(previous.player, {
+    batches: match.eventBatches,
+    floor,
+    latestView: match.view,
+    role: playerRole,
+    side: 'player',
+  });
+  const opponent = reducePortraitBatches(previous.opponent, {
+    batches: match.eventBatches,
+    floor,
+    latestView: match.view,
+    role: opponentRole,
+    side: 'opponent',
+  });
+  memoriesRef.current = { floor, opponent, player };
+  return {
+    player: presentationFor(player, {
+      floor,
+      role: playerRole,
+      side: 'player',
+      sources,
+      view: match.view,
+    }),
+    opponent: presentationFor(opponent, {
+      floor,
+      role: opponentRole,
+      side: 'opponent',
+      sources,
+      view: match.view,
+    }),
+  };
+}
+
 export function MatchScreen({
   audioPort,
   floor,
@@ -100,6 +199,7 @@ export function MatchScreen({
   onRetrySettingsSave,
   onSettingsChange,
   platform,
+  portraitSources,
   seed,
   settings,
   settingsSaveFailed,
@@ -147,6 +247,7 @@ export function MatchScreen({
     onEvents: handleMatchEvents,
     onFinished,
   });
+  const portraits = usePortraitPresentations(floor, match, portraitSources);
   const [rowSelectionActive, setRowSelectionActive] = useState(false);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
@@ -255,18 +356,20 @@ export function MatchScreen({
         <BattleHud
           label="PLAYER"
           model={match.view.sides.player}
+          portrait={portraits.player}
           side="player"
         />
         <BattleHud
           label="RIVAL"
           model={match.view.sides.opponent}
+          portrait={portraits.opponent}
           side="opponent"
         />
       </div>
 
       <div className="battle-stage">
         <BattleCanvas
-          events={match.events}
+          eventBatches={match.eventBatches}
           playerBoardOverlay={rowSelectionActive ? (
             <RowSelector
               board={player.board}

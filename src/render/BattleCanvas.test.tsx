@@ -148,7 +148,7 @@ describe('BattleCanvas', () => {
     const removeWindowListener = vi.spyOn(window, 'removeEventListener');
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     const result = render(
-      <BattleCanvas events={[]} selectedRow={null} view={view} />,
+      <BattleCanvas eventBatches={[]} selectedRow={null} view={view} />,
     );
     const host = screen.getByTestId('battle-canvas');
     vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
@@ -192,7 +192,7 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 9 }));
     render(
       <BattleCanvas
-        events={[]}
+        eventBatches={[]}
         playerBoardOverlay={<div data-testid="player-board-overlay-content" />}
         selectedRow={null}
         view={view}
@@ -243,11 +243,12 @@ describe('BattleCanvas', () => {
       },
     ];
 
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     render(
       <BattleCanvas
-        events={events}
+        eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
-        view={createPublicMatchView(createMatch({ matchSeed: 7 }))}
+        view={view}
       />,
     );
     const playerScene = screen.getByTestId('player-board-scene');
@@ -290,23 +291,56 @@ describe('BattleCanvas', () => {
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
   });
 
+  it('queues separate catch-up batches with the tick attached to each batch', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const latest = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const firstView = { ...latest, tick: 18 };
+    const secondView = { ...latest, tick: 19 };
+    render(
+      <BattleCanvas
+        eventBatches={[
+          {
+            events: [{ type: 'attack-sent', side: 'player', amount: 1 }],
+            tick: 18,
+            view: firstView,
+          },
+          {
+            events: [{ type: 'item-used', side: 'opponent', item: 'queue-swap' }],
+            tick: 19,
+            view: secondView,
+          },
+        ]}
+        selectedRow={null}
+        view={secondView}
+      />,
+    );
+    const playerScene = screen.getByTestId('player-board-scene');
+
+    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-sent');
+    clock.advanceTimersOnlyBy(140);
+    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-19:0:item-used');
+  });
+
   it.each([
     { elapsed: 0, pending: 'progress' },
     { elapsed: 140, pending: 'dequeue' },
   ])('cancels the pending $pending frame and slot timer on unmount', ({ elapsed }) => {
     const clock = new EffectClock();
     clock.install();
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const events: readonly GameEvent[] = [{
+      amount: 1,
+      column: 4,
+      landingRow: 18,
+      side: 'player',
+      type: 'garbage-landed',
+    }];
     const result = render(
       <BattleCanvas
-        events={[{
-          amount: 1,
-          column: 4,
-          landingRow: 18,
-          side: 'player',
-          type: 'garbage-landed',
-        }]}
+        eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
-        view={createPublicMatchView(createMatch({ matchSeed: 7 }))}
+        view={view}
       />,
     );
 
@@ -341,11 +375,12 @@ describe('BattleCanvas', () => {
       },
     ];
 
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     render(
       <BattleCanvas
-        events={events}
+        eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
-        view={createPublicMatchView(createMatch({ matchSeed: 7 }))}
+        view={view}
       />,
     );
     const playerScene = screen.getByTestId('player-board-scene');

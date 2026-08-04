@@ -135,6 +135,22 @@ for (const { board, viewport } of PORTRAITS) {
 
     await openFloorFiveMatch(page);
 
+    const portraitSize = viewport.height <= 700 ? 20 : 24;
+    const portraits = page.locator('.battle-hud__portrait');
+    await expect(portraits).toHaveCount(2);
+    const portraitMetrics = await portraits.evaluateAll((nodes) => nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        height: Number.parseFloat(style.height),
+        state: node.getAttribute('data-portrait-state'),
+        width: Number.parseFloat(style.width),
+      };
+    }));
+    expect(portraitMetrics).toEqual([
+      { height: portraitSize, state: expect.any(String), width: portraitSize },
+      { height: portraitSize, state: expect.any(String), width: portraitSize },
+    ]);
+
     const matchHeader = await expectInsideViewport(
       page.locator('.match-header'),
       viewport,

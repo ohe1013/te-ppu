@@ -24,8 +24,19 @@ vi.mock('../../app/use-match-loop', () => ({
 }));
 
 vi.mock('../../render/BattleCanvas', () => ({
-  BattleCanvas: ({ playerBoardOverlay }: { readonly playerBoardOverlay?: ReactNode }) => (
-    <div data-testid="battle-canvas-proxy">{playerBoardOverlay}</div>
+  BattleCanvas: ({
+    eventBatches,
+    playerBoardOverlay,
+  }: {
+    readonly eventBatches?: readonly { readonly tick: number }[];
+    readonly playerBoardOverlay?: ReactNode;
+  }) => (
+    <div
+      data-event-batch-ticks={eventBatches?.map(({ tick }) => tick).join(',') ?? 'missing'}
+      data-testid="battle-canvas-proxy"
+    >
+      {playerBoardOverlay}
+    </div>
   ),
 }));
 
@@ -61,10 +72,14 @@ function createPlatform(): PlatformPort {
   };
 }
 
-function createLoop(events: MatchLoopView['events'] = []): MatchLoopView {
+function createLoop(
+  events: MatchLoopView['events'] = [],
+  eventBatches: MatchLoopView['eventBatches'] = [],
+): MatchLoopView {
   const view = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 91 }));
   return {
     dispatch: vi.fn(),
+    eventBatches,
     events,
     setPaused: vi.fn(),
     stop: vi.fn(),
@@ -262,6 +277,52 @@ describe('lifecycle UI', () => {
     expect(audio.destroy).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
     expect(audio.destroy).not.toHaveBeenCalled();
+  });
+
+  it('preserves readonly event batches while lifecycle pause and resume controls run', async () => {
+    vi.useFakeTimers();
+    const view = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 91 }));
+    const batches = [
+      {
+        events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+        tick: 18,
+        view: { ...view, tick: 18 },
+      },
+      {
+        events: [{ type: 'garbage-landed' as const, side: 'opponent' as const, amount: 1 }],
+        tick: 19,
+        view: { ...view, tick: 19 },
+      },
+    ] as const;
+    const loop = createLoop(
+      [...batches[0].events, ...batches[1].events],
+      batches,
+    );
+    useMatchLoopMock.mockReturnValue(loop);
+    let visibilityState: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilityState);
+    render(
+      <MatchScreen
+        audioPort={createAudio()}
+        floor={1}
+        onFinished={vi.fn()}
+        onRetrySettingsSave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        platform={createPlatform()}
+        seed={91}
+        settings={enabledSettings}
+        settingsSaveFailed={false}
+      />,
+    );
+
+    const canvas = screen.getByTestId('battle-canvas-proxy');
+    expect(canvas).toHaveAttribute('data-event-batch-ticks', '18,19');
+    visibilityState = 'hidden';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    visibilityState = 'visible';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(canvas).toHaveAttribute('data-event-batch-ticks', '18,19');
   });
 
   it('maps game events only when the matching sound and haptic settings are enabled', () => {

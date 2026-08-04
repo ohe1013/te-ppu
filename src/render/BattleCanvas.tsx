@@ -9,9 +9,9 @@ import {
 } from 'react';
 import type { Application as PixiApplication } from 'pixi.js';
 import type {
-  GameEvent,
   PublicMatchView,
 } from '../core/index';
+import type { GameEventBatch } from '../app/use-match-loop';
 import { BoardScene } from './BoardScene';
 import { computeBoardLayout } from './board-layout';
 import {
@@ -27,7 +27,7 @@ const CRITICAL_EFFECT_MS = 140;
 const EFFECT_FRAME_GRACE_MS = 50;
 
 export interface BattleCanvasProps {
-  readonly events: readonly GameEvent[];
+  readonly eventBatches: readonly GameEventBatch[];
   readonly playerBoardOverlay?: ReactNode;
   readonly selectedRow: number | null;
   readonly view: PublicMatchView;
@@ -92,8 +92,7 @@ export function observeBattleCanvas(
 }
 
 function useOrderedEffects(
-  events: readonly GameEvent[],
-  tick: number,
+  eventBatches: readonly GameEventBatch[],
 ): {
   readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
@@ -101,7 +100,7 @@ function useOrderedEffects(
   const queueRef = useRef(new EventAnimationQueue({
     maxDecorative: MAX_DECORATIVE_EFFECTS,
   }));
-  const handledTickRef = useRef<number | null>(null);
+  const handledTicksRef = useRef(new Set<number>());
   const activeRef = useRef<AnimationEffect | null>(null);
   const [active, setActive] = useState<AnimationEffect | null>(null);
   const [decorative, setDecorative] = useState<readonly AnimationEffect[]>([]);
@@ -111,17 +110,22 @@ function useOrderedEffects(
   }>({ effectId: null, value: 0 });
 
   useEffect(() => {
-    if (events.length === 0 || handledTickRef.current === tick) return;
-    handledTickRef.current = tick;
     const queue = queueRef.current;
-    queue.enqueue(effectsForEvents(events, `tick-${tick}`));
+    for (const batch of eventBatches
+      .map((value, index) => ({ index, value }))
+      .sort((left, right) => left.value.tick - right.value.tick || left.index - right.index)
+      .map(({ value }) => value)) {
+      if (batch.events.length === 0 || handledTicksRef.current.has(batch.tick)) continue;
+      handledTicksRef.current.add(batch.tick);
+      queue.enqueue(effectsForEvents(batch.events, `tick-${batch.tick}`));
+    }
     setDecorative(queue.takeDecorative());
     if (activeRef.current === null) {
       const next = queue.shiftCritical();
       activeRef.current = next;
       setActive(next);
     }
-  }, [events, tick]);
+  }, [eventBatches]);
 
   useEffect(() => {
     if (active === null) return;
@@ -187,7 +191,7 @@ function useOrderedEffects(
 }
 
 export function BattleCanvas({
-  events,
+  eventBatches,
   playerBoardOverlay,
   selectedRow,
   view,
@@ -196,7 +200,7 @@ export function BattleCanvas({
   const applicationRef = useRef<ApplicationRef>(null);
   const metricsRef = useRef<CanvasMetrics>({ height: 1, resolution: 1, width: 1 });
   const [metrics, setMetrics] = useState(metricsRef.current);
-  const { effectProgress, effects } = useOrderedEffects(events, view.tick);
+  const { effectProgress, effects } = useOrderedEffects(eventBatches);
   const layout = computeBoardLayout(metrics.width, metrics.height);
 
   useLayoutEffect(() => {

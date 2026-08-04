@@ -10,6 +10,7 @@ import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
 const useMatchLoopMock = vi.hoisted(() => vi.fn());
+const canvasPropsSpy = vi.hoisted(() => vi.fn());
 
 const lifecycleProps: Pick<
   MatchScreenProps,
@@ -54,19 +55,25 @@ vi.mock('../../app/use-match-loop', () => ({
 
 vi.mock('../../render/BattleCanvas', () => ({
   BattleCanvas: ({
+    eventBatches,
     playerBoardOverlay,
     selectedRow,
   }: {
+    readonly eventBatches?: readonly { readonly tick: number }[];
     readonly playerBoardOverlay?: ReactNode;
     readonly selectedRow: number | null;
-  }) => (
-    <div
-      data-selected-row={selectedRow === null ? 'none' : selectedRow}
-      data-testid="battle-canvas-proxy"
-    >
-      {playerBoardOverlay}
-    </div>
-  ),
+  }) => {
+    canvasPropsSpy({ eventBatches, playerBoardOverlay, selectedRow });
+    return (
+      <div
+        data-event-batches={eventBatches?.map(({ tick }) => tick).join(',') ?? 'missing'}
+        data-selected-row={selectedRow === null ? 'none' : selectedRow}
+        data-testid="battle-canvas-proxy"
+      >
+        {playerBoardOverlay}
+      </div>
+    );
+  },
 }));
 
 function activeLoop(): MatchLoopView {
@@ -76,6 +83,7 @@ function activeLoop(): MatchLoopView {
   }));
   return {
     dispatch: vi.fn(),
+    eventBatches: [],
     events: [],
     setPaused: vi.fn(),
     stop: vi.fn(),
@@ -98,6 +106,7 @@ function activeLoop(): MatchLoopView {
 beforeEach(() => {
   const loop: MatchLoopView = {
     dispatch: vi.fn(),
+    eventBatches: [],
     events: [],
     setPaused: vi.fn(),
     stop: vi.fn(),
@@ -124,6 +133,11 @@ describe('MatchScreen', () => {
       'data-selected-row',
       'none',
     );
+    expect(screen.getByTestId('battle-canvas-proxy')).toHaveAttribute(
+      'data-event-batches',
+      '',
+    );
+    expect(document.querySelector('img')).toBeNull();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
@@ -192,6 +206,38 @@ describe('MatchScreen', () => {
     expect(screen.queryByRole('group', { name: '행 제거 대상 선택' }))
       .not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: '게임 조작' })).toBeDisabled();
+  });
+
+  it('passes each event batch unchanged to the battle canvas in a catch-up frame', () => {
+    const baseView = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 17 }));
+    const first = {
+      events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+      tick: 18,
+      view: { ...baseView, tick: 18 },
+    };
+    const second = {
+      events: [{ type: 'garbage-landed' as const, side: 'opponent' as const, amount: 1 }],
+      tick: 19,
+      view: { ...baseView, tick: 19 },
+    };
+    const batches = [first, second] as const;
+    useMatchLoopMock.mockReturnValue({
+      ...activeLoop(),
+      eventBatches: batches,
+      events: [...first.events, ...second.events],
+      view: { ...baseView, tick: 19 },
+    });
+
+    render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
+
+    expect(screen.getByTestId('battle-canvas-proxy')).toHaveAttribute(
+      'data-event-batches',
+      '18,19',
+    );
+    const received = canvasPropsSpy.mock.calls.at(-1)?.[0]?.eventBatches;
+    expect(received).toBe(batches);
+    expect(received?.[0]).toBe(first);
+    expect(received?.[1]).toBe(second);
   });
 
   it('keeps borrowed audio cue-only while match lifecycle still pauses and counts down', async () => {

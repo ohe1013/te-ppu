@@ -1,12 +1,19 @@
 import type { PublicSideView, SideId } from '../../core/index';
+import { AssetImage } from './AssetImage';
+import type { PortraitPresentation } from './portrait-state';
 
 export interface BattleHudProps {
   readonly label: string;
   readonly model: PublicSideView;
+  readonly portrait?: PortraitPresentation;
   readonly side: SideId;
 }
 
-export function BattleHud({ label, model, side }: BattleHudProps) {
+export function BattleHud({ label, model, portrait, side }: BattleHudProps) {
+  const presentation = portrait ?? {
+    alt: `${label} idle portrait`,
+    state: 'idle' as const,
+  };
   return (
     <section
       aria-label={`${label} battle status`}
@@ -15,6 +22,12 @@ export function BattleHud({ label, model, side }: BattleHudProps) {
       role="region"
     >
       <header className="battle-hud__header">
+        <span
+          className="battle-hud__portrait"
+          data-portrait-state={presentation.state}
+        >
+          <AssetImage alt={presentation.alt} url={presentation.url} />
+        </span>
         <h2>{label}</h2>
         <span data-testid={`${side}-top-out`}>
           {model.topOut ? 'TOP OUT' : 'READY'}
