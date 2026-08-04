@@ -212,7 +212,11 @@ export function createBoardPrimitives({
     });
   }
 
-  if (model.freezeTicks > 0) {
+  const stateOwnedFreeze = effects.some((effect) => (
+    animationEffectSide(effect) === side
+    && animationEffectGroup(effect) === 'freeze-overlay'
+  ));
+  if (model.freezeTicks > 0 && !stateOwnedFreeze) {
     primitives.push({
       height: BOARD_ROWS,
       role: 'freeze',

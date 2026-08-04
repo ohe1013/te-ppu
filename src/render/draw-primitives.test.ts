@@ -300,4 +300,19 @@ describe('createBoardPrimitives', () => {
       height: 0.4, role: 'move-dust', width: 1.6, x: 1.2, y: 7.5,
     }]);
   });
+
+  it('renders one state-owned freeze overlay instead of duplicating the model overlay', () => {
+    const model = sideView();
+    const primitives = createBoardPrimitives({
+      effectProgress: 0,
+      effects: [{
+        group: 'freeze-overlay', id: 'freeze:player', priority: 'critical', side: 'player', tick: 3, view: effectView,
+      }],
+      model,
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.filter(({ role }) => role === 'freeze')).toHaveLength(1);
+  });
 });
