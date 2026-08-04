@@ -10,6 +10,7 @@ import {
   type SideId,
 } from '../core/index';
 import type { AnimationEffect } from './event-animation-queue';
+import { battleAnimationFrameNames } from './battle-animation-registry';
 
 interface FakeApplicationProps {
   readonly children?: ReactNode;
@@ -35,17 +36,22 @@ vi.mock('@pixi/react', () => ({
 }));
 
 vi.mock('pixi.js', () => ({
+  AnimatedSprite: class AnimatedSprite {},
   Container: class Container {},
   Graphics: class Graphics {},
+  Sprite: class Sprite {},
   Text: class Text {},
+  Texture: class Texture {},
 }));
 
 vi.mock('./BoardScene', () => ({
   BoardScene: ({
+    atlas,
     effectProgress,
     effects,
     side,
   }: {
+    readonly atlas?: Readonly<Record<string, unknown>> | null;
     readonly effectProgress: number;
     readonly effects: readonly AnimationEffect[];
     readonly side: SideId;
@@ -53,6 +59,7 @@ vi.mock('./BoardScene', () => ({
     <div
       data-effect-ids={effects.map(({ id }) => id).join(',')}
       data-effect-progress={effectProgress}
+      data-atlas-frame-count={Object.keys(atlas ?? {}).length}
       data-effect-snapshots={effects.map((effect) => (
         `${'tick' in effect ? effect.tick : 'missing'}/${
           'view' in effect ? effect.view.tick : 'missing'
@@ -153,7 +160,7 @@ describe('BattleCanvas', () => {
     const removeWindowListener = vi.spyOn(window, 'removeEventListener');
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     const result = render(
-      <BattleCanvas eventBatches={[]} selectedRow={null} view={view} />,
+      <BattleCanvas commandFeedback={[]} eventBatches={[]} selectedRow={null} view={view} />,
     );
     const host = screen.getByTestId('battle-canvas');
     vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
@@ -197,6 +204,7 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 9 }));
     render(
       <BattleCanvas
+        commandFeedback={[]}
         eventBatches={[]}
         playerBoardOverlay={<div data-testid="player-board-overlay-content" />}
         selectedRow={null}
@@ -251,6 +259,7 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     render(
       <BattleCanvas
+        commandFeedback={[]}
         eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
         view={view}
@@ -260,40 +269,77 @@ describe('BattleCanvas', () => {
 
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:0:garbage-landed',
+      'tick-0:0:garbage-land',
     );
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
 
-    clock.advanceBy(70);
+    clock.advanceBy(5 / 24 * 1000 / 2);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:0:garbage-landed',
+      'tick-0:0:garbage-land',
     );
-    expect(playerScene).toHaveAttribute('data-effect-progress', '0.5');
+    expect(Number(playerScene.getAttribute('data-effect-progress'))).toBeCloseTo(0.5);
 
-    clock.advanceBy(70);
+    clock.advanceBy(5 / 24 * 1000 / 2);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:0:garbage-landed',
+      'tick-0:0:garbage-land',
     );
     expect(playerScene).toHaveAttribute('data-effect-progress', '1');
 
     clock.advanceBy(16);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:1:garbage-landed',
+      'tick-0:1:garbage-land',
     );
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
 
-    clock.advanceBy(70);
-    expect(playerScene).toHaveAttribute('data-effect-progress', '0.5');
+    clock.advanceBy(5 / 24 * 1000 / 2);
+    expect(Number(playerScene.getAttribute('data-effect-progress'))).toBeCloseTo(0.5);
 
-    clock.advanceBy(70);
+    clock.advanceBy(5 / 24 * 1000 / 2);
     expect(playerScene).toHaveAttribute('data-effect-progress', '1');
 
     clock.advanceBy(16);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
+  });
+
+  it.each([
+    ['without an atlas', undefined],
+    ['with an incomplete atlas', { 'attack-shot/00.png': {} }],
+  ] as const)('keeps an attack visible through the board fallback %s', (_name, atlas) => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        atlas={atlas as never}
+        commandFeedback={[]}
+        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], tick: 0, view }]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
+      'data-effect-ids', 'tick-0:0:attack-shot',
+    );
+    expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
+  });
+
+  it('uses a root Pixi sprite only when every attack-shot frame exists', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const atlas = Object.fromEntries(battleAnimationFrameNames('attack-shot').map((name) => [name, {}]));
+    render(
+      <BattleCanvas
+        atlas={atlas as never}
+        commandFeedback={[]}
+        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], tick: 0, view }]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getByTestId('attack-shot-sprite')).toBeInTheDocument();
   });
 
   it('queues separate catch-up batches with the tick attached to each batch', () => {
@@ -304,6 +350,7 @@ describe('BattleCanvas', () => {
     const secondView = { ...latest, tick: 19 };
     render(
       <BattleCanvas
+        commandFeedback={[]}
         eventBatches={[
           {
             events: [{ type: 'attack-sent', side: 'player', amount: 1 }],
@@ -322,16 +369,15 @@ describe('BattleCanvas', () => {
     );
     const playerScene = screen.getByTestId('player-board-scene');
 
-    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-sent');
+    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-shot');
     expect(playerScene).toHaveAttribute('data-effect-snapshots', '18/18');
-    clock.advanceTimersOnlyBy(140);
-    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-19:0:item-used');
-    expect(playerScene).toHaveAttribute('data-effect-snapshots', '19/19');
+    clock.advanceTimersOnlyBy(350);
+    expect(playerScene).toHaveAttribute('data-effect-ids', '');
   });
 
   it.each([
     { elapsed: 0, pending: 'progress' },
-    { elapsed: 140, pending: 'dequeue' },
+    { elapsed: 208, pending: 'dequeue' },
   ])('cancels the pending $pending frame and slot timer on unmount', ({ elapsed }) => {
     const clock = new EffectClock();
     clock.install();
@@ -345,6 +391,7 @@ describe('BattleCanvas', () => {
     }];
     const result = render(
       <BattleCanvas
+        commandFeedback={[]}
         eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
         view={view}
@@ -385,6 +432,7 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     render(
       <BattleCanvas
+        commandFeedback={[]}
         eventBatches={[{ events, tick: 0, view }]}
         selectedRow={null}
         view={view}
@@ -392,14 +440,14 @@ describe('BattleCanvas', () => {
     );
     const playerScene = screen.getByTestId('player-board-scene');
 
-    clock.advanceTimersOnlyBy(190);
+    clock.advanceTimersOnlyBy(5 / 24 * 1000 + 50);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:1:garbage-landed',
+      'tick-0:1:garbage-land',
     );
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
 
-    clock.advanceTimersOnlyBy(190);
+    clock.advanceTimersOnlyBy(5 / 24 * 1000 + 50);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
     expect(clock.pendingFrames).toBe(0);
     expect(vi.getTimerCount()).toBe(0);

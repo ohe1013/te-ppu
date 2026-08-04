@@ -44,6 +44,18 @@ const effectView = createPublicMatchView(createMatch({ matchSeed: 4 }));
 
 const effects: readonly AnimationEffect[] = [
   {
+    command: { command: { type: 'move', dx: -1 }, sequence: 0, side: 'player', tick: 0 },
+    group: 'move-dust', id: 'move-1', priority: 'decorative', side: 'player', tick: 0, view: effectView,
+  },
+  {
+    command: { command: { type: 'rotate-clockwise' }, sequence: 1, side: 'player', tick: 0 },
+    group: 'rotate-spark', id: 'rotate-1', priority: 'decorative', side: 'player', tick: 0, view: effectView,
+  },
+  {
+    event: { side: 'player', type: 'piece-locked' },
+    group: 'land-impact', id: 'land-1', priority: 'critical', side: 'player', tick: 0, view: effectView,
+  },
+  {
     event: { amount: 1, rows: [19], side: 'player', type: 'lines-cleared' },
     id: 'clear-1',
     priority: 'critical',
@@ -62,6 +74,18 @@ const effects: readonly AnimationEffect[] = [
     priority: 'critical',
     tick: 0,
     view: effectView,
+  },
+  {
+    event: { amount: 1, side: 'player', type: 'attack-sent' },
+    group: 'attack-shot', id: 'attack-1', priority: 'critical', side: 'player', tick: 0, view: effectView,
+  },
+  {
+    event: { item: 'freeze', side: 'player', type: 'item-acquired' },
+    group: 'item-acquire', id: 'item-1', priority: 'critical', side: 'player', tick: 0, view: effectView,
+  },
+  {
+    event: { amount: 1, rows: [19], side: 'player', type: 'lines-cleared' },
+    group: 'combo-pop', id: 'combo-1', priority: 'decorative', side: 'player', tick: 0, view: effectView,
   },
 ];
 
@@ -88,6 +112,12 @@ describe('createBoardPrimitives', () => {
     expect(roles('freeze')).toHaveLength(1);
     expect(roles('line-clear')).toHaveLength(1);
     expect(roles('garbage-drop')).toHaveLength(1);
+    expect(roles('move-dust')).toHaveLength(1);
+    expect(roles('rotate-spark')).toHaveLength(1);
+    expect(roles('land-impact')).toHaveLength(1);
+    expect(roles('attack')).toHaveLength(1);
+    expect(roles('item-pulse')).toHaveLength(1);
+    expect(roles('combo-pop')).toHaveLength(1);
   });
 
   it('flashes each exact visible cleared row once, including noncontiguous rows', () => {

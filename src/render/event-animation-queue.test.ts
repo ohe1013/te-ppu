@@ -6,6 +6,7 @@ import {
 } from '../core/index';
 import {
   EventAnimationQueue,
+  effectsForCommandFeedback,
   effectsForEvents,
   type AnimationEffect,
 } from './event-animation-queue';
@@ -80,13 +81,35 @@ describe('EventAnimationQueue', () => {
     expect(
       effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id),
     ).toEqual([
-      'tick-42:0:lines-cleared',
-      'tick-42:1:attack-sent',
-      'tick-42:2:garbage-landed',
+      'tick-42:0:line-clear',
+      'tick-42:1:attack-shot',
+      'tick-42:2:garbage-land',
     ]);
     expect(
       effects.filter(({ priority }) => priority === 'decorative').map(({ id }) => id),
-    ).toEqual(['tick-42:0:lines-cleared:particles']);
+    ).toEqual([]);
     expect(effects.every((effect) => effect.tick === 42 && effect.view === view)).toBe(true);
+  });
+
+  it('maps command cues and combo snapshots without inventing effects for unrelated commands', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 42 }));
+    const comboView = {
+      ...view,
+      sides: { ...view.sides, player: { ...view.sides.player, combo: 2 } },
+    };
+    expect(effectsForCommandFeedback([
+      { command: { type: 'move', dx: -1 }, sequence: 3, side: 'player', tick: 12 },
+      { command: { type: 'rotate-clockwise' }, sequence: 4, side: 'opponent', tick: 12 },
+      { command: { type: 'hard-drop' }, sequence: 5, side: 'player', tick: 12 },
+    ], view).map(({ group, tick }) => ({ group, tick }))).toEqual([
+      { group: 'move-dust', tick: 12 },
+      { group: 'rotate-spark', tick: 12 },
+    ]);
+    expect(effectsForEvents([
+      { amount: 2, rows: [18, 19], side: 'player', type: 'lines-cleared' },
+    ], 7, comboView).map(({ group, view: snapshot }) => ({ group, snapshot }))).toEqual([
+      { group: 'line-clear', snapshot: comboView },
+      { group: 'combo-pop', snapshot: comboView },
+    ]);
   });
 });

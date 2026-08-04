@@ -16,6 +16,7 @@ import {
   type MatchState,
   type MatchStep,
   type PublicMatchView,
+  type SideId,
   type TimedCommand,
 } from '../core/index';
 import type { MatchResult } from './app-route';
@@ -32,10 +33,18 @@ export interface GameEventBatch {
   readonly view: PublicMatchView;
 }
 
+export interface CommandFeedback {
+  readonly sequence: number;
+  readonly tick: number;
+  readonly side: SideId;
+  readonly command: GameCommand;
+}
+
 export interface MatchLoopView {
   readonly view: PublicMatchView;
   readonly eventBatches: readonly GameEventBatch[];
   readonly events: readonly GameEvent[];
+  readonly commandFeedback: readonly CommandFeedback[];
   dispatch(command: GameCommand): void;
   setPaused(reason: PauseReason, paused: boolean): void;
   stop(): void;
@@ -49,6 +58,7 @@ export interface UseMatchLoopOptions {
     view: PublicMatchView,
   ) => void;
   readonly onEventBatches?: (batches: readonly GameEventBatch[]) => void;
+  readonly onCommandFeedback?: (feedback: CommandFeedback) => void;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
 }
 
@@ -56,12 +66,14 @@ interface PublishedMatch {
   readonly view: PublicMatchView;
   readonly eventBatches: readonly GameEventBatch[];
   readonly events: readonly GameEvent[];
+  readonly commandFeedback: readonly CommandFeedback[];
 }
 
 interface AdvancedTick {
   readonly view: PublicMatchView;
   readonly eventBatch: GameEventBatch | null;
   readonly events: readonly GameEvent[];
+  readonly commandFeedback: readonly CommandFeedback[];
   readonly result: MatchResult | null;
 }
 
@@ -76,6 +88,7 @@ export function useMatchLoop({
   ai,
   config,
   onEventBatches,
+  onCommandFeedback,
   onEvents,
   onFinished,
 }: UseMatchLoopOptions): MatchLoopView {
@@ -85,11 +98,13 @@ export function useMatchLoop({
   const [published, setPublished] = useState<PublishedMatch>(() => ({
     eventBatches: [],
     events: [],
+    commandFeedback: [],
     view: createPublicMatchView(stateRef.current!),
   }));
   const aiRef = useRef(ai);
   const onEventBatchesRef = useRef(onEventBatches);
   const onEventsRef = useRef(onEvents);
+  const onCommandFeedbackRef = useRef(onCommandFeedback);
   const onFinishedRef = useRef(onFinished);
   const commandQueueRef = useRef<TimedCommand[]>([]);
   const pauseReasonsRef = useRef(new Set<PauseReason>());
@@ -98,10 +113,12 @@ export function useMatchLoop({
   const frameRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const finishedRef = useRef(false);
+  const commandSequenceRef = useRef(0);
 
   aiRef.current = ai;
   onEventBatchesRef.current = onEventBatches;
   onEventsRef.current = onEvents;
+  onCommandFeedbackRef.current = onCommandFeedback;
   onFinishedRef.current = onFinished;
 
   const stop = useCallback(() => {
@@ -155,7 +172,21 @@ export function useMatchLoop({
       const observation = createAiObservation(state, 'opponent');
       const aiCommands = aiRef.current.update(observation, tick);
       const playerCommands = drainCommandsForTick(tick);
-      const step: MatchStep = stepMatch(state, [...playerCommands, ...aiCommands]);
+      const scheduled = [...playerCommands, ...aiCommands];
+      const commandFeedback = scheduled.map((timed) => ({
+        command: timed.command,
+        sequence: commandSequenceRef.current++,
+        side: timed.side,
+        tick: timed.tick,
+      } satisfies CommandFeedback));
+      for (const feedback of commandFeedback) {
+        try {
+          onCommandFeedbackRef.current?.(feedback);
+        } catch {
+          // Command feedback is presentation-only and cannot own the clock.
+        }
+      }
+      const step: MatchStep = stepMatch(state, scheduled);
       stateRef.current = step.state;
       const view = createPublicMatchView(step.state);
       const eventBatch = step.events.length === 0 ? null : {
@@ -176,7 +207,7 @@ export function useMatchLoop({
         accumulatorRef.current = 0;
         previousTimestampRef.current = null;
       }
-      return { view, eventBatch, events: step.events, result: completion };
+      return { commandFeedback, view, eventBatch, events: step.events, result: completion };
     }
 
     function scheduleNextFrame(): void {
@@ -206,6 +237,7 @@ export function useMatchLoop({
       let terminalResult: MatchResult | null = null;
       const frameEvents: GameEvent[] = [];
       const frameEventBatches: GameEventBatch[] = [];
+      const frameCommandFeedback: CommandFeedback[] = [];
       while (
         accumulatorRef.current + STEP_EPSILON_MS >= STEP_MS
         && steps < MAX_STEPS_PER_FRAME
@@ -214,6 +246,7 @@ export function useMatchLoop({
         accumulatorRef.current = Math.max(0, accumulatorRef.current - STEP_MS);
         const advanced = advanceOneTick();
         latestView = advanced.view;
+        frameCommandFeedback.push(...advanced.commandFeedback);
         frameEvents.push(...advanced.events);
         if (advanced.eventBatch !== null) frameEventBatches.push(advanced.eventBatch);
         terminalResult = advanced.result;
@@ -224,6 +257,7 @@ export function useMatchLoop({
           eventBatches: frameEventBatches,
           view: latestView,
           events: frameEvents,
+          commandFeedback: frameCommandFeedback,
         });
         if (frameEvents.length > 0) {
           try {
@@ -260,6 +294,7 @@ export function useMatchLoop({
     view: published.view,
     eventBatches: published.eventBatches,
     events: published.events,
+    commandFeedback: published.commandFeedback,
     dispatch,
     setPaused,
     stop,

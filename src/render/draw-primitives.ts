@@ -7,7 +7,11 @@ import {
   type PublicSideView,
   type SideId,
 } from '../core/index';
-import type { AnimationEffect } from './event-animation-queue';
+import {
+  animationEffectGroup,
+  animationEffectSide,
+  type AnimationEffect,
+} from './event-animation-queue';
 
 const BOARD_COLUMNS = 10;
 const BOARD_ROWS = 20;
@@ -26,6 +30,10 @@ export type BoardPrimitiveRole =
   | 'garbage-drop'
   | 'attack'
   | 'item-pulse'
+  | 'move-dust'
+  | 'rotate-spark'
+  | 'land-impact'
+  | 'combo-pop'
   | 'top-out';
 
 export interface BoardPrimitive {
@@ -182,8 +190,27 @@ export function createBoardPrimitives({
   }
 
   for (const effect of effects) {
-    if (effect.event.side !== side) continue;
-    if (effect.event.type === 'lines-cleared') {
+    if (animationEffectSide(effect) !== side) continue;
+    const group = animationEffectGroup(effect);
+    if (group === 'move-dust' && model.active !== null) {
+      primitives.push({
+        height: 0.4,
+        role: 'move-dust',
+        width: 1.6,
+        x: model.active.x + 1.2,
+        y: model.active.y + 3.5,
+      });
+    } else if (group === 'rotate-spark' && model.active !== null) {
+      primitives.push({
+        height: 1.4,
+        role: 'rotate-spark',
+        width: 1.4,
+        x: model.active.x + 1.3,
+        y: model.active.y + 1.3,
+      });
+    } else if (group === 'land-impact') {
+      primitives.push({ height: 0.6, role: 'land-impact', width: 3, x: 3.5, y: 19.2 });
+    } else if (group === 'line-clear' && effect.event?.type === 'lines-cleared') {
       if (effect.priority !== 'critical') continue;
       for (const row of effect.event.rows ?? []) {
         if (!Number.isInteger(row) || row < 0 || row >= BOARD_ROWS) continue;
@@ -195,7 +222,7 @@ export function createBoardPrimitives({
           y: row,
         });
       }
-    } else if (effect.event.type === 'garbage-landed') {
+    } else if (group === 'garbage-land' && effect.event?.type === 'garbage-landed') {
       const { column, landingRow } = effect.event;
       if (
         effect.priority !== 'critical'
@@ -213,7 +240,7 @@ export function createBoardPrimitives({
         x: column,
         y: landingRow * progress,
       });
-    } else if (effect.event.type === 'attack-sent') {
+    } else if (group === 'attack-shot') {
       primitives.push({
         height: 0.35,
         role: 'attack',
@@ -221,10 +248,7 @@ export function createBoardPrimitives({
         x: 0,
         y: 0,
       });
-    } else if (
-      effect.event.type === 'item-acquired'
-      || effect.event.type === 'item-used'
-    ) {
+    } else if (group === 'item-acquire' && effect.event?.type === 'item-acquired') {
       primitives.push({
         height: BOARD_ROWS,
         marker: effect.event.item,
@@ -233,6 +257,8 @@ export function createBoardPrimitives({
         x: 0,
         y: 0,
       });
+    } else if (group === 'combo-pop') {
+      primitives.push({ height: 2, role: 'combo-pop', width: 4, x: 3, y: 7 });
     }
   }
 
@@ -338,6 +364,21 @@ export function drawBoardPrimitives(
         graphics
           .rect(x, y, primitiveWidth, primitiveHeight)
           .stroke({ alpha: 0.8, color: ITEM_COLORS[primitive.marker ?? 'row-clear'], width: 2.5 });
+        break;
+      case 'move-dust':
+        graphics.ellipse(x + primitiveWidth / 2, y + primitiveHeight / 2, primitiveWidth / 2, primitiveHeight / 2)
+          .fill({ alpha: 0.7, color: 0xe4d6b0 });
+        break;
+      case 'rotate-spark':
+        graphics.circle(x + primitiveWidth / 2, y + primitiveHeight / 2, Math.min(primitiveWidth, primitiveHeight) / 2)
+          .stroke({ color: 0xffdc4a, width: 2 });
+        break;
+      case 'land-impact':
+        graphics.rect(x, y, primitiveWidth, primitiveHeight).fill({ alpha: 0.75, color: 0xffffff });
+        break;
+      case 'combo-pop':
+        graphics.roundRect(x, y, primitiveWidth, primitiveHeight, Math.max(1, inset * 2))
+          .fill({ alpha: 0.76, color: 0xb86cff });
         break;
       case 'top-out':
         graphics.rect(x, y, primitiveWidth, primitiveHeight).fill({ alpha: 0.45, color: 0x2c1022 });

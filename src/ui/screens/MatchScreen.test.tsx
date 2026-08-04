@@ -55,15 +55,17 @@ vi.mock('../../app/use-match-loop', () => ({
 
 vi.mock('../../render/BattleCanvas', () => ({
   BattleCanvas: ({
+    commandFeedback,
     eventBatches,
     playerBoardOverlay,
     selectedRow,
   }: {
+    readonly commandFeedback: readonly { readonly tick: number }[];
     readonly eventBatches?: readonly { readonly tick: number }[];
     readonly playerBoardOverlay?: ReactNode;
     readonly selectedRow: number | null;
   }) => {
-    canvasPropsSpy({ eventBatches, playerBoardOverlay, selectedRow });
+    canvasPropsSpy({ commandFeedback, eventBatches, playerBoardOverlay, selectedRow });
     return (
       <div
         data-event-batches={eventBatches?.map(({ tick }) => tick).join(',') ?? 'missing'}
@@ -83,6 +85,7 @@ function activeLoop(): MatchLoopView {
   }));
   return {
     dispatch: vi.fn(),
+    commandFeedback: [],
     eventBatches: [],
     events: [],
     setPaused: vi.fn(),
@@ -106,6 +109,7 @@ function activeLoop(): MatchLoopView {
 beforeEach(() => {
   const loop: MatchLoopView = {
     dispatch: vi.fn(),
+    commandFeedback: [],
     eventBatches: [],
     events: [],
     setPaused: vi.fn(),
@@ -238,6 +242,17 @@ describe('MatchScreen', () => {
     expect(received).toBe(batches);
     expect(received?.[0]).toBe(first);
     expect(received?.[1]).toBe(second);
+  });
+
+  it('passes the frame-owned command feedback array unchanged to the battle canvas', () => {
+    const feedback = [{
+      command: { type: 'move' as const, dx: -1 }, sequence: 9, side: 'player' as const, tick: 18,
+    }] as const;
+    useMatchLoopMock.mockReturnValue({ ...activeLoop(), commandFeedback: feedback });
+
+    render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
+
+    expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.commandFeedback).toBe(feedback);
   });
 
   it('keeps borrowed audio cue-only while match lifecycle still pauses and counts down', async () => {

@@ -369,6 +369,7 @@ export function MatchScreen({
 
       <div className="battle-stage">
         <BattleCanvas
+          commandFeedback={match.commandFeedback}
           eventBatches={match.eventBatches}
           playerBoardOverlay={rowSelectionActive ? (
             <RowSelector

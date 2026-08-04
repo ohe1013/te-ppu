@@ -78,6 +78,7 @@ function createLoop(
 ): MatchLoopView {
   const view = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 91 }));
   return {
+    commandFeedback: [],
     dispatch: vi.fn(),
     eventBatches,
     events,

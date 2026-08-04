@@ -22,7 +22,7 @@ import {
   type AiController,
 } from '../ai/index';
 import { MatchScreen } from '../ui/screens/MatchScreen';
-import { useMatchLoop } from './use-match-loop';
+import { type CommandFeedback, useMatchLoop } from './use-match-loop';
 
 const coreSpies = vi.hoisted(() => ({
   createAiObservation: vi.fn(),
@@ -120,11 +120,13 @@ function fakeAi(commands: readonly TimedCommand[] = []): AiController & {
 function renderLoop({
   ai = fakeAi(),
   onEventBatches,
+  onCommandFeedback,
   onEvents,
   onFinished = vi.fn(),
 }: {
   readonly ai?: AiController;
   readonly onEventBatches?: (batches: readonly unknown[]) => void;
+  readonly onCommandFeedback?: (feedback: CommandFeedback) => void;
   readonly onEvents?: Parameters<typeof useMatchLoop>[0]['onEvents'];
   readonly onFinished?: (result: 'win' | 'loss' | 'draw') => void | Promise<void>;
 } = {}) {
@@ -134,6 +136,7 @@ function renderLoop({
     ai,
     config: { matchSeed: 17, countdownTicks: 0 },
     onEventBatches,
+    onCommandFeedback,
     onEvents,
     onFinished,
   }));
@@ -235,6 +238,39 @@ describe('useMatchLoop', () => {
     expect(result.current.events).toEqual(earlyEvents);
   });
 
+  it('publishes player-before-AI command feedback at the scheduled tick without changing core commands', () => {
+    const aiCommands: readonly TimedCommand[] = [{
+      command: { type: 'hard-drop' }, side: 'opponent', tick: 1,
+    }];
+    const onCommandFeedback = vi.fn();
+    const { clock, result } = renderLoop({ ai: fakeAi(aiCommands), onCommandFeedback });
+    act(() => result.current.dispatch({ type: 'move', dx: -1 }));
+
+    clock.advanceBy(STEP_MS);
+
+    expect(result.current.commandFeedback).toEqual([
+      { sequence: 0, tick: 1, side: 'player', command: { type: 'move', dx: -1 } },
+      { sequence: 1, tick: 1, side: 'opponent', command: { type: 'hard-drop' } },
+    ]);
+    expect(onCommandFeedback.mock.calls.map(([feedback]) => feedback)).toEqual(result.current.commandFeedback);
+    expect(coreSpies.stepMatch.mock.invocationCallOrder[0])
+      .toBeGreaterThan(onCommandFeedback.mock.invocationCallOrder[1]!);
+  });
+
+  it('keeps presentation feedback independent when a rejected command and callback failure occur', () => {
+    const onCommandFeedback = vi.fn(() => { throw new Error('presentation only'); });
+    const { clock, result } = renderLoop({ onCommandFeedback });
+    act(() => result.current.dispatch({ type: 'use-freeze' }));
+    clock.advanceBy(STEP_MS);
+
+    expect(result.current.commandFeedback).toEqual([
+      { sequence: 0, tick: 1, side: 'player', command: { type: 'use-freeze' } },
+    ]);
+    expect(result.current.events.some(({ type }) => type === 'item-used')).toBe(false);
+    expect(coreSpies.stepMatch).toHaveBeenCalledTimes(1);
+    expect(result.current.view.tick).toBe(1);
+  });
+
   it('publishes strictly ascending event batches with their own catch-up views', () => {
     const firstEvents: readonly GameEvent[] = [
       { type: 'lines-cleared', side: 'player', amount: 2 },
@@ -274,10 +310,12 @@ describe('useMatchLoop', () => {
   });
 
   it('composes pause reasons and resets the timestamp before resuming', () => {
-    const { clock, result } = renderLoop();
+    const onCommandFeedback = vi.fn();
+    const { clock, result } = renderLoop({ onCommandFeedback });
 
     act(() => result.current.setPaused('background', true));
     clock.advanceBy(5_000);
+    expect(onCommandFeedback).not.toHaveBeenCalled();
     act(() => {
       result.current.setPaused('exit-confirmation', true);
       result.current.setPaused('background', false);

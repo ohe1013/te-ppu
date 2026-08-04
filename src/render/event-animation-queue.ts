@@ -1,11 +1,20 @@
-import type { GameEvent, PublicMatchView } from '../core/index';
+import type { CommandFeedback } from '../app/use-match-loop';
+import type { GameEvent, PublicMatchView, SideId } from '../core/index';
+import {
+  BATTLE_EFFECT_LIFETIMES,
+  type BattleAnimationGroup,
+  battleAnimationDurationMs,
+} from './battle-animation-registry';
 
 export type AnimationPriority = 'critical' | 'decorative';
 
 export interface AnimationEffect {
   readonly id: string;
   readonly priority: AnimationPriority;
-  readonly event: GameEvent;
+  readonly group?: BattleAnimationGroup;
+  readonly side?: SideId;
+  readonly event?: GameEvent;
+  readonly command?: CommandFeedback;
   readonly tick: number;
   readonly view: PublicMatchView;
 }
@@ -14,32 +23,88 @@ export interface EventAnimationQueueOptions {
   readonly maxDecorative: number;
 }
 
+function groupForEvent(event: GameEvent): BattleAnimationGroup | null {
+  if (event.type === 'piece-locked') return 'land-impact';
+  if (event.type === 'lines-cleared') return 'line-clear';
+  if (event.type === 'attack-sent') return 'attack-shot';
+  if (event.type === 'garbage-landed') return 'garbage-land';
+  if (event.type === 'item-acquired') return 'item-acquire';
+  return null;
+}
+
+export function animationEffectGroup(effect: AnimationEffect): BattleAnimationGroup | null {
+  return effect.group ?? (effect.event === undefined ? null : groupForEvent(effect.event));
+}
+
+export function animationEffectSide(effect: AnimationEffect): SideId | null {
+  return effect.side ?? effect.event?.side ?? effect.command?.side ?? null;
+}
+
+export function effectLifetimeMs(effect: AnimationEffect): number | null {
+  const group = animationEffectGroup(effect);
+  if (group === null) return null;
+  const lifetime = BATTLE_EFFECT_LIFETIMES[group];
+  if (lifetime.kind === 'state') return null;
+  return lifetime.kind === 'fixed' ? lifetime.durationMs : battleAnimationDurationMs(group);
+}
+
 export function effectsForEvents(
   events: readonly GameEvent[],
   tick: number,
   view: PublicMatchView,
 ): readonly AnimationEffect[] {
   return events.flatMap((event, index) => {
-    const id = `tick-${tick}:${index}:${event.type}`;
-    const critical: AnimationEffect = {
+    const group = groupForEvent(event);
+    if (group === null) return [];
+    const id = `tick-${tick}:${index}:${group}`;
+    const effect: AnimationEffect = {
+      event, group, id, priority: 'critical', side: event.side, tick, view,
+    };
+    if (event.type !== 'lines-cleared' || view.sides[event.side].combo < 2) return [effect];
+    return [effect, {
       event,
-      id,
-      priority: 'critical',
+      group: 'combo-pop',
+      id: `${id}:combo`,
+      priority: 'decorative',
+      side: event.side,
       tick,
       view,
-    };
-    if (event.type !== 'lines-cleared') return [critical];
-    return [
-      critical,
-      {
-        event,
-        id: `${id}:particles`,
-        priority: 'decorative',
-        tick,
-        view,
-      },
-    ];
+    }];
   });
+}
+
+export function effectsForCommandFeedback(
+  feedback: readonly CommandFeedback[],
+  view: PublicMatchView,
+): readonly AnimationEffect[] {
+  return feedback.flatMap((command) => {
+    const group = command.command.type === 'move'
+      ? 'move-dust'
+      : command.command.type === 'rotate-clockwise' ? 'rotate-spark' : null;
+    if (group === null) return [];
+    return [{
+      command,
+      group,
+      id: `command-${command.sequence}:${group}`,
+      priority: 'decorative',
+      side: command.side,
+      tick: command.tick,
+      view,
+    }];
+  });
+}
+
+export function stateEffectsForView(view: PublicMatchView): readonly AnimationEffect[] {
+  return (['player', 'opponent'] as const).flatMap((side) => (
+    view.sides[side].freezeTicks > 0 ? [{
+      group: 'freeze-overlay' as const,
+      id: `freeze:${side}`,
+      priority: 'critical' as const,
+      side,
+      tick: view.tick,
+      view,
+    }] : []
+  ));
 }
 
 export class EventAnimationQueue {
@@ -54,10 +119,8 @@ export class EventAnimationQueue {
 
   enqueue(effects: readonly AnimationEffect[]): void {
     let decorativeCount = this.#effects.reduce(
-      (count, effect) => count + Number(effect.priority === 'decorative'),
-      0,
+      (count, effect) => count + Number(effect.priority === 'decorative'), 0,
     );
-
     for (const effect of effects) {
       if (effect.priority === 'decorative') {
         if (decorativeCount >= this.#maxDecorative) continue;
@@ -68,15 +131,11 @@ export class EventAnimationQueue {
   }
 
   decorativeIds(): readonly string[] {
-    return this.#effects
-      .filter(({ priority }) => priority === 'decorative')
-      .map(({ id }) => id);
+    return this.#effects.filter(({ priority }) => priority === 'decorative').map(({ id }) => id);
   }
 
   orderedIds(): readonly string[] {
-    return this.#effects
-      .filter(({ priority }) => priority === 'critical')
-      .map(({ id }) => id);
+    return this.#effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id);
   }
 
   takeDecorative(): readonly AnimationEffect[] {
