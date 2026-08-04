@@ -8,7 +8,13 @@ import { BattleTextureCache } from './battle-texture-cache';
 import type { BoardSkin } from './board-skin';
 import { BoardScene } from './BoardScene';
 
+const drawBoardPrimitivesSpy = vi.hoisted(() => vi.fn());
+
 vi.mock('@pixi/react', () => ({ extend: vi.fn() }));
+vi.mock('./draw-primitives', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./draw-primitives')>();
+  return { ...actual, drawBoardPrimitives: drawBoardPrimitivesSpy };
+});
 vi.mock('pixi.js', () => ({
   AnimatedSprite: class AnimatedSprite {}, Container: class Container {}, Graphics: class Graphics {},
   Sprite: class Sprite {}, Text: class Text {},
@@ -19,6 +25,15 @@ afterEach(cleanup);
 const atlasFor = (group: 'land-impact' | 'line-clear') => Object.fromEntries(
   battleAnimationFrameNames(group).map((name) => [name, {}]),
 ) as never;
+
+function drawCallback(element: Element): (graphics: unknown) => void {
+  const propsKey = Object.keys(element).find((key) => key.startsWith('__reactProps$'));
+  const props = propsKey === undefined
+    ? undefined
+    : (element as unknown as Record<string, { readonly draw?: unknown }>)[propsKey];
+  if (typeof props?.draw !== 'function') throw new Error('pixiGraphics draw callback is unavailable');
+  return props.draw as (graphics: unknown) => void;
+}
 
 describe('BoardScene textured effect placement', () => {
   it('uses every cleared row from the batch effect rather than one centered sprite', () => {
@@ -120,6 +135,15 @@ describe('BoardScene textured effect placement', () => {
       'items/freeze.png', 'tiles/garbage.png', 'tiles/o.png',
     ]);
     expect(created.map((texture) => texture.source.scaleMode)).toEqual(['nearest', 'nearest', 'nearest']);
-    expect(document.querySelector('pixigraphics')).not.toBeNull();
+    const graphics = document.querySelector('pixigraphics');
+    expect(graphics).not.toBeNull();
+    const graphicsDouble = {};
+    drawCallback(graphics!)(graphicsDouble);
+    expect(drawBoardPrimitivesSpy).toHaveBeenLastCalledWith(
+      graphicsDouble,
+      expect.arrayContaining([expect.objectContaining({ kind: 'I', role: 'fixed-cell', x: 3, y: 0 })]),
+      100,
+      200,
+    );
   });
 });
