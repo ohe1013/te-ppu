@@ -4,6 +4,8 @@ import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMatch, createPublicMatchView } from '../core/index';
 import { battleAnimationFrameNames } from './battle-animation-registry';
+import { BattleTextureCache } from './battle-texture-cache';
+import type { BoardSkin } from './board-skin';
 import { BoardScene } from './BoardScene';
 
 vi.mock('@pixi/react', () => ({ extend: vi.fn() }));
@@ -68,5 +70,56 @@ describe('BoardScene textured effect placement', () => {
     );
 
     expect(document.querySelector('pixianimatedsprite')?.getAttribute('y')).toBe('178');
+  });
+
+  it('resolves item, garbage, and kind textures through the cache while missing skin cells stay procedural', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
+    const image = (path: string) => ({ generation: 1, ref: { path }, source: { path } as unknown as ImageBitmap, url: `/assets/${path}` });
+    const skin: BoardSkin = {
+      blocks: { O: image('tiles/o.png') },
+      garbage: image('tiles/garbage.png'),
+      items: { freeze: image('items/freeze.png') },
+    };
+    const created: { readonly imagePath: string; readonly source: { scaleMode: string } }[] = [];
+    class Texture {
+      static from = vi.fn((source: unknown) => {
+        const texture = {
+          destroy: vi.fn(),
+          imagePath: (source as { readonly path: string }).path,
+          source: { scaleMode: 'linear' },
+        };
+        created.push(texture);
+        return texture;
+      });
+    }
+    const cache = new BattleTextureCache(Texture as never);
+    const board = view.sides.player.board.map((cell, index) => {
+      if (index === 0) return { kind: 'O' as const, marker: 'freeze' as const };
+      if (index === 1) return { kind: 'O' as const, garbage: true as const };
+      if (index === 2) return { kind: 'O' as const };
+      if (index === 3) return { kind: 'I' as const };
+      return cell;
+    });
+
+    render(
+      <BoardScene
+        effectProgress={0}
+        effects={[]}
+        model={{ ...view.sides.player, active: null, board }}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        selectedRow={null}
+        side="player"
+        skin={skin}
+        textureCache={cache}
+      />,
+    );
+
+    expect(document.querySelectorAll('pixisprite')).toHaveLength(3);
+    expect(Texture.from).toHaveBeenCalledTimes(3);
+    expect(created.map((texture) => texture.imagePath)).toEqual([
+      'items/freeze.png', 'tiles/garbage.png', 'tiles/o.png',
+    ]);
+    expect(created.map((texture) => texture.source.scaleMode)).toEqual(['nearest', 'nearest', 'nearest']);
+    expect(document.querySelector('pixigraphics')).not.toBeNull();
   });
 });

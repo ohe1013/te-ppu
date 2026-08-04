@@ -162,16 +162,18 @@ describe('garbage physics', () => {
     expect(dropGarbageCell(emptyBoard(), 3)).toMatchObject({ landedY: BOARD_ROWS - 1, topOut: false });
   });
 
-  it('keeps garbage identity through clears and never assigns it to locked O cells', () => {
-    const garbage = dropGarbageCell(emptyBoard(), 3).board;
+  it('keeps garbage identity through a different full-row clear and never assigns it to locked O cells', () => {
+    let full = emptyBoard();
+    for (let x = 0; x < BOARD_WIDTH; x += 1) full = boardWithCell(full, BOARD_ROWS - 1, x, { kind: 'T' });
+    const garbage = dropGarbageCell(full, 3).board;
     const locked = lockPiece(emptyBoard(), active('O', 3, 5));
-    let full = garbage;
-    for (let x = 0; x < BOARD_WIDTH; x += 1) {
-      if (x !== 3) full = boardWithCell(full, BOARD_ROWS - 1, x);
-    }
 
-    expect(occupiedCells(garbage).every((cell) => cell.garbage === true)).toBe(true);
+    const garbageCells = occupiedCells(garbage).filter((cell) => cell.garbage === true);
+    expect(garbageCells.every((cell) => cell.garbage === true)).toBe(true);
+    expect(garbageCells).toHaveLength(1);
     expect(occupiedCells(locked).every((cell) => cell.garbage !== true)).toBe(true);
-    expect(clearFullRows(full).rows).toEqual([BOARD_ROWS - 1]);
+    expect(clearFullRows(garbage).rows).toEqual([BOARD_ROWS - 1]);
+    expect(clearFullRows(garbage).board.cells[(BOARD_ROWS - 1) * BOARD_WIDTH + 3])
+      .toEqual({ kind: 'O', garbage: true });
   });
 });

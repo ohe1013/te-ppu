@@ -3,8 +3,6 @@ import type {
   PublicSideView,
   SideId,
 } from '../core/index';
-import type { LoadedImageRef } from '../assets';
-import type { Texture } from 'pixi.js';
 import type { Rect } from './board-layout';
 import {
   createBoardPrimitives,
@@ -12,6 +10,7 @@ import {
   effectPlacementPrimitives,
 } from './draw-primitives';
 import { partitionBoardPrimitives, type BoardSkin } from './board-skin';
+import type { BattleTextureCache } from './battle-texture-cache';
 import type { AnimationEffect } from './event-animation-queue';
 import { animationEffectGroup, animationEffectSide } from './event-animation-queue';
 import {
@@ -24,8 +23,8 @@ export interface BoardSceneProps {
   readonly atlas?: BattleAtlasTextures | null;
   /** Manager-owned image refs; omitted skin keeps the procedural board intact. */
   readonly skin?: BoardSkin;
-  /** Must resolve through BattleTextureCache; BoardScene never creates URL textures. */
-  readonly resolveSkinTexture?: (image: LoadedImageRef) => Texture;
+  /** Task 5 cache; BoardScene never creates URL textures. */
+  readonly textureCache?: Pick<BattleTextureCache, 'resolveImage'>;
   readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
   readonly model: PublicSideView;
@@ -37,7 +36,7 @@ export interface BoardSceneProps {
 export function BoardScene({
   atlas,
   skin,
-  resolveSkinTexture,
+  textureCache,
   effectProgress,
   effects,
   model,
@@ -62,14 +61,9 @@ export function BoardScene({
     selectedRow,
     side,
   });
-  const cellPartition = skin === undefined || resolveSkinTexture === undefined
+  const cellPartition = skin === undefined || textureCache === undefined
     ? null
     : partitionBoardPrimitives(primitives, skin, rect.width, rect.height);
-  const resolveNearestSkinTexture = (image: LoadedImageRef): Texture => {
-    const texture = resolveSkinTexture!(image);
-    texture.source.scaleMode = 'nearest';
-    return texture;
-  };
   const draw = useCallback((graphics: Parameters<typeof drawBoardPrimitives>[0]) => {
     drawBoardPrimitives(graphics, cellPartition?.fallback ?? primitives, rect.width, rect.height);
   }, [cellPartition, primitives, rect.height, rect.width]);
@@ -81,7 +75,7 @@ export function BoardScene({
         <pixiSprite
           height={cell.height}
           key={`cell:${index}`}
-          texture={resolveNearestSkinTexture(cell.texture)}
+          texture={textureCache!.resolveImage(cell.texture)}
           width={cell.width}
           x={cell.x}
           y={cell.y}

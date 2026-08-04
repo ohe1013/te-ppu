@@ -48,4 +48,38 @@ describe('BattleTextureCache', () => {
     cache.destroy();
     expect((first.image.source as ImageBitmap).close).not.toHaveBeenCalled();
   });
+
+  it('reuses manager-owned image wrappers, replaces changed generations, and destroys wrappers only', () => {
+    const textures: { readonly destroy: ReturnType<typeof vi.fn>; readonly source: { scaleMode: string } }[] = [];
+    class Texture {
+      static from = vi.fn(() => {
+        const texture = { destroy: vi.fn(), source: { scaleMode: 'linear' } };
+        textures.push(texture);
+        return texture;
+      });
+    }
+    const cache = new BattleTextureCache(Texture as never);
+    const first = image(1);
+    const replacement = image(2);
+    const sameGenerationNewIdentity = image(2);
+
+    const initial = cache.resolveImage(first);
+    expect(cache.resolveImage(first)).toBe(initial);
+    expect(Texture.from).toHaveBeenCalledTimes(1);
+    expect(initial.source.scaleMode).toBe('nearest');
+
+    const next = cache.resolveImage(replacement);
+    expect(next).not.toBe(initial);
+    expect(initial.destroy).toHaveBeenCalledWith(false);
+    expect(next.source.scaleMode).toBe('nearest');
+    expect((first.source as ImageBitmap).close).not.toHaveBeenCalled();
+
+    const replacementByIdentity = cache.resolveImage(sameGenerationNewIdentity);
+    expect(replacementByIdentity).not.toBe(next);
+    expect(next.destroy).toHaveBeenCalledWith(false);
+
+    cache.destroy();
+    expect(replacementByIdentity.destroy).toHaveBeenCalledWith(false);
+    expect((replacement.source as ImageBitmap).close).not.toHaveBeenCalled();
+  });
 });
