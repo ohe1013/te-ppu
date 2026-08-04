@@ -28,10 +28,20 @@ export const BATTLE_EFFECT_LIFETIMES = {
   'combo-pop': { kind: 'animation' },
 } as const;
 
+const FRAME_NAMES: { readonly [Group in BattleAnimationGroup]: readonly BattleFrameName[] } =
+  Object.fromEntries(
+    Object.keys(BATTLE_ANIMATIONS).map((group) => [
+      group,
+      Array.from({ length: BATTLE_ANIMATIONS[group as BattleAnimationGroup].frames }, (_, index) => (
+        `${group}/${String(index).padStart(2, '0')}.png`
+      )),
+    ]),
+  ) as unknown as { readonly [Group in BattleAnimationGroup]: readonly BattleFrameName[] };
+
+const resolvedFrames = new WeakMap<object, Map<BattleAnimationGroup, Texture[] | null>>();
+
 export function battleAnimationFrameNames(group: BattleAnimationGroup): readonly BattleFrameName[] {
-  return Array.from({ length: BATTLE_ANIMATIONS[group].frames }, (_, index) => (
-    `${group}/${String(index).padStart(2, '0')}.png` as BattleFrameName
-  ));
+  return FRAME_NAMES[group];
 }
 
 export function battleAnimationDurationMs(group: BattleAnimationGroup): number {
@@ -42,8 +52,15 @@ export function battleAnimationDurationMs(group: BattleAnimationGroup): number {
 export function resolveBattleAnimationFrames(
   atlas: BattleAtlasTextures | null | undefined,
   group: BattleAnimationGroup,
-): readonly Texture[] | null {
+): Texture[] | null {
   if (atlas === null || atlas === undefined) return null;
+  const cached = resolvedFrames.get(atlas);
+  const resolved = cached?.get(group);
+  if (resolved !== undefined) return resolved;
   const frames = battleAnimationFrameNames(group).map((name) => atlas[name]);
-  return frames.every((frame): frame is Texture => frame !== undefined) ? frames : null;
+  const value = frames.every((frame): frame is Texture => frame !== undefined) ? frames : null;
+  const groups = cached ?? new Map<BattleAnimationGroup, Texture[] | null>();
+  groups.set(group, value);
+  if (cached === undefined) resolvedFrames.set(atlas, groups);
+  return value;
 }

@@ -192,24 +192,34 @@ export function createBoardPrimitives({
   for (const effect of effects) {
     if (animationEffectSide(effect) !== side) continue;
     const group = animationEffectGroup(effect);
-    if (group === 'move-dust' && model.active !== null) {
+    const sourceModel = effect.view.sides[side];
+    if (group === 'move-dust' && sourceModel.active !== null) {
       primitives.push({
         height: 0.4,
         role: 'move-dust',
         width: 1.6,
-        x: model.active.x + 1.2,
-        y: model.active.y + 3.5,
+        x: sourceModel.active.x + 1.2,
+        y: sourceModel.active.y + 3.5,
       });
-    } else if (group === 'rotate-spark' && model.active !== null) {
+    } else if (group === 'rotate-spark' && sourceModel.active !== null) {
       primitives.push({
         height: 1.4,
         role: 'rotate-spark',
         width: 1.4,
-        x: model.active.x + 1.3,
-        y: model.active.y + 1.3,
+        x: sourceModel.active.x + 1.3,
+        y: sourceModel.active.y + 1.3,
       });
     } else if (group === 'land-impact') {
-      primitives.push({ height: 0.6, role: 'land-impact', width: 3, x: 3.5, y: 19.2 });
+      const occupied = sourceModel.board.reduce<number | null>((lowest, cell, index) => (
+        cell === null ? lowest : Math.max(lowest ?? -1, Math.floor(index / BOARD_COLUMNS))
+      ), null);
+      primitives.push({
+        height: 0.6,
+        role: 'land-impact',
+        width: 3,
+        x: 3.5,
+        y: (occupied ?? BOARD_ROWS - 1) + 0.2,
+      });
     } else if (group === 'line-clear' && effect.event?.type === 'lines-cleared') {
       if (effect.priority !== 'critical') continue;
       for (const row of effect.event.rows ?? []) {
@@ -232,7 +242,7 @@ export function createBoardPrimitives({
         || !Number.isInteger(landingRow)
         || !isVisibleCell(column, landingRow)
       ) continue;
-      const progress = Math.min(1, Math.max(0, effectProgress));
+      const progress = Math.min(1, Math.max(0, effect.presentationProgress ?? effectProgress));
       primitives.push({
         height: 1,
         role: 'garbage-drop',

@@ -15,6 +15,7 @@ export interface AnimationEffect {
   readonly side?: SideId;
   readonly event?: GameEvent;
   readonly command?: CommandFeedback;
+  readonly presentationProgress?: number;
   readonly tick: number;
   readonly view: PublicMatchView;
 }

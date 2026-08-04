@@ -4,6 +4,7 @@ import {
   BATTLE_EFFECT_LIFETIMES,
   battleAnimationDurationMs,
   battleAnimationFrameNames,
+  resolveBattleAnimationFrames,
 } from './battle-animation-registry';
 
 describe('battle animation registry', () => {
@@ -23,5 +24,13 @@ describe('battle animation registry', () => {
       'move-dust/00.png', 'move-dust/01.png', 'move-dust/02.png', 'move-dust/03.png',
     ]);
     expect(battleAnimationDurationMs('line-clear')).toBe(200);
+  });
+
+  it('reuses resolved frame arrays for the same atlas identity and group', () => {
+    const atlas = Object.fromEntries(
+      battleAnimationFrameNames('move-dust').map((name) => [name, {}]),
+    ) as never;
+    expect(resolveBattleAnimationFrames(atlas, 'move-dust'))
+      .toBe(resolveBattleAnimationFrames(atlas, 'move-dust'));
   });
 });

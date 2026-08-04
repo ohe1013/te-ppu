@@ -22,7 +22,11 @@ import {
   type AiController,
 } from '../ai/index';
 import { MatchScreen } from '../ui/screens/MatchScreen';
-import { type CommandFeedback, useMatchLoop } from './use-match-loop';
+import {
+  commandFeedbackViewFor,
+  type CommandFeedback,
+  useMatchLoop,
+} from './use-match-loop';
 
 const coreSpies = vi.hoisted(() => ({
   createAiObservation: vi.fn(),
@@ -255,6 +259,18 @@ describe('useMatchLoop', () => {
     expect(onCommandFeedback.mock.calls.map(([feedback]) => feedback)).toEqual(result.current.commandFeedback);
     expect(coreSpies.stepMatch.mock.invocationCallOrder[0])
       .toBeGreaterThan(onCommandFeedback.mock.invocationCallOrder[1]!);
+  });
+
+  it('keeps the pre-step public snapshot for feedback emitted before a catch-up batch changes the board', () => {
+    const { clock, result } = renderLoop();
+    act(() => result.current.dispatch({ type: 'move', dx: -1 }));
+    clock.advanceBy(STEP_MS * 2);
+
+    const feedback = result.current.commandFeedback[0]!;
+    const snapshot = commandFeedbackViewFor(result.current.commandFeedback, feedback);
+    expect(snapshot?.tick).toBe(0);
+    expect(snapshot?.sides.player.active).not.toBeNull();
+    expect(Object.keys(feedback)).toEqual(['command', 'sequence', 'side', 'tick']);
   });
 
   it('keeps presentation feedback independent when a rejected command and callback failure occur', () => {

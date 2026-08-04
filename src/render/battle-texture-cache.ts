@@ -1,10 +1,10 @@
 import type { AtlasData } from '../assets';
-import type { Texture } from 'pixi.js';
+import { Rectangle, type Texture } from 'pixi.js';
 import type { BattleAtlasTextures } from './battle-animation-registry';
 
 interface TextureConstructor {
   from(source: ImageBitmap | HTMLImageElement): Texture;
-  new (options: { readonly source?: unknown; readonly frame: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } }): Texture;
+  new (options: ConstructorParameters<typeof Texture>[0]): Texture;
 }
 
 interface CachedAtlas {
@@ -29,7 +29,7 @@ export class BattleTextureCache {
     const frames: Partial<Record<string, Texture>> = {};
     for (const [name, entry] of Object.entries(atlas.json.frames)) {
       frames[name] = new this.Texture({
-        frame: { height: entry.frame.h, width: entry.frame.w, x: entry.frame.x, y: entry.frame.y },
+        frame: new Rectangle(entry.frame.x, entry.frame.y, entry.frame.w, entry.frame.h),
         source: base.source,
       });
     }

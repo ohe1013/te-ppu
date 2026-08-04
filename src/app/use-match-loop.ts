@@ -40,6 +40,18 @@ export interface CommandFeedback {
   readonly command: GameCommand;
 }
 
+const commandFeedbackViews = new WeakMap<
+  readonly CommandFeedback[],
+  ReadonlyMap<number, PublicMatchView>
+>();
+
+export function commandFeedbackViewFor(
+  feedback: readonly CommandFeedback[],
+  entry: CommandFeedback,
+): PublicMatchView | undefined {
+  return commandFeedbackViews.get(feedback)?.get(entry.sequence);
+}
+
 export interface MatchLoopView {
   readonly view: PublicMatchView;
   readonly eventBatches: readonly GameEventBatch[];
@@ -74,6 +86,7 @@ interface AdvancedTick {
   readonly eventBatch: GameEventBatch | null;
   readonly events: readonly GameEvent[];
   readonly commandFeedback: readonly CommandFeedback[];
+  readonly commandFeedbackView: PublicMatchView;
   readonly result: MatchResult | null;
 }
 
@@ -168,7 +181,8 @@ export function useMatchLoop({
 
     function advanceOneTick(): AdvancedTick {
       const state = stateRef.current!;
-      const tick = createPublicMatchView(state).tick + 1;
+      const commandFeedbackView = createPublicMatchView(state);
+      const tick = commandFeedbackView.tick + 1;
       const observation = createAiObservation(state, 'opponent');
       const aiCommands = aiRef.current.update(observation, tick);
       const playerCommands = drainCommandsForTick(tick);
@@ -207,7 +221,14 @@ export function useMatchLoop({
         accumulatorRef.current = 0;
         previousTimestampRef.current = null;
       }
-      return { commandFeedback, view, eventBatch, events: step.events, result: completion };
+      return {
+        commandFeedback,
+        commandFeedbackView,
+        view,
+        eventBatch,
+        events: step.events,
+        result: completion,
+      };
     }
 
     function scheduleNextFrame(): void {
@@ -238,6 +259,7 @@ export function useMatchLoop({
       const frameEvents: GameEvent[] = [];
       const frameEventBatches: GameEventBatch[] = [];
       const frameCommandFeedback: CommandFeedback[] = [];
+      const frameCommandFeedbackViews = new Map<number, PublicMatchView>();
       while (
         accumulatorRef.current + STEP_EPSILON_MS >= STEP_MS
         && steps < MAX_STEPS_PER_FRAME
@@ -247,6 +269,9 @@ export function useMatchLoop({
         const advanced = advanceOneTick();
         latestView = advanced.view;
         frameCommandFeedback.push(...advanced.commandFeedback);
+        for (const feedback of advanced.commandFeedback) {
+          frameCommandFeedbackViews.set(feedback.sequence, advanced.commandFeedbackView);
+        }
         frameEvents.push(...advanced.events);
         if (advanced.eventBatch !== null) frameEventBatches.push(advanced.eventBatch);
         terminalResult = advanced.result;
@@ -259,6 +284,7 @@ export function useMatchLoop({
           events: frameEvents,
           commandFeedback: frameCommandFeedback,
         });
+        commandFeedbackViews.set(frameCommandFeedback, frameCommandFeedbackViews);
         if (frameEvents.length > 0) {
           try {
             onEventsRef.current?.(frameEvents, latestView);

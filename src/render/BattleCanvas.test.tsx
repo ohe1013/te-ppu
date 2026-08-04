@@ -12,6 +12,12 @@ import {
 import type { AnimationEffect } from './event-animation-queue';
 import { battleAnimationFrameNames } from './battle-animation-registry';
 
+const pixiSpies = vi.hoisted(() => ({
+  baseDestroy: vi.fn(),
+  from: vi.fn(),
+  textureDestroy: vi.fn(),
+}));
+
 interface FakeApplicationProps {
   readonly children?: ReactNode;
   readonly height?: number;
@@ -39,9 +45,16 @@ vi.mock('pixi.js', () => ({
   AnimatedSprite: class AnimatedSprite {},
   Container: class Container {},
   Graphics: class Graphics {},
+  Rectangle: class Rectangle {
+    constructor(_: number, __: number, ___: number, ____: number) {}
+  },
   Sprite: class Sprite {},
   Text: class Text {},
-  Texture: class Texture {},
+  Texture: class Texture {
+    static from = pixiSpies.from;
+    source = {};
+    destroy = pixiSpies.textureDestroy;
+  },
 }));
 
 vi.mock('./BoardScene', () => ({
@@ -130,6 +143,10 @@ beforeEach(() => {
   disconnect.mockClear();
   observe.mockClear();
   removeResolutionListener.mockClear();
+  pixiSpies.baseDestroy.mockClear();
+  pixiSpies.from.mockReset();
+  pixiSpies.from.mockReturnValue({ destroy: pixiSpies.baseDestroy, source: {} });
+  pixiSpies.textureDestroy.mockClear();
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.stubGlobal('matchMedia', vi.fn(() => ({
     addEventListener: vi.fn(),
@@ -283,13 +300,6 @@ describe('BattleCanvas', () => {
     clock.advanceBy(5 / 24 * 1000 / 2);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:0:garbage-land',
-    );
-    expect(playerScene).toHaveAttribute('data-effect-progress', '1');
-
-    clock.advanceBy(16);
-    expect(playerScene).toHaveAttribute(
-      'data-effect-ids',
       'tick-0:1:garbage-land',
     );
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
@@ -298,9 +308,6 @@ describe('BattleCanvas', () => {
     expect(Number(playerScene.getAttribute('data-effect-progress'))).toBeCloseTo(0.5);
 
     clock.advanceBy(5 / 24 * 1000 / 2);
-    expect(playerScene).toHaveAttribute('data-effect-progress', '1');
-
-    clock.advanceBy(16);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
   });
@@ -340,6 +347,70 @@ describe('BattleCanvas', () => {
     );
 
     expect(screen.getByTestId('attack-shot-sprite')).toBeInTheDocument();
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-effect-ids', '');
+  });
+
+  it('owns Pixi wrappers for consumed AtlasData generations and releases them on replacement and unmount', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const atlas = (generation: number) => ({
+      generation,
+      image: {
+        generation,
+        ref: { path: 'effects/battle-atlas.png' },
+        source: {} as ImageBitmap,
+        url: '/assets/effects/battle-atlas.png',
+      },
+      json: {
+        frames: {
+          'attack-shot/00.png': {
+            frame: { h: 64, w: 64, x: 0, y: 0 }, rotated: false, trimmed: false,
+            sourceSize: { h: 64, w: 64 }, spriteSourceSize: { h: 64, w: 64, x: 0, y: 0 },
+          },
+        },
+        meta: { format: 'RGBA8888' as const, image: 'battle-atlas.png' as const, scale: '1' as const, size: { h: 64, w: 64 } },
+      },
+    });
+    const result = render(
+      <BattleCanvas commandFeedback={[]} eventBatches={[]} selectedRow={null} view={view} atlas={atlas(1)} />,
+    );
+    result.rerender(
+      <BattleCanvas commandFeedback={[]} eventBatches={[]} selectedRow={null} view={view} atlas={atlas(2)} />,
+    );
+
+    expect(pixiSpies.baseDestroy).toHaveBeenCalledWith(false);
+    result.unmount();
+    expect(pixiSpies.baseDestroy).toHaveBeenCalledTimes(2);
+    expect(pixiSpies.textureDestroy).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps independent decorative command effects alive while a later feedback frame arrives', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const result = render(
+      <BattleCanvas
+        commandFeedback={[{ command: { type: 'move', dx: -1 }, sequence: 1, side: 'player', tick: 1 }]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    result.rerender(
+      <BattleCanvas
+        commandFeedback={[{ command: { type: 'rotate-clockwise' }, sequence: 2, side: 'player', tick: 2 }]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
+      'data-effect-ids', 'command-1:move-dust,command-2:rotate-spark',
+    );
+    clock.advanceBy(200);
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
+      'data-effect-ids', 'command-2:rotate-spark',
+    );
   });
 
   it('queues separate catch-up batches with the tick attached to each batch', () => {
@@ -371,14 +442,14 @@ describe('BattleCanvas', () => {
 
     expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-shot');
     expect(playerScene).toHaveAttribute('data-effect-snapshots', '18/18');
-    clock.advanceTimersOnlyBy(350);
+    clock.advanceBy(300);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
   });
 
   it.each([
     { elapsed: 0, pending: 'progress' },
     { elapsed: 208, pending: 'dequeue' },
-  ])('cancels the pending $pending frame and slot timer on unmount', ({ elapsed }) => {
+  ])('cancels the pending $pending frame on unmount', ({ elapsed }) => {
     const clock = new EffectClock();
     clock.install();
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
@@ -401,7 +472,7 @@ describe('BattleCanvas', () => {
     if (elapsed > 0) clock.advanceBy(elapsed);
 
     expect(clock.pendingFrames).toBe(1);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
 
     result.unmount();
 
@@ -409,7 +480,7 @@ describe('BattleCanvas', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('advances FIFO through the timer fallback when animation frames stall', () => {
+  it('retains FIFO effects until RAF advances their presentation lifetime', () => {
     const clock = new EffectClock();
     clock.install();
     const events: readonly GameEvent[] = [
@@ -443,13 +514,11 @@ describe('BattleCanvas', () => {
     clock.advanceTimersOnlyBy(5 / 24 * 1000 + 50);
     expect(playerScene).toHaveAttribute(
       'data-effect-ids',
-      'tick-0:1:garbage-land',
+      'tick-0:0:garbage-land',
     );
-    expect(playerScene).toHaveAttribute('data-effect-progress', '0');
-
-    clock.advanceTimersOnlyBy(5 / 24 * 1000 + 50);
-    expect(playerScene).toHaveAttribute('data-effect-ids', '');
-    expect(clock.pendingFrames).toBe(0);
+    clock.advanceBy(5 / 24 * 1000);
+    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-0:1:garbage-land');
+    expect(clock.pendingFrames).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

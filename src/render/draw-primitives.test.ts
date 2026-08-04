@@ -275,4 +275,29 @@ describe('createBoardPrimitives', () => {
     ).toBe(true);
     expect(primitives.filter(({ role }) => role === 'active-cell')).toHaveLength(0);
   });
+
+  it('places command feedback from its owning pre-step snapshot rather than the latest board model', () => {
+    const latest = sideView();
+    const snapshot = {
+      ...effectView,
+      sides: {
+        ...effectView.sides,
+        player: { ...effectView.sides.player, active: { ...latest.active!, x: 0, y: 4 } },
+      },
+    };
+    const primitives = createBoardPrimitives({
+      effectProgress: 0,
+      effects: [{
+        command: { command: { type: 'move', dx: -1 }, sequence: 8, side: 'player', tick: 2 },
+        group: 'move-dust', id: 'snapshot-move', priority: 'decorative', side: 'player', tick: 2, view: snapshot,
+      }],
+      model: latest,
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.filter(({ role }) => role === 'move-dust')).toEqual([{
+      height: 0.4, role: 'move-dust', width: 1.6, x: 1.2, y: 7.5,
+    }]);
+  });
 });
