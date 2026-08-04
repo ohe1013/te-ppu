@@ -10,6 +10,11 @@ export {
   createLocalProgressRepository,
   type LocalProgressRepositoryOptions,
 } from './localProgressRepository';
+export {
+  createLocalProgressRepositoryFactory,
+  progressStorageKeyForIdentity,
+  type ProgressRepositoryFactory,
+} from './progressRepositoryFactory';
 export type { ClearedFloors, Floor } from './floors';
 export { FINAL_FLOOR, FLOORS, isFinalFloor, isFloor } from './floors';
 export type { FloorResult } from './tower';
