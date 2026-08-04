@@ -142,23 +142,28 @@ function useOrderedEffects(
     if (next !== undefined) runningRef.current.set(next.id, { effect: next, startedAt });
   };
 
-  const retain = (effects: readonly AnimationEffect[], startedAt: number) => {
+  const retain = (effects: readonly AnimationEffect[], startedAt: number): boolean => {
+    let retained = false;
     for (const effect of effects) {
       if (effect.priority === 'critical') {
         pendingCriticalRef.current.push(effect);
+        retained = true;
         continue;
       }
       const decorativeCount = [...runningRef.current.values()]
         .filter(({ effect: running }) => running.priority === 'decorative').length;
       if (decorativeCount < MAX_DECORATIVE_EFFECTS) {
         runningRef.current.set(effect.id, { effect, startedAt });
+        retained = true;
       }
     }
     startNextCritical(startedAt);
+    return retained;
   };
 
   useEffect(() => {
     const startedAt = performance.now();
+    let retainedEffects = false;
     for (const [index, batch] of eventBatches
       .map((value, index) => ({ index, value }))
       .sort((left, right) => left.value.tick - right.value.tick || left.index - right.index)
@@ -166,17 +171,18 @@ function useOrderedEffects(
       const batchKey = `${batch.tick}:${index}`;
       if (batch.events.length === 0 || handledBatchesRef.current.has(batchKey)) continue;
       handledBatchesRef.current.add(batchKey);
-      retain(effectsForEvents(batch.events, batch.tick, batch.view), startedAt);
+      retainedEffects = retain(effectsForEvents(batch.events, batch.tick, batch.view), startedAt)
+        || retainedEffects;
     }
     for (const feedback of commandFeedback) {
       if (handledCommandsRef.current.has(feedback.sequence)) continue;
       handledCommandsRef.current.add(feedback.sequence);
-      retain(effectsForCommandFeedback(
+      retainedEffects = retain(effectsForCommandFeedback(
         [feedback],
         commandFeedbackViewFor(commandFeedback, feedback) ?? view,
-      ), startedAt);
+      ), startedAt) || retainedEffects;
     }
-    refresh((version) => version + 1);
+    if (retainedEffects) refresh((version) => version + 1);
   }, [commandFeedback, eventBatches, view]);
 
   useEffect(() => {

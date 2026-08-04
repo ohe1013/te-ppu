@@ -14,6 +14,7 @@ import { battleAnimationFrameNames } from './battle-animation-registry';
 
 const pixiSpies = vi.hoisted(() => ({
   baseDestroy: vi.fn(),
+  boardScene: vi.fn(),
   from: vi.fn(),
   textureDestroy: vi.fn(),
 }));
@@ -68,19 +69,22 @@ vi.mock('./BoardScene', () => ({
     readonly effectProgress: number;
     readonly effects: readonly AnimationEffect[];
     readonly side: SideId;
-  }) => (
-    <div
-      data-effect-ids={effects.map(({ id }) => id).join(',')}
-      data-effect-progress={effectProgress}
-      data-atlas-frame-count={Object.keys(atlas ?? {}).length}
-      data-effect-snapshots={effects.map((effect) => (
-        `${'tick' in effect ? effect.tick : 'missing'}/${
-          'view' in effect ? effect.view.tick : 'missing'
-        }`
-      )).join(',')}
-      data-testid={`${side}-board-scene`}
-    />
-  ),
+  }) => {
+    pixiSpies.boardScene({ atlas, effectProgress, effects, side });
+    return (
+      <div
+        data-effect-ids={effects.map(({ id }) => id).join(',')}
+        data-effect-progress={effectProgress}
+        data-atlas-frame-count={Object.keys(atlas ?? {}).length}
+        data-effect-snapshots={effects.map((effect) => (
+          `${'tick' in effect ? effect.tick : 'missing'}/${
+            'view' in effect ? effect.view.tick : 'missing'
+          }`
+        )).join(',')}
+        data-testid={`${side}-board-scene`}
+      />
+    );
+  },
 }));
 
 import { BattleCanvas } from './BattleCanvas';
@@ -144,6 +148,7 @@ beforeEach(() => {
   observe.mockClear();
   removeResolutionListener.mockClear();
   pixiSpies.baseDestroy.mockClear();
+  pixiSpies.boardScene.mockClear();
   pixiSpies.from.mockReset();
   pixiSpies.from.mockReturnValue({ destroy: pixiSpies.baseDestroy, source: {} });
   pixiSpies.textureDestroy.mockClear();
@@ -411,6 +416,67 @@ describe('BattleCanvas', () => {
     expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
       'data-effect-ids', 'command-2:rotate-spark',
     );
+  });
+
+  it('retains every new command feedback effect from one frame', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        commandFeedback={[
+          { command: { type: 'move', dx: -1 }, sequence: 1, side: 'player', tick: 1 },
+          { command: { type: 'rotate-clockwise' }, sequence: 2, side: 'player', tick: 1 },
+        ]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
+      'data-effect-ids', 'command-1:move-dust,command-2:rotate-spark',
+    );
+  });
+
+  it('skips passive view refreshes while retaining effect and RAF refreshes', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const result = render(
+      <BattleCanvas commandFeedback={[]} eventBatches={[]} selectedRow={null} view={view} />,
+    );
+    pixiSpies.boardScene.mockClear();
+
+    const passiveView = { ...view, tick: view.tick + 1 };
+    result.rerender(
+      <BattleCanvas
+        commandFeedback={[]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={passiveView}
+      />,
+    );
+
+    expect(pixiSpies.boardScene).toHaveBeenCalledTimes(2);
+
+    pixiSpies.boardScene.mockClear();
+    result.rerender(
+      <BattleCanvas
+        commandFeedback={[{ command: { type: 'move', dx: -1 }, sequence: 1, side: 'player', tick: 1 }]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={passiveView}
+      />,
+    );
+
+    expect(pixiSpies.boardScene).toHaveBeenCalledTimes(4);
+    expect(clock.pendingFrames).toBe(1);
+
+    pixiSpies.boardScene.mockClear();
+    clock.advanceBy(16);
+    expect(pixiSpies.boardScene).toHaveBeenCalledTimes(2);
+    expect(clock.pendingFrames).toBe(1);
   });
 
   it('queues separate catch-up batches with the tick attached to each batch', () => {
