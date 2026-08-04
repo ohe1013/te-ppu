@@ -6,7 +6,10 @@ export type {
   ProgressRepository,
 } from './schema';
 export { DEFAULT_PROGRESS } from './schema';
-export { createLocalProgressRepository } from './localProgressRepository';
+export {
+  createLocalProgressRepository,
+  type LocalProgressRepositoryOptions,
+} from './localProgressRepository';
 export type { ClearedFloors, Floor } from './floors';
 export { FINAL_FLOOR, FLOORS, isFinalFloor, isFloor } from './floors';
 export type { FloorResult } from './tower';

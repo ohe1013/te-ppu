@@ -56,7 +56,11 @@ export function createAppServices(
     audioPort,
     platform: overrides.platform ?? createPlatform(runtimeMode),
     progressRepository:
-      overrides.progressRepository ?? createLocalProgressRepository(storage),
+      overrides.progressRepository ?? createLocalProgressRepository(storage, {
+        progressKey: 'te-ppu.progress.identity.local.local-browser',
+        backupPrefix: 'te-ppu.progress.backup.identity.local.local-browser.',
+        legacyReadKey: 'te-ppu.progress',
+      }),
     assetManager,
   };
 }
