@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
 import type { MatchResult } from '../../src/app/app-route';
-import { openMatch, openTower } from './helpers';
+import { expect, openMatch, openTower, test } from './helpers';
 
 const FLOOR_FIVE_PROGRESS = {
   schemaVersion: 2,

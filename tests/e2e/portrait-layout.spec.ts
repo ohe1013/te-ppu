@@ -1,10 +1,5 @@
-import {
-  expect,
-  test,
-  type Locator,
-  type Page,
-} from '@playwright/test';
-import { openTower } from './helpers';
+import { type Locator, type Page } from '@playwright/test';
+import { expect, openTower, test } from './helpers';
 
 const FLOOR_FIVE_PROGRESS = {
   schemaVersion: 2,

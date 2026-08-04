@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-import { openMatch } from './helpers';
+import { expect, openMatch, test } from './helpers';
 
 test('dispatches joystick commands in order and rotates exactly once per tap', async ({ page }) => {
   await openMatch(page);
