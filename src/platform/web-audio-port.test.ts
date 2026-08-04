@@ -243,6 +243,55 @@ describe('createWebAudioPort', () => {
     expect(replacement.start).toHaveBeenCalledWith(10.15, 0);
   });
 
+  it('keeps the original fade when a scheduled replacement is superseded before it starts', async () => {
+    const catalog = createCatalog();
+    const towerPayload = new ArrayBuffer(8);
+    const earlyPayload = new ArrayBuffer(8);
+    const latePayload = new ArrayBuffer(8);
+    const towerBuffer: WebAudioBufferPort = { duration: 5 };
+    const earlyBuffer: WebAudioBufferPort = { duration: 7 };
+    const lateBuffer: WebAudioBufferPort = { duration: 11 };
+    const fixture = createContext(async (payload) => {
+      if (payload === towerPayload) return towerBuffer;
+      if (payload === earlyPayload) return earlyBuffer;
+      return lateBuffer;
+    });
+    fixture.context.currentTime = 10;
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async (url) => {
+        if (url === catalog.bgm.tower.url) return towerPayload;
+        if (url === catalog.bgm['early-floors'].url) return earlyPayload;
+        return latePayload;
+      },
+      resolveSources: () => catalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    await audio.setMusic('early-floors');
+    const towerSource = fixture.bufferSources[0]!;
+    const earlySource = fixture.bufferSources[1]!;
+    const musicGain = fixture.gainNodes[0]!.gain;
+
+    fixture.context.currentTime = 10.05;
+    await audio.setMusic('late-floors');
+
+    const lateSource = fixture.bufferSources[2]!;
+    expect(towerSource.stop).toHaveBeenCalledWith(10.15);
+    expect(earlySource.start).toHaveBeenCalledWith(10.15, 0);
+    expect(earlySource.stop).toHaveBeenCalledWith(10.05);
+    expect(earlySource.disconnect).toHaveBeenCalledTimes(1);
+    expect(lateSource.buffer).toBe(lateBuffer);
+    expect(lateSource.start).toHaveBeenCalledWith(10.15, 0);
+    expect(musicGain.calls.filter(([operation, value]) => (
+      operation === 'set' && value === 1
+    ))).toEqual([['set', 1, 10]]);
+    expect(musicGain.calls.filter(([operation, value]) => (
+      operation === 'exponential' && value === 0.0001
+    ))).toEqual([['exponential', 0.0001, 10.15]]);
+  });
+
   it('stops an already-fading source immediately when audio is disabled', async () => {
     const fixture = createContext();
     fixture.context.currentTime = 10;

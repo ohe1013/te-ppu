@@ -200,6 +200,12 @@ export function createWebAudioPort({
     );
   }
 
+  function isActiveMusicAudible(): boolean {
+    return activeSource !== null
+      && context !== null
+      && context.currentTime >= startedAt;
+  }
+
   function disconnectMusicSource(source: WebAudioBufferSourcePort): void {
     try {
       source.disconnect();
@@ -481,7 +487,11 @@ export function createWebAudioPort({
       }
       if (changedToTrack) {
         pausedOffset = 0;
-        fadeOutMusicForReplacement();
+        if (activeSource !== null && !isActiveMusicAudible()) {
+          clearActiveMusic(false, context?.currentTime ?? 0, true);
+        } else {
+          fadeOutMusicForReplacement();
+        }
       }
       await resumeMusicIfPossible();
       // A synchronous resume can start a newer request. Keeping this check here
