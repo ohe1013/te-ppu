@@ -24,7 +24,7 @@ export type ReplayResult = {
 };
 
 function projectCell(cell: Cell | null): readonly unknown[] | null {
-  return cell === null ? null : [cell.kind, cell.marker ?? null];
+  return cell === null ? null : [cell.kind, cell.marker ?? null, cell.garbage ?? null];
 }
 
 function projectToken(token: PieceToken): readonly unknown[] {

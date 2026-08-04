@@ -16,7 +16,7 @@ export const MAX_LOCK_RESETS = 15;
 export const FREEZE_TICKS = 180;
 
 export type ItemMarker = { readonly item: ItemType; readonly minoIndex: number };
-export type Cell = { readonly kind: PieceKind; readonly marker?: ItemType };
+export type Cell = { readonly kind: PieceKind; readonly marker?: ItemType; readonly garbage?: true };
 export type Board = { readonly cells: readonly (Cell | null)[] };
 export type PieceToken = { readonly serial: number; readonly kind: PieceKind; readonly marker: ItemMarker | null };
 export type ActivePiece = { readonly token: PieceToken; readonly x: number; readonly y: number; readonly rotation: Rotation };

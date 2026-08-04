@@ -44,6 +44,7 @@ export interface BoardPrimitive {
   readonly height: number;
   readonly kind?: PieceKind;
   readonly marker?: ItemType;
+  readonly garbage?: true;
 }
 
 export interface CreateBoardPrimitivesInput {
@@ -146,8 +147,10 @@ export function createBoardPrimitives({
       const cell = model.board[y * BOARD_COLUMNS + x];
       if (cell === null || cell === undefined) continue;
       primitives.push({
+        garbage: cell.garbage,
         height: 1,
         kind: cell.kind,
+        marker: cell.marker,
         role: 'fixed-cell',
         width: 1,
         x,

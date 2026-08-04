@@ -115,6 +115,19 @@ describe('public match projection', () => {
     expect(first.sides.player.next[0]).not.toBe(state.sides.player.next[0]);
     expect(first.sides.player.inventory).not.toBe(state.sides.player.inventory);
   });
+
+  it('preserves and detaches visible garbage identity without adding it to normal cells', () => {
+    let state = createMatch({ matchSeed: 6, countdownTicks: 0 });
+    state = patchSide(state, 'player', {
+      board: boardWithCell(emptyBoard(), 0, HIDDEN_ROWS, { kind: 'O', garbage: true }),
+    });
+
+    const view = createPublicMatchView(state);
+
+    expect(view.sides.player.board[0]).toEqual({ kind: 'O', garbage: true });
+    expect(view.sides.player.board[0]).not.toBe(state.sides.player.board.cells[HIDDEN_ROWS * BOARD_WIDTH]);
+    expect(view.sides.player.board.some((cell) => cell?.kind === 'O' && cell.garbage !== true)).toBe(false);
+  });
 });
 
 describe('AI observation boundary', () => {

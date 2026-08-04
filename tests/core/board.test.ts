@@ -143,7 +143,7 @@ describe('garbage physics', () => {
     const result = dropGarbageCell(board, 4);
 
     expect(result).toMatchObject({ landedY: 19, topOut: false });
-    expect(result.board.cells[19 * BOARD_WIDTH + 4]).toEqual({ kind: 'O' });
+    expect(result.board.cells[19 * BOARD_WIDTH + 4]).toEqual({ kind: 'O', garbage: true });
     expect(result.board.cells[21 * BOARD_WIDTH + 4]).toBeNull();
     expect(board.cells).toEqual(snapshot);
   });
@@ -160,5 +160,18 @@ describe('garbage physics', () => {
 
   it('lands in the floor cell for an empty column', () => {
     expect(dropGarbageCell(emptyBoard(), 3)).toMatchObject({ landedY: BOARD_ROWS - 1, topOut: false });
+  });
+
+  it('keeps garbage identity through clears and never assigns it to locked O cells', () => {
+    const garbage = dropGarbageCell(emptyBoard(), 3).board;
+    const locked = lockPiece(emptyBoard(), active('O', 3, 5));
+    let full = garbage;
+    for (let x = 0; x < BOARD_WIDTH; x += 1) {
+      if (x !== 3) full = boardWithCell(full, BOARD_ROWS - 1, x);
+    }
+
+    expect(occupiedCells(garbage).every((cell) => cell.garbage === true)).toBe(true);
+    expect(occupiedCells(locked).every((cell) => cell.garbage !== true)).toBe(true);
+    expect(clearFullRows(full).rows).toEqual([BOARD_ROWS - 1]);
   });
 });

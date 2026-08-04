@@ -93,10 +93,10 @@ describe('seeded garbage batches', () => {
     expect([0, 1, 2, 3].map((index) => randomInt(0, RandomStream.GARBAGE_TO_PLAYER, index, BOARD_WIDTH)))
       .toEqual([3, 2, 4, 3]);
     expect(occupiedCells(result.side.board)).toEqual([
-      { x: 3, y: BOARD_ROWS - 2, kind: 'O' },
-      { x: 2, y: BOARD_ROWS - 1, kind: 'O' },
-      { x: 3, y: BOARD_ROWS - 1, kind: 'O' },
-      { x: 4, y: BOARD_ROWS - 1, kind: 'O' },
+      { x: 3, y: BOARD_ROWS - 2, kind: 'O', garbage: true },
+      { x: 2, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
+      { x: 3, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
+      { x: 4, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
     ]);
     expect(result.side.garbageDrawIndex).toBe(4);
     expect(result.side.incoming).toBe(0);
@@ -117,10 +117,10 @@ describe('seeded garbage batches', () => {
     expect([0, 1, 2, 3].map((index) => randomInt(0, RandomStream.GARBAGE_TO_OPPONENT, index, BOARD_WIDTH)))
       .toEqual([5, 2, 9, 2]);
     expect(occupiedCells(result.side.board)).toEqual([
-      { x: 2, y: BOARD_ROWS - 2, kind: 'O' },
-      { x: 2, y: BOARD_ROWS - 1, kind: 'O' },
-      { x: 5, y: BOARD_ROWS - 1, kind: 'O' },
-      { x: 9, y: BOARD_ROWS - 1, kind: 'O' },
+      { x: 2, y: BOARD_ROWS - 2, kind: 'O', garbage: true },
+      { x: 2, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
+      { x: 5, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
+      { x: 9, y: BOARD_ROWS - 1, kind: 'O', garbage: true },
     ]);
     expect(result.events).toEqual([
       { type: 'garbage-landed', side: 'opponent', amount: 1, column: 5, landingRow: 19 },
@@ -144,7 +144,7 @@ describe('seeded garbage batches', () => {
         landingRow: -4,
       },
     ]);
-    expect(result.side.board.cells[3]).toEqual({ kind: 'O' });
+    expect(result.side.board.cells[3]).toEqual({ kind: 'O', garbage: true });
   });
 
   it('leaves a garbage-completed row in place until normal locking clears it', () => {

@@ -122,7 +122,7 @@ export function dropGarbageCell(board: Board, x: number): GarbageResult {
   if (landingY < 0) return { board, landedY: null, topOut: true };
 
   const cells = [...board.cells];
-  cells[indexFor(x, landingY)] = { kind: 'O' };
+  cells[indexFor(x, landingY)] = { kind: 'O', garbage: true };
   return { board: { cells }, landedY: landingY, topOut: false };
 }
 

@@ -97,6 +97,12 @@ function assertBoard(state: MatchState, side: SideId, value: SideState): void {
     if (cell.marker !== undefined && !ITEM_TYPES.includes(cell.marker)) {
       fail(state, `${side} board cell ${index} has an invalid item marker`);
     }
+    if (cell.garbage !== undefined && cell.garbage !== true) {
+      fail(state, `${side} board cell ${index} garbage flag must be true when present`);
+    }
+    if (cell.marker !== undefined && cell.garbage === true) {
+      fail(state, `${side} board cell ${index} cannot combine an item marker with garbage`);
+    }
   }
 }
 

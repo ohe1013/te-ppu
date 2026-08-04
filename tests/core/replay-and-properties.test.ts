@@ -237,6 +237,38 @@ describe('canonical replay', () => {
     expect(hashMatchState(changedHiddenCounter)).not.toBe(hashMatchState(state));
   });
 
+  it('includes garbage identity in authoritative hashes and replays command logs to their original state', () => {
+    const replay = {
+      version: 1 as const,
+      config: { matchSeed: 17, countdownTicks: 0 },
+      endTick: 2,
+      commands: [{ tick: 1, side: 'player' as const, command: { type: 'hard-drop' as const } }],
+    };
+    const originalFinalState = runReplay(replay).state;
+    const plain = createMatch({ matchSeed: 17, countdownTicks: 0 });
+    const garbage = patchSide(plain, 'player', {
+      board: {
+        cells: plain.sides.player.board.cells.map((cell, index) => (
+          index === 50 ? { kind: 'O' as const, garbage: true as const } : cell
+        )),
+      },
+    });
+
+    expect(hashMatchState(garbage)).not.toBe(hashMatchState({
+      ...garbage,
+      sides: {
+        ...garbage.sides,
+        player: {
+          ...garbage.sides.player,
+          board: { cells: garbage.sides.player.board.cells.map((cell) => (
+            cell?.garbage === true ? { kind: cell.kind } : cell
+          )) },
+        },
+      },
+    }));
+    expect(runReplay(replay).state).toEqual(originalFinalState);
+  });
+
   it('replays equal seeds and command frames to equal hashes and ordered events for 500 runs', () => {
     const eventCoverage = new Map<string, number>();
     const usedItems = new Set<string>();
@@ -339,6 +371,24 @@ describe('authoritative match invariants', () => {
       label: 'terminal result',
       reason: /terminal.*draw.*topOut/i,
       mutate: (state: MatchState) => ({ ...state, status: 'draw' as const }),
+    },
+    {
+      label: 'invalid garbage marker',
+      reason: /garbage flag/i,
+      mutate: (state: MatchState) => patchSide(state, 'player', {
+        board: { cells: state.sides.player.board.cells.map((cell, index) => (
+          index === 40 ? { kind: 'O', garbage: false } as unknown as typeof cell : cell
+        )) },
+      }),
+    },
+    {
+      label: 'garbage item combination',
+      reason: /cannot combine.*marker.*garbage/i,
+      mutate: (state: MatchState) => patchSide(state, 'player', {
+        board: { cells: state.sides.player.board.cells.map((cell, index) => (
+          index === 40 ? { kind: 'O', marker: 'freeze', garbage: true } : cell
+        )) },
+      }),
     },
   ])('reports tick, seed, and compact reason for $label violations', ({ reason, mutate }) => {
     const invalid = mutate(createMatch({ matchSeed: 123, countdownTicks: 0 }));

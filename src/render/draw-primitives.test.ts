@@ -6,6 +6,7 @@ import {
 } from '../core/index';
 import type { AnimationEffect } from './event-animation-queue';
 import { createBoardPrimitives } from './draw-primitives';
+import { partitionBoardPrimitives, type BoardSkin } from './board-skin';
 
 function sideView(): PublicSideView {
   const board: PublicSideView['board'][number][] = Array.from(
@@ -314,5 +315,44 @@ describe('createBoardPrimitives', () => {
     });
 
     expect(primitives.filter(({ role }) => role === 'freeze')).toHaveLength(1);
+  });
+
+  it('exposes garbage identity on fixed primitives for skin selection', () => {
+    const model = sideView();
+    const primitives = createBoardPrimitives({
+      effectProgress: 0,
+      effects: [],
+      model: { ...model, board: model.board.map((cell, index) => index === 199 ? { kind: 'O', garbage: true } : cell) },
+      selectedRow: null,
+      side: 'player',
+    });
+
+    expect(primitives.find(({ role, x, y }) => role === 'fixed-cell' && x === 9 && y === 19))
+      .toMatchObject({ kind: 'O', garbage: true });
+  });
+
+  it('chooses item, then garbage, then kind textures and leaves unresolved cells procedural', () => {
+    const image = (path: string) => ({ generation: 1, ref: { path }, source: {} as ImageBitmap, url: `/assets/${path}` });
+    const skin: BoardSkin = {
+      blocks: { O: image('tiles/o.png') },
+      garbage: image('tiles/garbage.png'),
+      items: { freeze: image('items/freeze.png') },
+    };
+    const primitives = [
+      { height: 1, kind: 'O' as const, marker: 'freeze' as const, role: 'fixed-cell' as const, width: 1, x: 0, y: 0 },
+      { height: .5, marker: 'freeze' as const, role: 'item-marker' as const, width: .5, x: .25, y: .25 },
+      { height: 1, kind: 'O' as const, garbage: true as const, role: 'fixed-cell' as const, width: 1, x: 1, y: 0 },
+      { height: 1, kind: 'O' as const, garbage: true as const, marker: 'freeze' as const, role: 'fixed-cell' as const, width: 1, x: 2, y: 0 },
+      { height: 1, kind: 'O' as const, role: 'fixed-cell' as const, width: 1, x: 3, y: 0 },
+      { height: 1, kind: 'I' as const, role: 'fixed-cell' as const, width: 1, x: 4, y: 0 },
+    ];
+
+    const partitioned = partitionBoardPrimitives(primitives, skin, 100, 200);
+
+    expect(partitioned.textured.map(({ texture }) => texture.ref.path)).toEqual([
+      'items/freeze.png', 'tiles/garbage.png', 'items/freeze.png', 'tiles/o.png',
+    ]);
+    expect(partitioned.fallback).toEqual([primitives[5]]);
+    expect(partitioned.textured[0]).toMatchObject({ height: 10, width: 10, x: 0, y: 0 });
   });
 });

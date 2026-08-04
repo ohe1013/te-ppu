@@ -3,12 +3,15 @@ import type {
   PublicSideView,
   SideId,
 } from '../core/index';
+import type { LoadedImageRef } from '../assets';
+import type { Texture } from 'pixi.js';
 import type { Rect } from './board-layout';
 import {
   createBoardPrimitives,
   drawBoardPrimitives,
   effectPlacementPrimitives,
 } from './draw-primitives';
+import { partitionBoardPrimitives, type BoardSkin } from './board-skin';
 import type { AnimationEffect } from './event-animation-queue';
 import { animationEffectGroup, animationEffectSide } from './event-animation-queue';
 import {
@@ -19,6 +22,10 @@ import {
 
 export interface BoardSceneProps {
   readonly atlas?: BattleAtlasTextures | null;
+  /** Manager-owned image refs; omitted skin keeps the procedural board intact. */
+  readonly skin?: BoardSkin;
+  /** Must resolve through BattleTextureCache; BoardScene never creates URL textures. */
+  readonly resolveSkinTexture?: (image: LoadedImageRef) => Texture;
   readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
   readonly model: PublicSideView;
@@ -29,6 +36,8 @@ export interface BoardSceneProps {
 
 export function BoardScene({
   atlas,
+  skin,
+  resolveSkinTexture,
   effectProgress,
   effects,
   model,
@@ -46,20 +55,38 @@ export function BoardScene({
   const texturedIds = new Set(textured.map(({ effect }) => effect.id));
   const fallbackEffects = effects.filter((effect) => !texturedIds.has(effect.id));
   const texturedFreeze = textured.some(({ group }) => group === 'freeze-overlay');
+  const primitives = createBoardPrimitives({
+    effectProgress,
+    effects: fallbackEffects,
+    model: texturedFreeze ? { ...model, freezeTicks: 0 } : model,
+    selectedRow,
+    side,
+  });
+  const cellPartition = skin === undefined || resolveSkinTexture === undefined
+    ? null
+    : partitionBoardPrimitives(primitives, skin, rect.width, rect.height);
+  const resolveNearestSkinTexture = (image: LoadedImageRef): Texture => {
+    const texture = resolveSkinTexture!(image);
+    texture.source.scaleMode = 'nearest';
+    return texture;
+  };
   const draw = useCallback((graphics: Parameters<typeof drawBoardPrimitives>[0]) => {
-    const primitives = createBoardPrimitives({
-      effectProgress,
-      effects: fallbackEffects,
-      model: texturedFreeze ? { ...model, freezeTicks: 0 } : model,
-      selectedRow,
-      side,
-    });
-    drawBoardPrimitives(graphics, primitives, rect.width, rect.height);
-  }, [effectProgress, fallbackEffects, model, rect.height, rect.width, selectedRow, side, texturedFreeze]);
+    drawBoardPrimitives(graphics, cellPartition?.fallback ?? primitives, rect.width, rect.height);
+  }, [cellPartition, primitives, rect.height, rect.width]);
 
   return (
     <pixiContainer x={rect.x} y={rect.y}>
       <pixiGraphics draw={draw} />
+      {cellPartition?.textured.map((cell, index) => (
+        <pixiSprite
+          height={cell.height}
+          key={`cell:${index}`}
+          texture={resolveNearestSkinTexture(cell.texture)}
+          width={cell.width}
+          x={cell.x}
+          y={cell.y}
+        />
+      ))}
       {textured.map(({ effect, group, index, placement, textures }) => {
         const anchor = BATTLE_ANIMATIONS[group].anchor;
         const position = {
