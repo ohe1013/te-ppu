@@ -12,7 +12,7 @@ function bundle(floor: 1 | 2 | 3 | 4 | 5): FloorAssetBundle {
 
 function Probe({ floor, manager }: { readonly floor: 1 | 2 | 3 | 4 | 5 | null; readonly manager: AssetManager }) {
   const assets = useFloorAssets(manager, floor);
-  return <output data-testid="bundle">{assets?.floor ?? 'none'}</output>;
+  return <output data-testid="bundle">{assets === null ? 'none' : `${assets.floor}:${assets.generation}`}</output>;
 }
 
 function managerFor(overrides: Partial<AssetManager> = {}): AssetManager {
@@ -58,6 +58,32 @@ describe('useFloorAssets', () => {
     expect(result.getByTestId('bundle')).toHaveTextContent('none');
     expect(manager.loadFloor).toHaveBeenCalledTimes(1);
     expect(manager.prefetchFloor).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-expose a released bundle when returning to the same floor before its new load settles', async () => {
+    let finishReentry!: () => void;
+    const reentry = new Promise<'ready'>((resolve) => { finishReentry = () => resolve('ready'); });
+    const released = bundle(2);
+    const reloaded = { ...bundle(2), generation: 22 };
+    const manager = managerFor({
+      getFloorAssets: vi.fn()
+        .mockReturnValueOnce(released)
+        .mockReturnValue(reloaded),
+      loadFloor: vi.fn()
+        .mockResolvedValueOnce('ready' as const)
+        .mockImplementationOnce(() => reentry),
+    });
+    const result = render(<Probe floor={2} manager={manager} />);
+
+    await waitFor(() => expect(result.getByTestId('bundle')).toHaveTextContent('2:2'));
+    result.rerender(<Probe floor={null} manager={manager} />);
+    await waitFor(() => expect(manager.releaseFloor).toHaveBeenCalledWith(2));
+
+    result.rerender(<Probe floor={2} manager={manager} />);
+    expect(result.getByTestId('bundle')).toHaveTextContent('none');
+
+    await act(async () => finishReentry());
+    await waitFor(() => expect(result.getByTestId('bundle')).toHaveTextContent('2:22'));
   });
 
   it('publishes successful cached references after fallback and locally catches structural rejection', async () => {

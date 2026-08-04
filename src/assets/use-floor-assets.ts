@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { FINAL_FLOOR, type Floor } from '../progression';
 import type { AssetManager, FloorAssetBundle } from './types';
 
-type KeyedFloorAssets = { readonly floor: Floor; readonly bundle: FloorAssetBundle | null };
+type KeyedFloorAssets = {
+  readonly floor: Floor;
+  readonly bundle: FloorAssetBundle | null;
+  readonly routeVisit: number;
+};
 
 function retainedFloors(floor: Floor | null): ReadonlySet<Floor> {
   if (floor === null) return new Set();
@@ -21,6 +25,11 @@ export function useFloorAssets(
   const desiredRef = useRef<Floor | null>(floor);
   const retainedRef = useRef<ReadonlySet<Floor>>(new Set());
   const tokenRef = useRef(0);
+  const routeVisitRef = useRef({ floor, value: 0 });
+  if (routeVisitRef.current.floor !== floor) {
+    routeVisitRef.current = { floor, value: routeVisitRef.current.value + 1 };
+  }
+  const routeVisit = routeVisitRef.current.value;
   desiredRef.current = floor;
 
   useEffect(() => {
@@ -47,13 +56,13 @@ export function useFloorAssets(
       try {
         await manager.loadFloor(floor);
         if (desiredRef.current !== floor || tokenRef.current !== token) return;
-        setPublished({ floor, bundle: manager.getFloorAssets(floor) });
+        setPublished({ floor, bundle: manager.getFloorAssets(floor), routeVisit });
       } catch {
         if (desiredRef.current !== floor || tokenRef.current !== token) return;
-        setPublished({ floor, bundle: null });
+        setPublished({ floor, bundle: null, routeVisit });
       }
     })();
-  }, [floor, manager]);
+  }, [floor, manager, routeVisit]);
 
   useEffect(() => () => {
     ++tokenRef.current;
@@ -61,5 +70,7 @@ export function useFloorAssets(
     retainedRef.current = new Set();
   }, [manager]);
 
-  return published?.floor === floor ? published.bundle : null;
+  return published?.floor === floor && published.routeVisit === routeVisit
+    ? published.bundle
+    : null;
 }
