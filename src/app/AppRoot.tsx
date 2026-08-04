@@ -94,7 +94,7 @@ export function AppRoot({
   const mountedRef = useRef(false);
 
   if (boot.status === 'ready' && controllerRef.current === null) {
-    controllerRef.current = new TowerController(boot.progress, services.progressRepository);
+    controllerRef.current = new TowerController(boot.progress, boot.progressRepository);
   }
   const controller = controllerRef.current;
 

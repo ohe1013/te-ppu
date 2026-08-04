@@ -8,6 +8,7 @@ import type { AssetManager } from '../assets';
 import type {
   ProgressLoadResult,
   ProgressRepository,
+  ProgressRepositoryFactory,
   ProgressSaveResult,
   ProgressState,
   Floor,
@@ -68,6 +69,7 @@ function cloneProgress(state: ProgressState): ProgressState {
 }
 
 class TestProgressRepository implements ProgressRepository {
+  loads = 0;
   readonly saves: ProgressState[] = [];
 
   constructor(
@@ -76,6 +78,7 @@ class TestProgressRepository implements ProgressRepository {
   ) {}
 
   async load(): Promise<ProgressLoadResult> {
+    this.loads += 1;
     return {
       ok: true,
       state: cloneProgress(this.initial),
@@ -153,6 +156,10 @@ function createAudioPort(): AudioPort {
   };
 }
 
+function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
+  return { forIdentity: () => repository };
+}
+
 function TestMatch({ floor, onFinished }: MatchRouteViewProps): ReactNode {
   return (
     <section data-testid="match-screen">
@@ -174,7 +181,7 @@ function renderGame(
   const services: AppServices = {
     audioPort,
     platform,
-    progressRepository: repository,
+    progressRepositoryFactory: factoryFor(repository),
     assetManager,
   };
   return render(
@@ -200,6 +207,36 @@ async function enterMatch(
 }
 
 describe('AppRoot', () => {
+  it('persists match progress through the exact repository selected during boot', async () => {
+    const user = userEvent.setup();
+    const repositoryA = new TestProgressRepository(floorOneProgress);
+    const repositoryB = new TestProgressRepository(floorOneProgress);
+    const progressRepositoryFactory = {
+      forIdentity: vi.fn(() => repositoryA),
+    } satisfies ProgressRepositoryFactory;
+    const services = {
+      audioPort: createAudioPort(),
+      platform: createTestPlatform(),
+      progressRepositoryFactory,
+      assetManager: createAssetManager(),
+    } satisfies AppServices;
+    render(
+      <AppRoot
+        services={services}
+        createMatchSeed={() => 100}
+        renderMatch={(props) => <TestMatch {...props} />}
+      />,
+    );
+
+    await enterMatch(user, 1, 800);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await waitFor(() => expect(repositoryA.saves).toHaveLength(1));
+    expect(repositoryA.loads).toBe(1);
+    expect(repositoryB.loads).toBe(0);
+    expect(repositoryB.saves).toHaveLength(0);
+    expect(progressRepositoryFactory.forIdentity).toHaveBeenCalledOnce();
+  });
+
   it('mounts the app shell while boot work is still pending', () => {
     const never = new Promise<never>(() => undefined);
     const repository = new TestProgressRepository(floorOneProgress);
@@ -218,7 +255,7 @@ describe('AppRoot', () => {
     const services: AppServices = {
       audioPort: createAudioPort(),
       platform: createTestPlatform(),
-      progressRepository: repository,
+      progressRepositoryFactory: factoryFor(repository),
       assetManager: createAssetManager(),
     };
     render(
@@ -245,7 +282,7 @@ describe('AppRoot', () => {
     const services: AppServices = {
       audioPort: createAudioPort(),
       platform: createTestPlatform(),
-      progressRepository: repository,
+      progressRepositoryFactory: factoryFor(repository),
       assetManager: createAssetManager(),
     };
     render(
@@ -583,7 +620,7 @@ describe('AppRoot', () => {
     const servicesFor = (assetManager: AssetManager, audioPort: AudioPort): AppServices => ({
       audioPort,
       platform: createTestPlatform(),
-      progressRepository: new TestProgressRepository(floorOneProgress),
+      progressRepositoryFactory: factoryFor(new TestProgressRepository(floorOneProgress)),
       assetManager,
     });
     const renderRoot = (assetManager: AssetManager, audioPort: AudioPort) => render(
@@ -627,7 +664,7 @@ describe('AppRoot', () => {
     const services: AppServices = {
       audioPort: createAudioPort(),
       platform: createTestPlatform(),
-      progressRepository: new TestProgressRepository(floorOneProgress),
+      progressRepositoryFactory: factoryFor(new TestProgressRepository(floorOneProgress)),
       assetManager: manager,
     };
     const renderRoot = () => render(

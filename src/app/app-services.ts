@@ -1,6 +1,6 @@
 import {
-  createLocalProgressRepository,
-  type ProgressRepository,
+  createLocalProgressRepositoryFactory,
+  type ProgressRepositoryFactory,
 } from '../progression';
 import { createAssetManager, type AssetManager } from '../assets';
 import { createPlatform } from '../platform/create-platform';
@@ -12,14 +12,14 @@ import type { RuntimeMode } from './runtime-mode';
 export interface AppServices {
   readonly audioPort: AudioPort;
   readonly platform: PlatformPort;
-  readonly progressRepository: ProgressRepository;
+  readonly progressRepositoryFactory: ProgressRepositoryFactory;
   readonly assetManager: AssetManager;
 }
 
 export interface AppServiceOverrides {
   readonly audioPort?: AudioPort;
   readonly platform?: PlatformPort;
-  readonly progressRepository?: ProgressRepository;
+  readonly progressRepositoryFactory?: ProgressRepositoryFactory;
   readonly assetManager?: AssetManager;
 }
 
@@ -55,12 +55,8 @@ export function createAppServices(
   return {
     audioPort,
     platform: overrides.platform ?? createPlatform(runtimeMode),
-    progressRepository:
-      overrides.progressRepository ?? createLocalProgressRepository(storage, {
-        progressKey: 'te-ppu.progress.identity.local.local-browser',
-        backupPrefix: 'te-ppu.progress.backup.identity.local.local-browser.',
-        legacyReadKey: 'te-ppu.progress',
-      }),
+    progressRepositoryFactory:
+      overrides.progressRepositoryFactory ?? createLocalProgressRepositoryFactory(storage),
     assetManager,
   };
 }

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import { COMPLETE_ASSET_MANIFEST } from '../assets/test-fixtures/complete-manifest';
-import type { ProgressRepository } from '../progression';
+import type { ProgressRepository, ProgressRepositoryFactory } from '../progression';
 import type { PlatformPort } from '../platform/platform-port';
 import { createAppServices } from './app-services';
 
@@ -52,6 +52,31 @@ afterEach(() => {
 });
 
 describe('createAppServices asset boundary', () => {
+  it('exposes an injected lazy progress repository factory without selecting a repository', () => {
+    const progressRepositoryFactory = {
+      forIdentity: vi.fn(() => repository()),
+    } satisfies ProgressRepositoryFactory;
+    const services = createAppServices('browser', window.localStorage, {
+      platform: platform(),
+      progressRepositoryFactory,
+    });
+
+    expect(services.progressRepositoryFactory).toBe(progressRepositoryFactory);
+    expect(progressRepositoryFactory.forIdentity).not.toHaveBeenCalled();
+    expect('progressRepository' in services).toBe(false);
+  });
+
+  it('does not read storage while creating the default lazy progress factory', () => {
+    const storage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    } as unknown as Storage;
+
+    createAppServices('browser', storage, { platform: platform() });
+
+    expect(storage.getItem).not.toHaveBeenCalled();
+  });
+
   it('uses successful JSON responses for the manifest and atlas while images decode manager-resolved URLs', async () => {
     const requests: string[] = [];
     const fetch = vi.fn(async (url: string) => {
@@ -77,7 +102,7 @@ describe('createAppServices asset boundary', () => {
     vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('Image', FakeImage);
     const services = createAppServices('browser', window.localStorage, {
-      platform: platform(), progressRepository: repository(),
+      platform: platform(), progressRepositoryFactory: { forIdentity: () => repository() },
     });
 
     await expect(services.assetManager.loadCommon()).resolves.toBe('ready');
@@ -98,7 +123,7 @@ describe('createAppServices asset boundary', () => {
     vi.stubGlobal('fetch', vi.fn(response));
     vi.stubGlobal('Image', class {});
     const services = createAppServices('browser', window.localStorage, {
-      platform: platform(), progressRepository: repository(),
+      platform: platform(), progressRepositoryFactory: { forIdentity: () => repository() },
     });
 
     await expect(services.assetManager.loadCommon()).resolves.toBe('fallback');
@@ -122,7 +147,7 @@ describe('createAppServices asset boundary', () => {
     vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('Image', FailingImage);
     const services = createAppServices('browser', window.localStorage, {
-      platform: platform(), progressRepository: repository(),
+      platform: platform(), progressRepositoryFactory: { forIdentity: () => repository() },
     });
 
     await expect(services.assetManager.loadCommon()).resolves.toBe('fallback');
@@ -147,7 +172,7 @@ describe('createAppServices asset boundary', () => {
     vi.stubGlobal('Image', ImageConstructor);
 
     const services = createAppServices('browser', window.localStorage, {
-      platform: platform(), progressRepository: repository(), assetManager,
+      platform: platform(), progressRepositoryFactory: { forIdentity: () => repository() }, assetManager,
     });
 
     expect(services.assetManager).toBe(assetManager);

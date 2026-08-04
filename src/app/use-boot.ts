@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { ProgressState } from '../progression';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ProgressRepository, ProgressState } from '../progression';
 import {
   PlatformError,
   type PlatformErrorCode,
@@ -13,6 +13,7 @@ export type BootState =
     status: 'ready';
     identity: UserIdentity;
     progress: ProgressState;
+    progressRepository: ProgressRepository;
     notice: string | null;
   }
   | {
@@ -38,9 +39,14 @@ function blockedCode(
   return null;
 }
 
-export function useBoot({ platform, progressRepository, assetManager }: AppServices): BootState {
+export function useBoot({
+  platform,
+  progressRepositoryFactory,
+  assetManager,
+}: AppServices): BootState {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<BootState>({ status: 'loading' });
+  const attemptTokenRef = useRef(0);
   const retry = useCallback(() => {
     setState({ status: 'loading' });
     setAttempt((value) => value + 1);
@@ -48,19 +54,27 @@ export function useBoot({ platform, progressRepository, assetManager }: AppServi
 
   useEffect(() => {
     let active = true;
+    const attemptToken = ++attemptTokenRef.current;
 
     async function boot() {
       try {
-        const assetLoad = Promise.resolve()
+        const portraitResultPromise = platform.lockPortrait().then(
+          () => ({ ok: true as const }),
+          (error: unknown) => ({ ok: false as const, error }),
+        );
+        const commonAssetsPromise = Promise.resolve()
           .then(() => assetManager.loadCommon())
           .catch((): 'fallback' => 'fallback');
-        const [, identity, loadResult] = await Promise.all([
-          platform.lockPortrait(),
-          platform.getIdentity(),
+        const identity = await platform.getIdentity();
+        if (!active || attemptToken !== attemptTokenRef.current) return;
+        const progressRepository = progressRepositoryFactory.forIdentity(identity);
+        const [portraitResult, , loadResult] = await Promise.all([
+          portraitResultPromise,
+          commonAssetsPromise,
           progressRepository.load(),
-          assetLoad,
         ]);
-        if (!active) return;
+        if (!active || attemptToken !== attemptTokenRef.current) return;
+        if (!portraitResult.ok) throw portraitResult.error;
 
         const notice = loadResult.ok
           ? loadResult.recoveredFromCorruption ? RECOVERY_NOTICE : null
@@ -69,10 +83,11 @@ export function useBoot({ platform, progressRepository, assetManager }: AppServi
           status: 'ready',
           identity,
           progress: loadResult.state,
+          progressRepository,
           notice,
         });
       } catch (error) {
-        if (!active) return;
+        if (!active || attemptToken !== attemptTokenRef.current) return;
         if (error instanceof PlatformError) {
           const code = blockedCode(error.code);
           if (code !== null) {
@@ -88,7 +103,7 @@ export function useBoot({ platform, progressRepository, assetManager }: AppServi
     return () => {
       active = false;
     };
-  }, [assetManager, attempt, platform, progressRepository, retry]);
+  }, [assetManager, attempt, platform, progressRepositoryFactory, retry]);
 
   return state;
 }

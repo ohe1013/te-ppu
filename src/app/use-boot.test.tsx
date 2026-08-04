@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { StrictMode, type PropsWithChildren } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import type { AudioPort } from '../platform/audio-port';
-import type { ProgressLoadResult, ProgressRepository, ProgressState } from '../progression';
+import type {
+  ProgressLoadResult,
+  ProgressRepository,
+  ProgressRepositoryFactory,
+  ProgressState,
+} from '../progression';
 import { PlatformError } from '../platform/apps-in-toss-platform';
-import type { PlatformPort } from '../platform/platform-port';
+import type { PlatformPort, UserIdentity } from '../platform/platform-port';
 import type { AppServices } from './app-services';
 import { useBoot } from './use-boot';
 
@@ -64,17 +70,167 @@ const defaultAudioPort: AudioPort = {
   unlock: async () => undefined,
 };
 
+const factories = new WeakMap<ProgressRepository, ProgressRepositoryFactory>();
+
+function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
+  const cached = factories.get(repository);
+  if (cached !== undefined) return cached;
+  const factory = { forIdentity: () => repository };
+  factories.set(repository, factory);
+  return factory;
+}
+
 function services(
   platform: PlatformPort,
   progressRepository: ProgressRepository,
   assetManager: AssetManager = defaultAssetManager,
   audioPort: AudioPort = defaultAudioPort,
 ): AppServices {
-  return { audioPort, platform, progressRepository, assetManager };
+  return {
+    audioPort,
+    platform,
+    progressRepositoryFactory: factoryFor(progressRepository),
+    assetManager,
+  };
+}
+
+function servicesWithFactory(
+  platform: PlatformPort,
+  progressRepositoryFactory: ProgressRepositoryFactory,
+  assetManager: AssetManager = defaultAssetManager,
+  audioPort: AudioPort = defaultAudioPort,
+): AppServices {
+  return {
+    audioPort,
+    platform,
+    progressRepositoryFactory,
+    assetManager,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('useBoot', () => {
-  it('starts portrait lock, identity, and progress loading concurrently', async () => {
+  it('starts portrait and common assets before selecting progress after identity resolves', async () => {
+    const identity = deferred<UserIdentity>();
+    const load = vi.fn(async () => ({
+      ok: true as const,
+      state: progress,
+      recoveredFromCorruption: false,
+    }));
+    const repository = createRepository(load);
+    const forIdentity = vi.fn(() => repository);
+    const progressRepositoryFactory = { forIdentity };
+    const lockPortrait = vi.fn(async () => undefined);
+    const platform = createPlatform(() => identity.promise, lockPortrait);
+    const assetManager = createAssetManager(vi.fn(async () => 'fallback' as const));
+
+    const { result } = renderHook(() => useBoot(servicesWithFactory(
+      platform,
+      progressRepositoryFactory,
+      assetManager,
+    )));
+
+    expect(lockPortrait).toHaveBeenCalledOnce();
+    await act(async () => { await Promise.resolve(); });
+    expect(assetManager.loadCommon).toHaveBeenCalledOnce();
+    expect(forIdentity).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+
+    await act(async () => identity.resolve({ kind: 'apps-in-toss', key: 'user-7' }));
+    await waitFor(() => expect(load).toHaveBeenCalledOnce());
+    expect(forIdentity).toHaveBeenCalledWith({ kind: 'apps-in-toss', key: 'user-7' });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    if (result.current.status !== 'ready') throw new Error('Expected ready boot state.');
+    expect(result.current.progressRepository).toBe(repository);
+  });
+
+  it('does not select progress for a retryable identity failure before retry succeeds', async () => {
+    const load = vi.fn(async () => ({
+      ok: true as const,
+      state: progress,
+      recoveredFromCorruption: false,
+    }));
+    const repository = createRepository(load);
+    const forIdentity = vi.fn(() => repository);
+    let progressRepositoryFactory = { forIdentity };
+    let attempt = 0;
+    const platform = createPlatform(async () => {
+      attempt += 1;
+      if (attempt === 1) throw new PlatformError('RETRYABLE_SDK_ERROR');
+      return { kind: 'apps-in-toss', key: 'user-7' };
+    });
+    const { result } = renderHook(() => useBoot(servicesWithFactory(
+      platform,
+      progressRepositoryFactory,
+    )));
+
+    await waitFor(() => expect(result.current.status).toBe('retryable-error'));
+    expect(forIdentity).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    if (result.current.status !== 'retryable-error') throw new Error('Expected retryable boot state.');
+    const retry = result.current.retry;
+    act(() => retry());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(forIdentity).toHaveBeenCalledTimes(1);
+    expect(forIdentity).toHaveBeenCalledWith({ kind: 'apps-in-toss', key: 'user-7' });
+  });
+
+  it('rejects a stale identity completion before repository selection in StrictMode', async () => {
+    const firstIdentity = deferred<UserIdentity>();
+    const secondIdentity = deferred<UserIdentity>();
+    const getIdentity = vi.fn()
+      .mockImplementationOnce(() => firstIdentity.promise)
+      .mockImplementationOnce(() => secondIdentity.promise);
+    const currentLoad = vi.fn(async () => ({
+      ok: true as const,
+      state: progress,
+      recoveredFromCorruption: false,
+    }));
+    const staleLoad = vi.fn(async () => ({
+      ok: true as const,
+      state: progress,
+      recoveredFromCorruption: false,
+    }));
+    const currentRepository = createRepository(currentLoad);
+    const staleRepository = createRepository(staleLoad);
+    const forIdentity = vi.fn((identity: UserIdentity) => (
+      identity.key === 'user-current' ? currentRepository : staleRepository
+    ));
+    let progressRepositoryFactory = { forIdentity };
+    const wrapper = ({ children }: PropsWithChildren) => <StrictMode>{children}</StrictMode>;
+
+    const platform = createPlatform(getIdentity);
+    const { rerender } = renderHook(() => useBoot(servicesWithFactory(
+      platform,
+      progressRepositoryFactory,
+    )), { wrapper });
+
+    await waitFor(() => expect(getIdentity).toHaveBeenCalledOnce());
+    progressRepositoryFactory = { forIdentity };
+    rerender();
+    await waitFor(() => expect(getIdentity).toHaveBeenCalledTimes(2));
+    await act(async () => secondIdentity.resolve({ kind: 'apps-in-toss', key: 'user-current' }));
+    await waitFor(() => expect(forIdentity).toHaveBeenCalledOnce());
+    await act(async () => firstIdentity.resolve({ kind: 'apps-in-toss', key: 'user-stale' }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(forIdentity).toHaveBeenCalledWith({ kind: 'apps-in-toss', key: 'user-current' });
+    expect(forIdentity).not.toHaveBeenCalledWith({ kind: 'apps-in-toss', key: 'user-stale' });
+    expect(currentLoad).toHaveBeenCalledOnce();
+    expect(staleLoad).not.toHaveBeenCalled();
+  });
+
+  it('starts portrait lock and identity before progress loading after identity resolves', async () => {
     const calls: string[] = [];
     let finishPortraitLock: (() => void) | undefined;
     const portraitLock = new Promise<void>((resolve) => {
@@ -97,8 +253,10 @@ describe('useBoot', () => {
 
     const { result } = renderHook(() => useBoot(services(platform, repository)));
 
-    expect(calls).toEqual(['portrait', 'identity', 'progress']);
+    expect(calls).toEqual(['portrait', 'identity']);
     expect(result.current).toEqual({ status: 'loading' });
+    await act(async () => { await Promise.resolve(); });
+    expect(calls).toEqual(['portrait', 'identity', 'progress']);
     await act(async () => finishPortraitLock?.());
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current).toMatchObject({
@@ -144,19 +302,27 @@ describe('useBoot', () => {
   it.each([
     ['UPDATE_REQUIRED', 'UPDATE_REQUIRED'],
     ['INVALID_CATEGORY', 'INVALID_CATEGORY'],
-  ] as const)('blocks boot for %s', async (errorCode, stateCode) => {
+  ] as const)('blocks boot for %s without selecting progress', async (errorCode, stateCode) => {
     const platform = createPlatform(async () => {
       throw new PlatformError(errorCode);
     });
-    const repository = createRepository(async () => ({
-      ok: true,
+    const load = vi.fn(async () => ({
+      ok: true as const,
       state: progress,
       recoveredFromCorruption: false,
     }));
-    const { result } = renderHook(() => useBoot(services(platform, repository)));
+    const repository = createRepository(load);
+    const forIdentity = vi.fn(() => repository);
+    const progressRepositoryFactory = { forIdentity };
+    const { result } = renderHook(() => useBoot(servicesWithFactory(
+      platform,
+      progressRepositoryFactory,
+    )));
 
     await waitFor(() => expect(result.current.status).toBe('blocked'));
     expect(result.current).toMatchObject({ status: 'blocked', code: stateCode });
+    expect(forIdentity).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
   });
 
   it('retries a retryable SDK identity error', async () => {
@@ -199,8 +365,11 @@ describe('useBoot', () => {
       state: progress,
       recoveredFromCorruption: false,
     }));
+    const forIdentity = vi.fn(() => repository);
+    const progressRepositoryFactory = { forIdentity };
+    const assetManager = createAssetManager(loadCommon);
     const { result } = renderHook(() => useBoot(
-      services(platform, repository, createAssetManager(loadCommon)),
+      servicesWithFactory(platform, progressRepositoryFactory, assetManager),
     ));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
@@ -209,5 +378,6 @@ describe('useBoot', () => {
       identity: { kind: 'local', key: 'local-browser' },
       progress,
     });
+    expect(forIdentity).toHaveBeenCalledOnce();
   });
 });
