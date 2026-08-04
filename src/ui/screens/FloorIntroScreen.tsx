@@ -1,18 +1,23 @@
 import { getAiFloorProfile } from '../../ai/index';
 import type { Floor } from '../../app/app-route';
+import type { FloorAssetBundle } from '../../assets';
+import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface FloorIntroScreenProps {
   readonly floor: Floor;
   readonly onBack: () => void;
   readonly onStart: () => void;
+  readonly floorAssets?: FloorAssetBundle | null;
 }
 
-export function FloorIntroScreen({ floor, onBack, onStart }: FloorIntroScreenProps) {
+export function FloorIntroScreen({ floor, floorAssets, onBack, onStart }: FloorIntroScreenProps) {
   const profile = getAiFloorProfile(floor);
   const reactionMs = Math.round(profile.reactionTicks * (1000 / 60));
 
   return (
     <section className="screen-shell" data-testid="floor-intro-screen">
+      <ScreenBackdrop image={floorAssets?.background} />
+      <ScreenBackdrop className="screen-backdrop--art" image={floorAssets?.fullArt} />
       <p className="eyebrow">{floor}층 상대</p>
       <h1>{floor}층 대전 준비</h1>
       <p>AI 반응 간격: {reactionMs}ms</p>

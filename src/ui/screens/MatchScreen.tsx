@@ -15,7 +15,12 @@ import {
   type MatchLoopView,
   type UseMatchLoopOptions,
 } from '../../app/use-match-loop';
-import type { PortraitState } from '../../assets/index';
+import type {
+  CommonAssets,
+  FloorAssetBundle,
+  LoadedImageRef,
+  PortraitState,
+} from '../../assets/index';
 import type {
   GameCommand,
   GameEvent,
@@ -28,6 +33,7 @@ import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { ProgressState } from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
+import { AssetIcon } from '../match/AssetIcon';
 import {
   createPortraitMemory,
   createPortraitPresentation,
@@ -63,10 +69,21 @@ export interface MatchScreenProps {
     readonly player?: Partial<Record<PortraitState, string>>;
     readonly opponent?: Partial<Record<PortraitState, string>>;
   };
+  /** Resolved by AppRoot; this screen never starts asset work. */
+  readonly commonAssets?: CommonAssets | null;
+  readonly floorAssets?: FloorAssetBundle | null;
   readonly useMatchLoopImpl?: MatchLoopHook;
 }
 
 export type MatchLoopHook = (options: UseMatchLoopOptions) => MatchLoopView;
+
+function portraitUrls(records: object | undefined): Partial<Record<PortraitState, string>> {
+  if (records === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(records as Record<string, LoadedImageRef | undefined>)
+      .flatMap(([state, image]) => image === undefined ? [] : [[state, image.url]]),
+  ) as Partial<Record<PortraitState, string>>;
+}
 
 function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
   if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
@@ -194,7 +211,9 @@ function usePortraitPresentations(
 
 export function MatchScreen({
   audioPort,
+  commonAssets,
   floor,
+  floorAssets,
   onFinished,
   onRetrySettingsSave,
   onSettingsChange,
@@ -247,7 +266,16 @@ export function MatchScreen({
     onEvents: handleMatchEvents,
     onFinished,
   });
-  const portraits = usePortraitPresentations(floor, match, portraitSources);
+  const resolvedPortraitSources = useMemo(() => ({
+    player: { ...portraitUrls(commonAssets?.hero.portraits), ...portraitSources?.player },
+    opponent: { ...portraitUrls(floorAssets?.portraits), ...portraitSources?.opponent },
+  }), [commonAssets?.hero.portraits, floorAssets?.portraits, portraitSources]);
+  const portraits = usePortraitPresentations(floor, match, resolvedPortraitSources);
+  const skin = useMemo(() => {
+    if (commonAssets === null || commonAssets === undefined) return undefined;
+    const { garbage, ...blocks } = commonAssets.tiles;
+    return { blocks, garbage, items: commonAssets.items };
+  }, [commonAssets]);
   const [rowSelectionActive, setRowSelectionActive] = useState(false);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
@@ -337,6 +365,13 @@ export function MatchScreen({
             <span data-testid="match-tick">{match.view.tick}</span>
           </div>
           <SettingsPanel
+            icons={{
+              hapticsOff: commonAssets?.icons['haptics-off'],
+              hapticsOn: commonAssets?.icons['haptics-on'],
+              settings: commonAssets?.icons.settings,
+              soundOff: commonAssets?.icons['sound-off'],
+              soundOn: commonAssets?.icons['sound-on'],
+            }}
             onRetrySave={onRetrySettingsSave}
             onSettingsChange={onSettingsChange}
             saveFailed={settingsSaveFailed}
@@ -347,6 +382,7 @@ export function MatchScreen({
             onClick={openExitConfirmation}
             type="button"
           >
+            <AssetIcon className="asset-icon" fallback="↩" image={commonAssets?.icons.exit} />
             게임 나가기
           </button>
         </div>
@@ -369,6 +405,7 @@ export function MatchScreen({
 
       <div className="battle-stage">
         <BattleCanvas
+          atlas={commonAssets?.atlas}
           commandFeedback={match.commandFeedback}
           eventBatches={match.eventBatches}
           playerBoardOverlay={rowSelectionActive ? (
@@ -380,6 +417,7 @@ export function MatchScreen({
             />
           ) : undefined}
           selectedRow={selectedRow}
+          skin={skin}
           view={match.view}
         />
       </div>
@@ -397,11 +435,12 @@ export function MatchScreen({
         />
         <div className="match-controls__movement">
           <Joystick onCommand={dispatch} resetBus={resetBus} />
-          <RotateButton onCommand={dispatch} />
+          <RotateButton icon={commonAssets?.icons.rotate} onCommand={dispatch} />
         </div>
       </fieldset>
       <ResumeCountdown count={resumeCountdown} />
       <ExitConfirmation
+        icon={commonAssets?.icons.exit}
         onCancel={cancelExitConfirmation}
         onConfirm={() => platform.close()}
         open={exitOpen}

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { ProgressState } from '../../progression/index';
+import type { LoadedImageRef } from '../../assets';
+import { AssetIcon } from './AssetIcon';
 
 export interface SettingsPanelProps {
   readonly settings: ProgressState['settings'];
@@ -9,12 +11,20 @@ export interface SettingsPanelProps {
   ) => Promise<boolean>;
   readonly onRetrySave: () => Promise<boolean>;
   readonly onSoundEnabled?: (enabled: boolean) => void;
+  readonly icons?: {
+    readonly settings?: LoadedImageRef;
+    readonly soundOn?: LoadedImageRef;
+    readonly soundOff?: LoadedImageRef;
+    readonly hapticsOn?: LoadedImageRef;
+    readonly hapticsOff?: LoadedImageRef;
+  };
 }
 
 export function SettingsPanel({
   onRetrySave,
   onSettingsChange,
   onSoundEnabled,
+  icons,
   saveFailed,
   settings,
 }: SettingsPanelProps) {
@@ -53,6 +63,7 @@ export function SettingsPanel({
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
+        <AssetIcon className="asset-icon" fallback="⚙" image={icons?.settings} />
         설정
       </button>
       {open ? (
@@ -69,6 +80,11 @@ export function SettingsPanel({
               }}
               type="checkbox"
             />
+            <AssetIcon
+              className="asset-icon"
+              fallback={settings.soundEnabled ? '🔊' : '🔇'}
+              image={settings.soundEnabled ? icons?.soundOn : icons?.soundOff}
+            />
             효과음
           </label>
           <label>
@@ -79,6 +95,11 @@ export function SettingsPanel({
                 hapticsEnabled: event.currentTarget.checked,
               })}
               type="checkbox"
+            />
+            <AssetIcon
+              className="asset-icon"
+              fallback={settings.hapticsEnabled ? '◉' : '○'}
+              image={settings.hapticsEnabled ? icons?.hapticsOn : icons?.hapticsOff}
             />
             진동
           </label>

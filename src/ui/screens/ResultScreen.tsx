@@ -1,5 +1,7 @@
 import type { Floor, MatchResult } from '../../app/app-route';
 import type { ProgressState } from '../../progression/index';
+import type { FloorAssetBundle } from '../../assets';
+import { ScreenBackdrop } from './ScreenBackdrop';
 
 const RESULT_LABELS: Record<MatchResult, string> = {
   win: '승리',
@@ -17,10 +19,12 @@ export interface ResultScreenProps {
   readonly onContinue: () => void;
   readonly onRetry: () => void;
   readonly onRetrySave: () => void;
+  readonly floorAssets?: FloorAssetBundle | null;
 }
 
 export function ResultScreen({
   floor,
+  floorAssets,
   onContinue,
   onRetry,
   onRetrySave,
@@ -32,6 +36,8 @@ export function ResultScreen({
 }: ResultScreenProps) {
   return (
     <section className="screen-shell" data-testid="result-screen">
+      <ScreenBackdrop image={floorAssets?.background} />
+      <ScreenBackdrop className="screen-backdrop--art" image={floorAssets?.fullArt} />
       <p className="eyebrow">{floor}층 결과</p>
       <h1>{RESULT_LABELS[result]}</h1>
       <p>최고 해금 층: {progress.highestUnlockedFloor}</p>

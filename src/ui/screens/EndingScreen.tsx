@@ -1,10 +1,19 @@
+import type { CommonAssets, FloorAssetBundle } from '../../assets';
+import { ScreenBackdrop } from './ScreenBackdrop';
+
 export interface EndingScreenProps {
   readonly onReturnToTower: () => void;
+  readonly commonAssets?: CommonAssets | null;
+  readonly floorAssets?: FloorAssetBundle | null;
 }
 
-export function EndingScreen({ onReturnToTower }: EndingScreenProps) {
+export function EndingScreen({ commonAssets, floorAssets, onReturnToTower }: EndingScreenProps) {
   return (
     <section className="screen-shell" data-testid="ending-screen">
+      <ScreenBackdrop image={floorAssets?.background} />
+      <ScreenBackdrop className="screen-backdrop--art" image={floorAssets?.fullArt} />
+      <ScreenBackdrop className="screen-backdrop--hero" image={commonAssets?.hero.fullArt} />
+      <ScreenBackdrop className="screen-backdrop--owl" image={commonAssets?.owl.fullArt} />
       <p className="eyebrow">타워 정복</p>
       <h1>모든 층을 클리어했습니다</h1>
       <p>세 번의 대전을 완주했습니다. 언제든 다시 도전할 수 있습니다.</p>

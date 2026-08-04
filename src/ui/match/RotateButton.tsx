@@ -5,10 +5,13 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { GameCommand } from '../../core/index';
+import type { LoadedImageRef } from '../../assets';
+import { AssetIcon } from './AssetIcon';
 import './controls.css';
 
 export interface RotateButtonProps {
   readonly onCommand: (command: GameCommand) => void;
+  readonly icon?: LoadedImageRef;
 }
 
 type ActivationKey = 'Enter' | ' ';
@@ -17,7 +20,7 @@ function isActivationKey(key: string): key is ActivationKey {
   return key === 'Enter' || key === ' ';
 }
 
-export function RotateButton({ onCommand }: RotateButtonProps) {
+export function RotateButton({ icon, onCommand }: RotateButtonProps) {
   const heldActivationKeys = useRef(new Set<ActivationKey>());
   const rotate = () => onCommand({ type: 'rotate-clockwise' });
 
@@ -61,7 +64,7 @@ export function RotateButton({ onCommand }: RotateButtonProps) {
       onKeyUp={handleKeyUp}
       onPointerDown={handlePointerDown}
     >
-      <span aria-hidden="true">↻</span>
+      <AssetIcon className="asset-icon" fallback="↻" image={icon} />
     </button>
   );
 }

@@ -206,6 +206,14 @@
   gap: 0.35rem;
 }
 
+.asset-icon {
+  width: 1em;
+  height: 1em;
+  margin-right: 0.2em;
+  vertical-align: -0.12em;
+  object-fit: contain;
+}
+
 .battle-hud__portrait {
   width: 24px;
   height: 24px;

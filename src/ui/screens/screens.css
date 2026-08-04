@@ -13,6 +13,8 @@
 }
 
 :where(.screen-shell) {
+  position: relative;
+  isolation: isolate;
   width: min(100%, 30rem);
   min-height: 100dvh;
   margin: 0 auto;
@@ -25,6 +27,27 @@
   align-content: center;
   gap: 1rem;
 }
+
+.screen-shell > :not(.screen-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.screen-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.26;
+  object-fit: cover;
+  object-position: center top;
+  pointer-events: none;
+}
+
+.screen-backdrop--art { opacity: 0.18; object-position: right bottom; }
+.screen-backdrop--hero { width: 48%; height: 48%; top: auto; opacity: 0.2; object-position: left bottom; }
+.screen-backdrop--owl { width: 30%; height: 30%; left: auto; top: auto; opacity: 0.22; object-position: right bottom; }
 
 .screen-shell h1,
 .screen-shell p {

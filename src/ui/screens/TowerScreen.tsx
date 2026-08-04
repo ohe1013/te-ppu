@@ -3,16 +3,20 @@ import {
   type Floor,
   type ProgressState,
 } from '../../progression/index';
+import type { CommonAssets } from '../../assets';
+import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface TowerScreenProps {
   readonly progress: ProgressState;
   readonly notice: string | null;
   readonly onSelectFloor: (floor: Floor) => void;
+  readonly commonAssets?: CommonAssets | null;
 }
 
-export function TowerScreen({ notice, onSelectFloor, progress }: TowerScreenProps) {
+export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: TowerScreenProps) {
   return (
     <section className="screen-shell" data-testid="tower-screen">
+      <ScreenBackdrop image={commonAssets?.towerBackdrop} />
       <p className="eyebrow">PvE 타워</p>
       <h1>도전할 층을 선택하세요</h1>
       {notice !== null && <p className="notice" role="status">{notice}</p>}

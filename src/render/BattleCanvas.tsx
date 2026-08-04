@@ -32,6 +32,7 @@ import {
   type BattleAtlasTextures,
 } from './battle-animation-registry';
 import { BattleTextureCache } from './battle-texture-cache';
+import type { BoardSkin } from './board-skin';
 import './pixi-elements';
 
 const MAX_RESOLUTION = 2;
@@ -42,6 +43,8 @@ export interface BattleCanvasProps {
   readonly commandFeedback: readonly CommandFeedback[];
   readonly eventBatches: readonly GameEventBatch[];
   readonly atlas?: BattleAtlasInput | null;
+  /** Optional manager-resolved tile refs; missing refs retain Graphics rendering. */
+  readonly skin?: BoardSkin;
   readonly playerBoardOverlay?: ReactNode;
   readonly selectedRow: number | null;
   readonly view: PublicMatchView;
@@ -221,6 +224,7 @@ export function BattleCanvas({
   eventBatches,
   playerBoardOverlay,
   selectedRow,
+  skin,
   view,
 }: BattleCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -302,7 +306,9 @@ export function BattleCanvas({
           model={view.sides.player}
           rect={layout.player}
           selectedRow={selectedRow}
+          skin={skin}
           side="player"
+          textureCache={textureCacheRef.current}
         />
         <BoardScene
           atlas={textures}
@@ -311,7 +317,9 @@ export function BattleCanvas({
           model={view.sides.opponent}
           rect={layout.opponent}
           selectedRow={null}
+          skin={skin}
           side="opponent"
+          textureCache={textureCacheRef.current}
         />
         {effects.flatMap((effect) => {
           if (effect.group !== 'attack-shot') return [];

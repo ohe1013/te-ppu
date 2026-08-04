@@ -4,11 +4,14 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
+import type { LoadedImageRef } from '../../assets';
+import { AssetIcon } from './AssetIcon';
 
 export interface ExitConfirmationProps {
   readonly open: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: () => Promise<void>;
+  readonly icon?: LoadedImageRef;
 }
 
 const FOCUSABLE = [
@@ -21,6 +24,7 @@ const FOCUSABLE = [
 ].join(',');
 
 export function ExitConfirmation({
+  icon,
   onCancel,
   onConfirm,
   open,
@@ -133,6 +137,7 @@ export function ExitConfirmation({
             onClick={() => void confirm()}
             type="button"
           >
+            <AssetIcon className="asset-icon" fallback="↩" image={icon} />
             게임 나가기 확인
           </button>
         </div>

@@ -324,6 +324,32 @@ describe('AppRoot', () => {
     })).toBeInTheDocument();
   });
 
+  it('retains the final floor bundle through ending and releases it only after returning to tower', async () => {
+    const user = userEvent.setup();
+    const manager: AssetManager = {
+      ...createAssetManager(),
+      loadFloor: vi.fn(async () => 'fallback' as const),
+      prefetchFloor: vi.fn(),
+      releaseFloor: vi.fn(),
+    };
+    renderGame(new TestProgressRepository(floorFiveProgress), createTestPlatform(), manager);
+
+    const tower = await screen.findByTestId('tower-screen');
+    await user.click(tower.querySelectorAll('button')[4]!);
+    await waitFor(() => expect(manager.loadFloor).toHaveBeenCalledWith(5));
+    expect(manager.prefetchFloor).not.toHaveBeenCalled();
+    await user.click(screen.getByTestId('floor-intro-screen').querySelectorAll('button')[1]!);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('result-screen');
+    const resultButtons = screen.getByTestId('result-screen').querySelectorAll('button');
+    await user.click(resultButtons[resultButtons.length - 1]!);
+    const ending = await screen.findByTestId('ending-screen');
+
+    expect(manager.releaseFloor).not.toHaveBeenCalledWith(5);
+    await user.click(ending.querySelector('button')!);
+    await waitFor(() => expect(manager.releaseFloor).toHaveBeenCalledWith(5));
+  });
+
   it('renders all five floor choices with floor four available and floor five locked', async () => {
     renderGame(new TestProgressRepository(floorFourProgress));
 

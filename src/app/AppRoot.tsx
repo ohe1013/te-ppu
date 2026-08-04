@@ -20,9 +20,11 @@ import {
 } from './app-route';
 import type { AppServices } from './app-services';
 import type { AssetManager } from '../assets';
+import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
 import type { ProgressState } from '../progression/index';
+import { FINAL_FLOOR } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
 import { TowerController } from './towerController';
@@ -40,6 +42,8 @@ export interface MatchRouteViewProps {
   readonly platform: PlatformPort;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
+  readonly commonAssets?: ReturnType<AssetManager['getCommonAssets']>;
+  readonly floorAssets?: ReturnType<AssetManager['getFloorAssets']>;
 }
 
 export interface AppRootProps {
@@ -76,6 +80,11 @@ export function AppRoot({
 }: AppRootProps) {
   const boot = useBoot(services);
   const [route, dispatchRoute] = useReducer(reduceRoute, { name: 'boot' } satisfies AppRoute);
+  const displayedFloor = route.name === 'floor-intro' || route.name === 'match' || route.name === 'result'
+    ? route.floor
+    : route.name === 'ending' ? FINAL_FLOOR : null;
+  const floorAssets = useFloorAssets(services.assetManager, displayedFloor);
+  const commonAssets = boot.status === 'ready' ? services.assetManager.getCommonAssets() : null;
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
   const [resultSavePending, setResultSavePending] = useState(false);
   const [saveRetrying, setSaveRetrying] = useState(false);
@@ -212,6 +221,7 @@ export function AppRoot({
       case 'tower':
         content = (
           <TowerScreen
+            commonAssets={commonAssets}
             notice={boot.notice}
             progress={controller.progress}
             onSelectFloor={(floor) => dispatchRoute({ type: 'select-floor', floor })}
@@ -222,6 +232,7 @@ export function AppRoot({
         content = (
           <FloorIntroScreen
             floor={route.floor}
+            floorAssets={floorAssets}
             onBack={() => dispatchRoute({ type: 'return-to-tower' })}
             onStart={() => startFloor(route.floor)}
           />
@@ -231,6 +242,8 @@ export function AppRoot({
         content = renderMatch({
           audioPort: services.audioPort,
           floor: route.floor,
+          commonAssets,
+          floorAssets,
           seed: route.seed,
           onFinished: finishMatch,
           onRetrySettingsSave: retrySave,
@@ -244,6 +257,7 @@ export function AppRoot({
         content = (
           <ResultScreen
             floor={route.floor}
+            floorAssets={floorAssets}
             progress={controller.progress}
             result={route.result}
             saveFailed={controller.saveError === 'SAVE_FAILED'}
@@ -258,6 +272,8 @@ export function AppRoot({
       case 'ending':
         content = (
           <EndingScreen
+            commonAssets={commonAssets}
+            floorAssets={floorAssets}
             onReturnToTower={() => dispatchRoute({ type: 'return-to-tower' })}
           />
         );
