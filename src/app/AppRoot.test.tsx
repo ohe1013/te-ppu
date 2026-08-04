@@ -13,6 +13,7 @@ import type {
   Floor,
 } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
+import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
 import {
   AppRoot,
@@ -140,6 +141,18 @@ function createAssetManager(
   };
 }
 
+function createAudioPort(): AudioPort {
+  return {
+    destroy: vi.fn(async () => undefined),
+    play: vi.fn(),
+    resume: vi.fn(async () => undefined),
+    setEnabled: vi.fn(),
+    setMusic: vi.fn(async () => undefined),
+    suspend: vi.fn(async () => undefined),
+    unlock: vi.fn(async () => undefined),
+  };
+}
+
 function TestMatch({ floor, onFinished }: MatchRouteViewProps): ReactNode {
   return (
     <section data-testid="match-screen">
@@ -155,9 +168,15 @@ function renderGame(
   repository: ProgressRepository,
   platform: PlatformPort = createTestPlatform(),
   assetManager: AssetManager = createAssetManager(),
+  audioPort: AudioPort = createAudioPort(),
 ) {
   let seed = 100;
-  const services: AppServices = { platform, progressRepository: repository, assetManager };
+  const services: AppServices = {
+    audioPort,
+    platform,
+    progressRepository: repository,
+    assetManager,
+  };
   return render(
     <AppRoot
       services={services}
@@ -197,6 +216,7 @@ describe('AppRoot', () => {
     vi.stubGlobal('cancelAnimationFrame', () => undefined);
     const repository = new TestProgressRepository(floorOneProgress);
     const services: AppServices = {
+      audioPort: createAudioPort(),
       platform: createTestPlatform(),
       progressRepository: repository,
       assetManager: createAssetManager(),
@@ -223,6 +243,7 @@ describe('AppRoot', () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);
     const services: AppServices = {
+      audioPort: createAudioPort(),
       platform: createTestPlatform(),
       progressRepository: repository,
       assetManager: createAssetManager(),
@@ -485,41 +506,89 @@ describe('AppRoot', () => {
     expect(await screen.findByTestId('tower-screen')).toBeInTheDocument();
   });
 
-  it('delays manager destruction across StrictMode root unmounts without cross-manager cancellation', () => {
+  it('owns tower-route music and app foreground audio without mounting MatchScreen', async () => {
+    const realNow = Date.now;
+    let elapsed = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+    let visibilityState: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(
+      () => visibilityState,
+    );
+    const audioPort = createAudioPort();
+    const result = renderGame(
+      new TestProgressRepository(floorOneProgress),
+      createTestPlatform(),
+      createAssetManager(),
+      audioPort,
+    );
+
+    await screen.findByTestId('tower-screen');
+    expect(screen.queryByTestId('match-screen')).not.toBeInTheDocument();
+    expect(audioPort.setMusic).toHaveBeenCalledWith('tower');
+
+    const countdownCallbacks: Array<() => void> = [];
+    vi.stubGlobal('setTimeout', vi.fn((callback: () => void) => {
+      countdownCallbacks.push(callback);
+      return countdownCallbacks.length;
+    }));
+    vi.stubGlobal('clearTimeout', vi.fn());
+    visibilityState = 'hidden';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(audioPort.suspend).toHaveBeenCalledTimes(1);
+    visibilityState = 'visible';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    for (const nextElapsed of [1_000, 2_000, 3_100]) {
+      elapsed = nextElapsed;
+      const callback = countdownCallbacks.shift();
+      expect(callback).toBeDefined();
+      act(() => callback?.());
+    }
+    expect(audioPort.resume).toHaveBeenCalledTimes(1);
+
+    result.unmount();
+  });
+
+  it('delays shared audio and manager destruction across StrictMode root unmounts without cross-manager cancellation', async () => {
     vi.useFakeTimers();
     const firstManager = createAssetManager();
     const secondManager = createAssetManager();
-    const servicesFor = (assetManager: AssetManager): AppServices => ({
+    const firstAudio = createAudioPort();
+    const secondAudio = createAudioPort();
+    const servicesFor = (assetManager: AssetManager, audioPort: AudioPort): AppServices => ({
+      audioPort,
       platform: createTestPlatform(),
       progressRepository: new TestProgressRepository(floorOneProgress),
       assetManager,
     });
-    const renderRoot = (assetManager: AssetManager) => render(
+    const renderRoot = (assetManager: AssetManager, audioPort: AudioPort) => render(
       <StrictMode>
         <AppRoot
-          services={servicesFor(assetManager)}
+          services={servicesFor(assetManager, audioPort)}
           createMatchSeed={() => 1}
           renderMatch={(props) => <TestMatch {...props} />}
         />
       </StrictMode>,
     );
 
-    const firstRoot = renderRoot(firstManager);
+    const firstRoot = renderRoot(firstManager, firstAudio);
     firstRoot.unmount();
-    const remountedFirstRoot = renderRoot(firstManager);
+    const remountedFirstRoot = renderRoot(firstManager, firstAudio);
     act(() => vi.advanceTimersByTime(300));
     expect(firstManager.destroy).not.toHaveBeenCalled();
+    expect(firstAudio.destroy).not.toHaveBeenCalled();
 
     remountedFirstRoot.unmount();
-    const secondRoot = renderRoot(secondManager);
+    const secondRoot = renderRoot(secondManager, secondAudio);
     secondRoot.unmount();
-    act(() => vi.advanceTimersByTime(300));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
 
     expect(firstManager.destroy).toHaveBeenCalledTimes(1);
     expect(secondManager.destroy).toHaveBeenCalledTimes(1);
+    expect(firstAudio.destroy).toHaveBeenCalledTimes(1);
+    expect(secondAudio.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores a queued stale finalizer callback after a newer same-manager finalizer replaces it', () => {
+  it('ignores a queued stale finalizer callback after a newer same-manager finalizer replaces it', async () => {
     const callbacks: (() => void)[] = [];
     let nextHandle = 0;
     vi.stubGlobal('setTimeout', vi.fn((callback: () => void, delayMs: number) => {
@@ -530,6 +599,7 @@ describe('AppRoot', () => {
     vi.stubGlobal('clearTimeout', vi.fn());
     const manager = createAssetManager(() => new Promise(() => undefined));
     const services: AppServices = {
+      audioPort: createAudioPort(),
       platform: createTestPlatform(),
       progressRepository: new TestProgressRepository(floorOneProgress),
       assetManager: manager,
@@ -554,6 +624,8 @@ describe('AppRoot', () => {
     stale?.();
     expect(manager.destroy).not.toHaveBeenCalled();
     current?.();
+    await act(async () => undefined);
     expect(manager.destroy).toHaveBeenCalledTimes(1);
+    expect(services.audioPort.destroy).toHaveBeenCalledTimes(1);
   });
 });

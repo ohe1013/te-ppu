@@ -35,6 +35,16 @@ const aiSpies = vi.hoisted(() => ({
   createAiController: vi.fn(),
 }));
 
+const borrowedAudioPort = {
+  destroy: vi.fn(async () => undefined),
+  play: vi.fn(),
+  resume: vi.fn(async () => undefined),
+  setEnabled: vi.fn(),
+  setMusic: vi.fn(async () => undefined),
+  suspend: vi.fn(async () => undefined),
+  unlock: vi.fn(async () => undefined),
+};
+
 vi.mock('../core/index', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../core/index')>();
   coreSpies.createAiObservation.mockImplementation(actual.createAiObservation);
@@ -345,6 +355,7 @@ describe('MatchScreen', () => {
 
     const { unmount } = render(
       <MatchScreen
+        audioPort={borrowedAudioPort}
         floor={2}
         onFinished={vi.fn()}
         onRetrySettingsSave={async () => true}

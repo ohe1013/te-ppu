@@ -40,6 +40,7 @@ function createAudio(): AudioPort {
     play: vi.fn(),
     resume: vi.fn(async () => undefined),
     setEnabled: vi.fn(),
+    setMusic: vi.fn(async () => undefined),
     suspend: vi.fn(async () => undefined),
     unlock: vi.fn(async () => undefined),
   };
@@ -169,7 +170,7 @@ describe('lifecycle UI', () => {
     expect(onRetrySave).toHaveBeenCalledTimes(1);
   });
 
-  it('pauses for background and exit, counts down, and closes only after confirmation', async () => {
+  it('keeps match pause/countdown local while borrowed audio stays root-owned', async () => {
     vi.useFakeTimers();
     let visibilityState: DocumentVisibilityState = 'visible';
     vi.spyOn(document, 'visibilityState', 'get').mockImplementation(
@@ -196,7 +197,7 @@ describe('lifecycle UI', () => {
     visibilityState = 'hidden';
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(loop.setPaused).toHaveBeenCalledWith('background', true);
-    expect(audio.suspend).toHaveBeenCalledTimes(1);
+    expect(audio.suspend).not.toHaveBeenCalled();
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
     expect(audio.unlock).not.toHaveBeenCalled();
 
@@ -214,8 +215,9 @@ describe('lifecycle UI', () => {
     expect(loop.setPaused).not.toHaveBeenCalledWith('background', false);
     await act(async () => vi.advanceTimersByTimeAsync(1_000));
     expect(loop.setPaused).toHaveBeenCalledWith('background', false);
+    expect(audio.resume).not.toHaveBeenCalled();
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
-    expect(audio.unlock).toHaveBeenCalledTimes(1);
+    expect(audio.unlock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', true);
@@ -230,7 +232,7 @@ describe('lifecycle UI', () => {
     expect(platform.close).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps audio alive through the StrictMode effect rehearsal and destroys it on real unmount', async () => {
+  it('does not unlock or destroy borrowed audio during StrictMode or match unmount', async () => {
     vi.useFakeTimers();
     const audio = createAudio();
     const result = render(
@@ -253,13 +255,13 @@ describe('lifecycle UI', () => {
     expect(audio.destroy).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
-    expect(audio.unlock).toHaveBeenCalled();
+    expect(audio.unlock).not.toHaveBeenCalled();
 
     result.unmount();
     act(() => vi.advanceTimersByTime(299));
     expect(audio.destroy).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
-    expect(audio.destroy).toHaveBeenCalledTimes(1);
+    expect(audio.destroy).not.toHaveBeenCalled();
   });
 
   it('maps game events only when the matching sound and haptic settings are enabled', () => {

@@ -3,7 +3,7 @@ import type { AudioPort } from './audio-port';
 type BackgroundSource = 'visibility' | 'page' | 'focus';
 
 export interface AppLifecycleOptions {
-  readonly audio: Pick<AudioPort, 'resume' | 'suspend'>;
+  readonly audio?: Pick<AudioPort, 'resume' | 'suspend'>;
   readonly countdownStepMs?: number;
   readonly documentTarget?: Document;
   readonly now?: () => number;
@@ -63,7 +63,7 @@ export function createAppLifecycleCoordinator({
     onCountdownChange(null);
     setPaused('background', true);
     resetAll();
-    ignoreRejection(() => audio.suspend());
+    if (audio !== undefined) ignoreRejection(() => audio.suspend());
   }
 
   function finishCountdown(expectedGeneration: number): void {
@@ -80,7 +80,7 @@ export function createAppLifecycleCoordinator({
     onCountdownChange(null);
     // Audio and match time resume in the same turn. A slow or rejected audio
     // operation never owns the deterministic match clock.
-    ignoreRejection(() => audio.resume());
+    if (audio !== undefined) ignoreRejection(() => audio.resume());
     // setPaused resets the match-loop frame timestamp before it unpauses.
     setPaused('background', false);
   }

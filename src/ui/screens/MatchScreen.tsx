@@ -24,7 +24,6 @@ import type {
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
-import { createWebAudioPort } from '../../platform/web-audio-port';
 import type { ProgressState } from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
@@ -39,7 +38,7 @@ import { SettingsPanel } from '../match/SettingsPanel';
 import '../match/match-layout.css';
 
 export interface MatchScreenProps {
-  readonly audioPort?: AudioPort;
+  readonly audioPort: Pick<AudioPort, 'play'>;
   readonly floor: Floor;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
@@ -54,8 +53,6 @@ export interface MatchScreenProps {
 }
 
 export type MatchLoopHook = (options: UseMatchLoopOptions) => MatchLoopView;
-
-const AUDIO_DESTROY_GRACE_MS = 300;
 
 function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
   if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
@@ -109,10 +106,7 @@ export function MatchScreen({
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
   const resetBus = useMemo(() => new InputResetBus(), []);
-  const audio = useMemo(
-    () => audioPort ?? createWebAudioPort({ enabled: settings.soundEnabled }),
-    [audioPort],
-  );
+  const audio = audioPort;
   const feedbackRef = useRef({ audio, platform, settings });
   feedbackRef.current = { audio, platform, settings };
   const handleMatchEvents = useCallback((
@@ -157,13 +151,7 @@ export function MatchScreen({
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
   const [backgroundPaused, setBackgroundPaused] = useState(false);
-  const backgroundPausedRef = useRef(false);
   const [exitOpen, setExitOpen] = useState(false);
-  const pendingAudioDestroyRef = useRef<{
-    readonly audio: AudioPort;
-    cancelled: boolean;
-    timer: ReturnType<typeof setTimeout> | null;
-  } | null>(null);
 
   const handleRowSelectionChange = useCallback((active: boolean) => {
     setRowSelectionActive(active);
@@ -176,17 +164,11 @@ export function MatchScreen({
   }, [handleRowSelectionChange, resetBus]);
 
   const handleBackgroundChange = useCallback((paused: boolean) => {
-    backgroundPausedRef.current = paused;
     setBackgroundPaused(paused);
   }, []);
 
   useEffect(() => {
-    audio.setEnabled(settings.soundEnabled);
-  }, [audio, settings.soundEnabled]);
-
-  useEffect(() => {
     const lifecycle = createAppLifecycleCoordinator({
-      audio,
       onBackgroundChange: handleBackgroundChange,
       onCountdownChange: setResumeCountdown,
       resetAll: resetEveryInput,
@@ -194,32 +176,6 @@ export function MatchScreen({
     });
     return () => lifecycle.destroy();
   }, [audio, handleBackgroundChange, match.setPaused, resetEveryInput]);
-
-  useEffect(() => {
-    const pending = pendingAudioDestroyRef.current;
-    if (pending?.audio === audio) {
-      pending.cancelled = true;
-      if (pending.timer !== null) clearTimeout(pending.timer);
-      pendingAudioDestroyRef.current = null;
-    }
-
-    return () => {
-      const scheduled: NonNullable<typeof pendingAudioDestroyRef.current> = {
-        audio,
-        cancelled: false,
-        timer: null,
-      };
-      pendingAudioDestroyRef.current = scheduled;
-      scheduled.timer = setTimeout(() => {
-        scheduled.timer = null;
-        if (scheduled.cancelled) return;
-        if (pendingAudioDestroyRef.current === scheduled) {
-          pendingAudioDestroyRef.current = null;
-        }
-        ignoreEffect(() => scheduled.audio.destroy());
-      }, AUDIO_DESTROY_GRACE_MS);
-    };
-  }, [audio]);
 
   const dispatch = useCallback((command: GameCommand) => {
     match.dispatch(command);
@@ -261,29 +217,11 @@ export function MatchScreen({
     match.setPaused('exit-confirmation', false);
   }
 
-  function updateSoundEnabled(enabled: boolean): void {
-    audio.setEnabled(enabled);
-    if (enabled) unlockAudio();
-  }
-
-  function unlockAudio(): void {
-    if (
-      resumeCountdown !== null
-      || backgroundPausedRef.current
-      || document.visibilityState !== 'visible'
-    ) return;
-    ignoreEffect(() => audio.unlock());
-  }
-
   return (
     <section
       className="screen-shell match-screen"
       data-floor={floor}
       data-testid="match-screen"
-      onKeyDownCapture={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') unlockAudio();
-      }}
-      onPointerDownCapture={unlockAudio}
     >
       <header className="match-header">
         <div>
@@ -300,7 +238,6 @@ export function MatchScreen({
           <SettingsPanel
             onRetrySave={onRetrySettingsSave}
             onSettingsChange={onSettingsChange}
-            onSoundEnabled={updateSoundEnabled}
             saveFailed={settingsSaveFailed}
             settings={settings}
           />

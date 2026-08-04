@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMatch, createPublicMatchView } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
+import type { AudioPort } from '../../platform/audio-port';
 import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
@@ -12,12 +13,14 @@ const useMatchLoopMock = vi.hoisted(() => vi.fn());
 
 const lifecycleProps: Pick<
   MatchScreenProps,
+  | 'audioPort'
   | 'onRetrySettingsSave'
   | 'onSettingsChange'
   | 'platform'
   | 'settings'
   | 'settingsSaveFailed'
 > = {
+  audioPort: createAudioPort(),
   onRetrySettingsSave: async () => true,
   onSettingsChange: async () => true,
   platform: {
@@ -32,6 +35,18 @@ const lifecycleProps: Pick<
   settings: { hapticsEnabled: true, soundEnabled: true },
   settingsSaveFailed: false,
 };
+
+function createAudioPort(): AudioPort {
+  return {
+    destroy: vi.fn(async () => undefined),
+    play: vi.fn(),
+    resume: vi.fn(async () => undefined),
+    setEnabled: vi.fn(),
+    setMusic: vi.fn(async () => undefined),
+    suspend: vi.fn(async () => undefined),
+    unlock: vi.fn(async () => undefined),
+  };
+}
 
 vi.mock('../../app/use-match-loop', () => ({
   useMatchLoop: useMatchLoopMock,
@@ -177,5 +192,44 @@ describe('MatchScreen', () => {
     expect(screen.queryByRole('group', { name: '행 제거 대상 선택' }))
       .not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: '게임 조작' })).toBeDisabled();
+  });
+
+  it('keeps borrowed audio cue-only while match lifecycle still pauses and counts down', async () => {
+    vi.useFakeTimers();
+    let visibilityState: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(
+      () => visibilityState,
+    );
+    const loop = activeLoop();
+    const audioPort = createAudioPort();
+    useMatchLoopMock.mockReturnValue(loop);
+    const result = render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        seed={17}
+        onFinished={vi.fn()}
+      />,
+    );
+
+    expect(audioPort.setEnabled).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByTestId('match-screen'));
+    expect(audioPort.unlock).not.toHaveBeenCalled();
+
+    visibilityState = 'hidden';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(loop.setPaused).toHaveBeenCalledWith('background', true);
+    expect(audioPort.suspend).not.toHaveBeenCalled();
+
+    visibilityState = 'visible';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(loop.setPaused).toHaveBeenLastCalledWith('background', false);
+    expect(audioPort.resume).not.toHaveBeenCalled();
+
+    result.unmount();
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(audioPort.destroy).not.toHaveBeenCalled();
   });
 });

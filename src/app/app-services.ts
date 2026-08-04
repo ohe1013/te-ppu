@@ -4,16 +4,20 @@ import {
 } from '../progression';
 import { createAssetManager, type AssetManager } from '../assets';
 import { createPlatform } from '../platform/create-platform';
+import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
+import { createWebAudioPort } from '../platform/web-audio-port';
 import type { RuntimeMode } from './runtime-mode';
 
 export interface AppServices {
+  readonly audioPort: AudioPort;
   readonly platform: PlatformPort;
   readonly progressRepository: ProgressRepository;
   readonly assetManager: AssetManager;
 }
 
 export interface AppServiceOverrides {
+  readonly audioPort?: AudioPort;
   readonly platform?: PlatformPort;
   readonly progressRepository?: ProgressRepository;
   readonly assetManager?: AssetManager;
@@ -45,7 +49,11 @@ export function createAppServices(
     loadImage: loadAssetImage,
     loadAtlasJson: fetchAssetJson,
   });
+  const audioPort = overrides.audioPort ?? createWebAudioPort({
+    resolveSources: () => assetManager.getCommonAssets()?.audio ?? null,
+  });
   return {
+    audioPort,
     platform: overrides.platform ?? createPlatform(runtimeMode),
     progressRepository:
       overrides.progressRepository ?? createLocalProgressRepository(storage),

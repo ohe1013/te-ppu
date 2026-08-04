@@ -20,12 +20,16 @@ import {
 } from './app-route';
 import type { AppServices } from './app-services';
 import type { AssetManager } from '../assets';
+import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
+import type { AudioPort } from '../platform/audio-port';
 import type { ProgressState } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
+import { musicForRoute } from '../platform/audio-route';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
 
 export interface MatchRouteViewProps {
+  readonly audioPort: AudioPort;
   readonly floor: Floor;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => Promise<void>;
@@ -46,7 +50,11 @@ export interface AppRootProps {
 
 const assetDestroyFinalizers = new WeakMap<
   AssetManager,
-  { handle: ReturnType<typeof setTimeout>; token: object }
+  {
+    readonly audioPort: AudioPort;
+    readonly handle: ReturnType<typeof setTimeout>;
+    readonly token: object;
+  }
 >();
 
 function createDefaultMatchSeed(): number {
@@ -79,6 +87,7 @@ export function AppRoot({
   if (boot.status === 'ready' && controllerRef.current === null) {
     controllerRef.current = new TowerController(boot.progress, services.progressRepository);
   }
+  const controller = controllerRef.current;
 
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
@@ -93,7 +102,28 @@ export function AppRoot({
   }, []);
 
   useEffect(() => {
+    const lifecycle = createAppLifecycleCoordinator({
+      audio: services.audioPort,
+      onCountdownChange: () => undefined,
+      resetAll: () => undefined,
+      setPaused: () => undefined,
+    });
+    return () => lifecycle.destroy();
+  }, [services.audioPort]);
+
+  useEffect(() => {
+    void services.audioPort.setMusic(musicForRoute(route)).catch(() => undefined);
+  }, [route, services.audioPort]);
+
+  useEffect(() => {
+    if (controller !== null) {
+      services.audioPort.setEnabled(controller.progress.settings.soundEnabled);
+    }
+  }, [controller, controller?.progress.settings.soundEnabled, services.audioPort]);
+
+  useEffect(() => {
     const manager = services.assetManager;
+    const audioPort = services.audioPort;
     const existing = assetDestroyFinalizers.get(manager);
     if (existing !== undefined) {
       clearTimeout(existing.handle);
@@ -103,15 +133,25 @@ export function AppRoot({
       const token = {};
       const handle = setTimeout(() => {
         const current = assetDestroyFinalizers.get(manager);
-        if (current === undefined || current.token !== token) return;
+        if (
+          current === undefined
+          || current.token !== token
+          || current.audioPort !== audioPort
+        ) return;
         assetDestroyFinalizers.delete(manager);
-        manager.destroy();
+        void (async () => {
+          try {
+            await audioPort.destroy();
+          } catch {
+            // Audio teardown must not prevent asset teardown.
+          } finally {
+            manager.destroy();
+          }
+        })();
       }, 300);
-      assetDestroyFinalizers.set(manager, { handle, token });
+      assetDestroyFinalizers.set(manager, { audioPort, handle, token });
     };
-  }, [services.assetManager]);
-
-  const controller = controllerRef.current;
+  }, [services.assetManager, services.audioPort]);
 
   function startFloor(floor: Floor) {
     if (controller === null) return;
@@ -189,6 +229,7 @@ export function AppRoot({
         break;
       case 'match':
         content = renderMatch({
+          audioPort: services.audioPort,
           floor: route.floor,
           seed: route.seed,
           onFinished: finishMatch,
@@ -230,6 +271,14 @@ export function AppRoot({
       data-runtime-mode={services.platform.kind}
       data-testid="app-shell"
       id="app-shell"
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          void services.audioPort.unlock();
+        }
+      }}
+      onPointerDownCapture={() => {
+        void services.audioPort.unlock();
+      }}
     >
       {content}
     </main>

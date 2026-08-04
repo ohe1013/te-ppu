@@ -3,6 +3,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { AssetManager } from '../assets';
+import type { AudioPort } from '../platform/audio-port';
 import type { ProgressLoadResult, ProgressRepository, ProgressState } from '../progression';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { PlatformPort } from '../platform/platform-port';
@@ -53,13 +54,23 @@ function createAssetManager(
 }
 
 const defaultAssetManager = createAssetManager();
+const defaultAudioPort: AudioPort = {
+  destroy: async () => undefined,
+  play: () => undefined,
+  resume: async () => undefined,
+  setEnabled: () => undefined,
+  setMusic: async () => undefined,
+  suspend: async () => undefined,
+  unlock: async () => undefined,
+};
 
 function services(
   platform: PlatformPort,
   progressRepository: ProgressRepository,
   assetManager: AssetManager = defaultAssetManager,
+  audioPort: AudioPort = defaultAudioPort,
 ): AppServices {
-  return { platform, progressRepository, assetManager };
+  return { audioPort, platform, progressRepository, assetManager };
 }
 
 describe('useBoot', () => {

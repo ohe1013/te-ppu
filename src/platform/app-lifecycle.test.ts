@@ -10,6 +10,7 @@ function createAudio(): AudioPort {
     play: vi.fn(),
     resume: vi.fn(async () => undefined),
     setEnabled: vi.fn(),
+    setMusic: vi.fn(async () => undefined),
     suspend: vi.fn(async () => undefined),
     unlock: vi.fn(async () => undefined),
   };
@@ -119,6 +120,31 @@ describe('createAppLifecycleCoordinator', () => {
     expect(countdowns.at(-1)).toBe(1);
     wallClock = 3_000;
     vi.advanceTimersByTime(500);
+    expect(setPaused).toHaveBeenLastCalledWith('background', false);
+    expect(countdowns.at(-1)).toBeNull();
+
+    lifecycle.destroy();
+  });
+
+  it('keeps the absolute three-second match deadline when audio is intentionally omitted', () => {
+    let wallClock = 0;
+    const setPaused = vi.fn();
+    const countdowns: Array<number | null> = [];
+    const lifecycle = createAppLifecycleCoordinator({
+      now: () => wallClock,
+      onCountdownChange: (value) => countdowns.push(value),
+      resetAll: vi.fn(),
+      setPaused,
+    });
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(countdowns.at(-1)).toBe(3);
+
+    wallClock = 3_000;
+    vi.advanceTimersByTime(3_000);
     expect(setPaused).toHaveBeenLastCalledWith('background', false);
     expect(countdowns.at(-1)).toBeNull();
 
