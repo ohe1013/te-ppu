@@ -95,6 +95,7 @@ function applyEvent(
   memory: PortraitMemory,
   event: GameEventBatch['events'][number],
   tick: number,
+  view: PublicMatchView,
   role: PortraitRole,
   side: SideId,
 ): PortraitMemory {
@@ -122,7 +123,11 @@ function applyEvent(
       attackUntil: Math.max(memory.attackUntil, tick + ATTACK_TICKS),
     };
   }
-  if (event.type === 'lines-cleared' && role === 'hero') {
+  if (
+    event.type === 'lines-cleared'
+    && role === 'hero'
+    && view.sides[side].combo >= 2
+  ) {
     return {
       ...memory,
       focusUntil: Math.max(memory.focusUntil, tick + FOCUS_TICKS),
@@ -146,7 +151,7 @@ export function reducePortraitBatches(
   for (const batch of batchesInTickOrder(batches)) {
     if (next.terminal !== null) break;
     for (const event of batch.events) {
-      next = applyEvent(next, event, batch.tick, role, side);
+      next = applyEvent(next, event, batch.tick, batch.view, role, side);
     }
     next = {
       ...next,

@@ -1,4 +1,4 @@
-import type { GameEvent } from '../core/index';
+import type { GameEvent, PublicMatchView } from '../core/index';
 
 export type AnimationPriority = 'critical' | 'decorative';
 
@@ -6,6 +6,8 @@ export interface AnimationEffect {
   readonly id: string;
   readonly priority: AnimationPriority;
   readonly event: GameEvent;
+  readonly tick: number;
+  readonly view: PublicMatchView;
 }
 
 export interface EventAnimationQueueOptions {
@@ -14,15 +16,28 @@ export interface EventAnimationQueueOptions {
 
 export function effectsForEvents(
   events: readonly GameEvent[],
-  batchId: string,
+  tick: number,
+  view: PublicMatchView,
 ): readonly AnimationEffect[] {
   return events.flatMap((event, index) => {
-    const id = `${batchId}:${index}:${event.type}`;
-    const critical: AnimationEffect = { event, id, priority: 'critical' };
+    const id = `tick-${tick}:${index}:${event.type}`;
+    const critical: AnimationEffect = {
+      event,
+      id,
+      priority: 'critical',
+      tick,
+      view,
+    };
     if (event.type !== 'lines-cleared') return [critical];
     return [
       critical,
-      { event, id: `${id}:particles`, priority: 'decorative' },
+      {
+        event,
+        id: `${id}:particles`,
+        priority: 'decorative',
+        tick,
+        view,
+      },
     ];
   });
 }

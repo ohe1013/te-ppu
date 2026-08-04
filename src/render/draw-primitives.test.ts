@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { PublicSideView } from '../core/index';
+import {
+  createMatch,
+  createPublicMatchView,
+  type PublicSideView,
+} from '../core/index';
 import type { AnimationEffect } from './event-animation-queue';
 import { createBoardPrimitives } from './draw-primitives';
 
@@ -36,11 +40,15 @@ function sideView(): PublicSideView {
   };
 }
 
+const effectView = createPublicMatchView(createMatch({ matchSeed: 4 }));
+
 const effects: readonly AnimationEffect[] = [
   {
     event: { amount: 1, rows: [19], side: 'player', type: 'lines-cleared' },
     id: 'clear-1',
     priority: 'critical',
+    tick: 0,
+    view: effectView,
   },
   {
     event: {
@@ -52,6 +60,8 @@ const effects: readonly AnimationEffect[] = [
     },
     id: 'garbage-1',
     priority: 'critical',
+    tick: 0,
+    view: effectView,
   },
 ];
 
@@ -90,8 +100,20 @@ describe('createBoardPrimitives', () => {
     const primitives = createBoardPrimitives({
       effectProgress: 0,
       effects: [
-        { event, id: 'clear-1', priority: 'critical' },
-        { event, id: 'clear-1:particles', priority: 'decorative' },
+        {
+          event,
+          id: 'clear-1',
+          priority: 'critical',
+          tick: 0,
+          view: effectView,
+        },
+        {
+          event,
+          id: 'clear-1:particles',
+          priority: 'decorative',
+          tick: 0,
+          view: effectView,
+        },
       ],
       model: sideView(),
       selectedRow: null,
@@ -124,6 +146,8 @@ describe('createBoardPrimitives', () => {
         },
         id: 'garbage-exact',
         priority: 'critical',
+        tick: 0,
+        view: effectView,
       }],
       model: sideView(),
       selectedRow: null,
@@ -147,16 +171,22 @@ describe('createBoardPrimitives', () => {
           event: { amount: 2, side: 'player', type: 'lines-cleared' },
           id: 'clear-missing',
           priority: 'critical',
+          tick: 0,
+          view: effectView,
         },
         {
           event: { amount: 2, rows: [-1, 20], side: 'player', type: 'lines-cleared' },
           id: 'clear-hidden',
           priority: 'critical',
+          tick: 0,
+          view: effectView,
         },
         {
           event: { amount: 1, side: 'player', type: 'garbage-landed' },
           id: 'garbage-missing',
           priority: 'critical',
+          tick: 0,
+          view: effectView,
         },
         {
           event: {
@@ -168,6 +198,8 @@ describe('createBoardPrimitives', () => {
           },
           id: 'garbage-hidden',
           priority: 'critical',
+          tick: 0,
+          view: effectView,
         },
         {
           event: {
@@ -179,6 +211,8 @@ describe('createBoardPrimitives', () => {
           },
           id: 'garbage-invalid',
           priority: 'critical',
+          tick: 0,
+          view: effectView,
         },
       ],
       model: sideView(),

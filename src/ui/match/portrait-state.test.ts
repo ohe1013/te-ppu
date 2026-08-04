@@ -16,9 +16,13 @@ type EventBatch = {
 function viewAt(
   tick: number,
   {
+    combo = 0,
+    comboFor,
     dangerFor,
     status = 'playing',
   }: {
+    readonly combo?: number;
+    readonly comboFor?: SideId;
     readonly dangerFor?: SideId;
     readonly status?: PublicMatchView['status'];
   } = {},
@@ -27,20 +31,25 @@ function viewAt(
   const dangerBoard = view.sides[dangerFor ?? 'player'].board.map((cell, index) => (
     dangerFor !== undefined && index === 0 ? { kind: 'I' as const } : cell
   ));
+  const sides = { ...view.sides };
+  if (dangerFor !== undefined) {
+    sides[dangerFor] = {
+      ...sides[dangerFor],
+      board: dangerBoard,
+      incoming: 4,
+    };
+  }
+  if (comboFor !== undefined) {
+    sides[comboFor] = {
+      ...sides[comboFor],
+      combo,
+    };
+  }
   return {
     ...view,
     status,
     tick,
-    sides: {
-      ...view.sides,
-      ...(dangerFor === undefined ? {} : {
-        [dangerFor]: {
-          ...view.sides[dangerFor],
-          board: dangerBoard,
-          incoming: 4,
-        },
-      }),
-    },
+    sides,
   };
 }
 
@@ -125,7 +134,7 @@ describe('portrait state', () => {
         { type: 'freeze-applied', side: 'opponent', item: 'freeze' },
       ],
       tick: 19,
-      view: viewAt(19),
+      view: viewAt(19, { combo: 2, comboFor: 'player' }),
     };
 
     const opponent = reducePortraitBatches(createPortraitMemory(), {
@@ -175,6 +184,117 @@ describe('portrait state', () => {
       danger: true,
       tick: 1_000,
     })).toBe('defeat');
+  });
+
+  it('uses the owning batch combo for hero focus instead of borrowing a later snapshot', async () => {
+    const {
+      createPortraitMemory,
+      reducePortraitBatches,
+      resolvePortraitState,
+    } = await portraitRuntime();
+    const earlierCombo: EventBatch = {
+      events: [{ amount: 2, side: 'player', type: 'lines-cleared' }],
+      tick: 18,
+      view: viewAt(18, { combo: 2, comboFor: 'player' }),
+    };
+    const laterSingle: EventBatch = {
+      events: [{ amount: 1, side: 'player', type: 'lines-cleared' }],
+      tick: 19,
+      view: viewAt(19, { combo: 1, comboFor: 'player' }),
+    };
+
+    const hero = reducePortraitBatches(createPortraitMemory(), {
+      batches: [laterSingle, earlierCombo],
+      floor: 1,
+      latestView: viewAt(20, { combo: 8, comboFor: 'player' }),
+      role: 'hero',
+      side: 'player',
+    });
+
+    expect(hero.focusUntil).toBe(36);
+    expect(resolvePortraitState({ ...hero, tick: 35 })).toBe('focus');
+    expect(resolvePortraitState({ ...hero, tick: 36 })).toBe('idle');
+  });
+
+  it('uses exact effect deadlines and later same-tick batch snapshots', async () => {
+    const {
+      createPortraitMemory,
+      reducePortraitBatches,
+      resolvePortraitState,
+    } = await portraitRuntime();
+    const hit = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [
+          { amount: 1, side: 'player', type: 'garbage-landed' },
+          { item: 'freeze', side: 'player', type: 'freeze-applied' },
+        ],
+        tick: 10,
+        view: viewAt(10),
+      }],
+      floor: 1,
+      latestView: viewAt(10),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(hit.hitUntil).toBe(35);
+    expect(resolvePortraitState({ ...hit, tick: 34 })).toBe('hit');
+    expect(resolvePortraitState({ ...hit, tick: 35 })).toBe('idle');
+
+    const hero = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [
+          { item: 'row-clear', side: 'player', type: 'item-used' },
+          { amount: 2, side: 'player', type: 'lines-cleared' },
+        ],
+        tick: 20,
+        view: viewAt(20, { combo: 2, comboFor: 'player' }),
+      }],
+      floor: 1,
+      latestView: viewAt(20, { combo: 2, comboFor: 'player' }),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(hero.attackUntil).toBe(38);
+    expect(hero.focusUntil).toBe(38);
+    expect(resolvePortraitState({ ...hero, tick: 37 })).toBe('attack');
+    expect(resolvePortraitState({ ...hero, tick: 38 })).toBe('idle');
+
+    const lieutenant = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [{ amount: 1, side: 'opponent', type: 'attack-sent' }],
+        tick: 30,
+        view: viewAt(30),
+      }],
+      floor: 1,
+      latestView: viewAt(30),
+      role: 'lieutenant',
+      side: 'opponent',
+    });
+    expect(lieutenant.attackUntil).toBe(48);
+    expect(lieutenant.smugUntil).toBe(69);
+    expect(resolvePortraitState({ ...lieutenant, tick: 47 })).toBe('attack');
+    expect(resolvePortraitState({ ...lieutenant, tick: 48 })).toBe('smug');
+    expect(resolvePortraitState({ ...lieutenant, tick: 69 })).toBe('idle');
+
+    const safeLater = reducePortraitBatches(createPortraitMemory(), {
+      batches: [
+        {
+          events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          tick: 70,
+          view: viewAt(70, { dangerFor: 'opponent' }),
+        },
+        {
+          events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          tick: 70,
+          view: viewAt(70),
+        },
+      ],
+      floor: 1,
+      latestView: viewAt(70),
+      role: 'lieutenant',
+      side: 'opponent',
+    });
+    expect(safeLater.danger).toBe(false);
   });
 
   it('uses public batch snapshots for danger and maps terminal floor outcomes exactly', async () => {

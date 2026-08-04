@@ -117,7 +117,7 @@ function useOrderedEffects(
       .map(({ value }) => value)) {
       if (batch.events.length === 0 || handledTicksRef.current.has(batch.tick)) continue;
       handledTicksRef.current.add(batch.tick);
-      queue.enqueue(effectsForEvents(batch.events, `tick-${batch.tick}`));
+      queue.enqueue(effectsForEvents(batch.events, batch.tick, batch.view));
     }
     setDecorative(queue.takeDecorative());
     if (activeRef.current === null) {

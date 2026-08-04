@@ -53,6 +53,11 @@ vi.mock('./BoardScene', () => ({
     <div
       data-effect-ids={effects.map(({ id }) => id).join(',')}
       data-effect-progress={effectProgress}
+      data-effect-snapshots={effects.map((effect) => (
+        `${'tick' in effect ? effect.tick : 'missing'}/${
+          'view' in effect ? effect.view.tick : 'missing'
+        }`
+      )).join(',')}
       data-testid={`${side}-board-scene`}
     />
   ),
@@ -318,8 +323,10 @@ describe('BattleCanvas', () => {
     const playerScene = screen.getByTestId('player-board-scene');
 
     expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-sent');
+    expect(playerScene).toHaveAttribute('data-effect-snapshots', '18/18');
     clock.advanceTimersOnlyBy(140);
     expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-19:0:item-used');
+    expect(playerScene).toHaveAttribute('data-effect-snapshots', '19/19');
   });
 
   it.each([

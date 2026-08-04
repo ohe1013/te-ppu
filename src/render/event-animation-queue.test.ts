@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { GameEvent } from '../core/index';
+import {
+  createMatch,
+  createPublicMatchView,
+  type GameEvent,
+} from '../core/index';
 import {
   EventAnimationQueue,
   effectsForEvents,
@@ -12,12 +16,14 @@ const lineClear: GameEvent = {
   type: 'lines-cleared',
 };
 
+const queueView = createPublicMatchView(createMatch({ matchSeed: 13 }));
+
 function effect(
   id: string,
   priority: AnimationEffect['priority'],
   event: GameEvent = lineClear,
 ): AnimationEffect {
-  return { event, id, priority };
+  return { event, id, priority, tick: 0, view: queueView };
 }
 
 describe('EventAnimationQueue', () => {
@@ -68,7 +74,8 @@ describe('EventAnimationQueue', () => {
       { amount: 1, side: 'opponent', type: 'garbage-landed' },
     ];
 
-    const effects = effectsForEvents(events, 'tick-42');
+    const view = createPublicMatchView(createMatch({ matchSeed: 42 }));
+    const effects = effectsForEvents(events, 42, view);
 
     expect(
       effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id),
@@ -80,5 +87,6 @@ describe('EventAnimationQueue', () => {
     expect(
       effects.filter(({ priority }) => priority === 'decorative').map(({ id }) => id),
     ).toEqual(['tick-42:0:lines-cleared:particles']);
+    expect(effects.every((effect) => effect.tick === 42 && effect.view === view)).toBe(true);
   });
 });
