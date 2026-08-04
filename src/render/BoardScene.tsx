@@ -7,6 +7,7 @@ import type { Rect } from './board-layout';
 import {
   createBoardPrimitives,
   drawBoardPrimitives,
+  effectPlacementPrimitives,
 } from './draw-primitives';
 import type { AnimationEffect } from './event-animation-queue';
 import { animationEffectGroup, animationEffectSide } from './event-animation-queue';
@@ -26,34 +27,6 @@ export interface BoardSceneProps {
   readonly side: SideId;
 }
 
-function effectPosition(
-  effect: AnimationEffect,
-  group: Exclude<ReturnType<typeof animationEffectGroup>, null>,
-  side: SideId,
-  rect: Rect,
-): { readonly x: number; readonly y: number } {
-  const model = effect.view.sides[side];
-  const cellWidth = rect.width / 10;
-  const cellHeight = rect.height / 20;
-  if ((group === 'move-dust' || group === 'rotate-spark') && model.active !== null) {
-    return {
-      x: (model.active.x + 2) * cellWidth,
-      y: (model.active.y + 2) * cellHeight,
-    };
-  }
-  if (group === 'line-clear' && effect.event?.type === 'lines-cleared') {
-    const row = effect.event.rows?.[0] ?? 10;
-    return { x: rect.width / 2, y: (row + .5) * cellHeight };
-  }
-  if (group === 'garbage-land' && effect.event?.type === 'garbage-landed') {
-    return {
-      x: ((effect.event.column ?? 5) + .5) * cellWidth,
-      y: ((effect.event.landingRow ?? 19) + .5) * cellHeight,
-    };
-  }
-  return { x: rect.width / 2, y: rect.height / 2 };
-}
-
 export function BoardScene({
   atlas,
   effectProgress,
@@ -67,7 +40,8 @@ export function BoardScene({
     const group = animationEffectGroup(effect);
     if (group === null || group === 'attack-shot' || animationEffectSide(effect) !== side) return [];
     const textures = resolveBattleAnimationFrames(atlas, group);
-    return textures === null ? [] : [{ effect, group, textures }];
+    return textures === null ? [] : effectPlacementPrimitives(effect, side, effectProgress)
+      .map((placement, index) => ({ effect, group, index, placement, textures }));
   });
   const texturedIds = new Set(textured.map(({ effect }) => effect.id));
   const fallbackEffects = effects.filter((effect) => !texturedIds.has(effect.id));
@@ -86,13 +60,17 @@ export function BoardScene({
   return (
     <pixiContainer x={rect.x} y={rect.y}>
       <pixiGraphics draw={draw} />
-      {textured.map(({ effect, group, textures }) => {
-        const position = effectPosition(effect, group, side, rect);
+      {textured.map(({ effect, group, index, placement, textures }) => {
+        const anchor = BATTLE_ANIMATIONS[group].anchor;
+        const position = {
+          x: (placement.x + placement.width * anchor[0]) * rect.width / 10,
+          y: (placement.y + placement.height * anchor[1]) * rect.height / 20,
+        };
         return <pixiAnimatedSprite
           anchor={{ x: BATTLE_ANIMATIONS[group].anchor[0], y: BATTLE_ANIMATIONS[group].anchor[1] }}
           animationSpeed={BATTLE_ANIMATIONS[group].fps / 60}
           autoPlay
-          key={effect.id}
+          key={`${effect.id}:${index}`}
           loop={BATTLE_ANIMATIONS[group].loop}
           textures={textures}
           x={position.x}

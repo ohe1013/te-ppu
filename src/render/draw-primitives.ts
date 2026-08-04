@@ -82,6 +82,49 @@ function markerPrimitive(
   };
 }
 
+export function effectPlacementPrimitives(
+  effect: AnimationEffect,
+  side: SideId,
+  effectProgress: number,
+): readonly BoardPrimitive[] {
+  if (animationEffectSide(effect) !== side) return [];
+  const group = animationEffectGroup(effect);
+  const sourceModel = effect.view.sides[side];
+  if (group === 'move-dust' && sourceModel.active !== null) {
+    return [{ height: .4, role: 'move-dust', width: 1.6, x: sourceModel.active.x + 1.2, y: sourceModel.active.y + 3.5 }];
+  }
+  if (group === 'rotate-spark' && sourceModel.active !== null) {
+    return [{ height: 1.4, role: 'rotate-spark', width: 1.4, x: sourceModel.active.x + 1.3, y: sourceModel.active.y + 1.3 }];
+  }
+  if (group === 'land-impact') {
+    const occupied = sourceModel.board.reduce<number | null>((lowest, cell, index) => (
+      cell === null ? lowest : Math.max(lowest ?? -1, Math.floor(index / BOARD_COLUMNS))
+    ), null);
+    return [{ height: .6, role: 'land-impact', width: 3, x: 3.5, y: (occupied ?? BOARD_ROWS - 1) + .2 }];
+  }
+  if (group === 'line-clear' && effect.event?.type === 'lines-cleared' && effect.priority === 'critical') {
+    return (effect.event.rows ?? []).flatMap((row) => (
+      Number.isInteger(row) && row >= 0 && row < BOARD_ROWS
+        ? [{ height: 1, role: 'line-clear' as const, width: BOARD_COLUMNS, x: 0, y: row }]
+        : []
+    ));
+  }
+  if (group === 'garbage-land' && effect.event?.type === 'garbage-landed') {
+    const { column, landingRow } = effect.event;
+    if (effect.priority !== 'critical' || column === undefined || landingRow === undefined
+      || !Number.isInteger(column) || !Number.isInteger(landingRow) || !isVisibleCell(column, landingRow)) return [];
+    const progress = Math.min(1, Math.max(0, effect.presentationProgress ?? effectProgress));
+    return [{ height: 1, role: 'garbage-drop', width: 1, x: column, y: landingRow * progress }];
+  }
+  if (group === 'attack-shot') return [{ height: .35, role: 'attack', width: BOARD_COLUMNS, x: 0, y: 0 }];
+  if (group === 'item-acquire' && effect.event?.type === 'item-acquired') {
+    return [{ height: BOARD_ROWS, marker: effect.event.item, role: 'item-pulse', width: BOARD_COLUMNS, x: 0, y: 0 }];
+  }
+  if (group === 'freeze-overlay') return [{ height: BOARD_ROWS, role: 'freeze', width: BOARD_COLUMNS, x: 0, y: 0 }];
+  if (group === 'combo-pop') return [{ height: 2, role: 'combo-pop', width: 4, x: 3, y: 7 }];
+  return [];
+}
+
 export function createBoardPrimitives({
   effectProgress,
   effects,
@@ -189,88 +232,7 @@ export function createBoardPrimitives({
     });
   }
 
-  for (const effect of effects) {
-    if (animationEffectSide(effect) !== side) continue;
-    const group = animationEffectGroup(effect);
-    const sourceModel = effect.view.sides[side];
-    if (group === 'move-dust' && sourceModel.active !== null) {
-      primitives.push({
-        height: 0.4,
-        role: 'move-dust',
-        width: 1.6,
-        x: sourceModel.active.x + 1.2,
-        y: sourceModel.active.y + 3.5,
-      });
-    } else if (group === 'rotate-spark' && sourceModel.active !== null) {
-      primitives.push({
-        height: 1.4,
-        role: 'rotate-spark',
-        width: 1.4,
-        x: sourceModel.active.x + 1.3,
-        y: sourceModel.active.y + 1.3,
-      });
-    } else if (group === 'land-impact') {
-      const occupied = sourceModel.board.reduce<number | null>((lowest, cell, index) => (
-        cell === null ? lowest : Math.max(lowest ?? -1, Math.floor(index / BOARD_COLUMNS))
-      ), null);
-      primitives.push({
-        height: 0.6,
-        role: 'land-impact',
-        width: 3,
-        x: 3.5,
-        y: (occupied ?? BOARD_ROWS - 1) + 0.2,
-      });
-    } else if (group === 'line-clear' && effect.event?.type === 'lines-cleared') {
-      if (effect.priority !== 'critical') continue;
-      for (const row of effect.event.rows ?? []) {
-        if (!Number.isInteger(row) || row < 0 || row >= BOARD_ROWS) continue;
-        primitives.push({
-          height: 1,
-          role: 'line-clear',
-          width: BOARD_COLUMNS,
-          x: 0,
-          y: row,
-        });
-      }
-    } else if (group === 'garbage-land' && effect.event?.type === 'garbage-landed') {
-      const { column, landingRow } = effect.event;
-      if (
-        effect.priority !== 'critical'
-        || column === undefined
-        || landingRow === undefined
-        || !Number.isInteger(column)
-        || !Number.isInteger(landingRow)
-        || !isVisibleCell(column, landingRow)
-      ) continue;
-      const progress = Math.min(1, Math.max(0, effect.presentationProgress ?? effectProgress));
-      primitives.push({
-        height: 1,
-        role: 'garbage-drop',
-        width: 1,
-        x: column,
-        y: landingRow * progress,
-      });
-    } else if (group === 'attack-shot') {
-      primitives.push({
-        height: 0.35,
-        role: 'attack',
-        width: BOARD_COLUMNS,
-        x: 0,
-        y: 0,
-      });
-    } else if (group === 'item-acquire' && effect.event?.type === 'item-acquired') {
-      primitives.push({
-        height: BOARD_ROWS,
-        marker: effect.event.item,
-        role: 'item-pulse',
-        width: BOARD_COLUMNS,
-        x: 0,
-        y: 0,
-      });
-    } else if (group === 'combo-pop') {
-      primitives.push({ height: 2, role: 'combo-pop', width: 4, x: 3, y: 7 });
-    }
-  }
+  for (const effect of effects) primitives.push(...effectPlacementPrimitives(effect, side, effectProgress));
 
   return primitives;
 }
