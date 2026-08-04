@@ -55,10 +55,18 @@ export function createAppsInTossPlatform(
     kind: 'apps-in-toss',
 
     async getIdentity(): Promise<UserIdentity> {
-      const result = await sdk.getUserKeyForGame();
+      let result: GameUserKeyResult;
+      try {
+        result = await sdk.getUserKeyForGame();
+      } catch {
+        throw new PlatformError('RETRYABLE_SDK_ERROR');
+      }
       if (result === undefined) throw new PlatformError('UPDATE_REQUIRED');
       if (result === 'INVALID_CATEGORY') throw new PlatformError('INVALID_CATEGORY');
       if (result === 'ERROR') throw new PlatformError('RETRYABLE_SDK_ERROR');
+      if (result.hash.trim().length === 0) {
+        throw new PlatformError('RETRYABLE_SDK_ERROR');
+      }
       return { kind: 'apps-in-toss', key: result.hash };
     },
 

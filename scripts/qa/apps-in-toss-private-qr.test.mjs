@@ -65,3 +65,32 @@ test('records QR metadata as automated config/package proof while retaining cons
   assert.match(checklist, /automated config\/package proof/i);
   assert.match(checklist, /PENDING_EXTERNAL.*console|console.*PENDING_EXTERNAL/is);
 });
+
+test('documents device-local per-HASH progress boundaries and the executable A to B to A QR protocol', () => {
+  const identityDoc = readFileSync(
+    new URL('../../docs/architecture/progress-identity.md', import.meta.url),
+    'utf8',
+  );
+  const checklist = readFileSync(checklistUrl, 'utf8');
+
+  for (const phrase of [
+    'device-local',
+    'per-HASH',
+    'does not provide cross-device sync',
+    'unkeyed legacy progress is not assigned to an Apps-in-Toss HASH',
+    'raw legacy recovery evidence remains untouched',
+    'rollback or manual support inspection',
+    'not automatic in-game continuity',
+  ]) {
+    assert.ok(identityDoc.includes(phrase), `missing identity boundary: ${phrase}`);
+  }
+
+  for (const phrase of [
+    'same private QR/origin',
+    'without clearing the WebView',
+    'B starts at defaults',
+    "A's original state is unchanged",
+  ]) {
+    assert.ok(checklist.includes(phrase), `missing two-account QR step: ${phrase}`);
+  }
+});

@@ -59,6 +59,18 @@ The passing automated config/package proof does not prove URL reachability, cons
 | D8 | Console visibility remains private and the build is not submitted for public review. | `PENDING_EXTERNAL` | `ATTACH_CONSOLE_VISIBILITY` |
 | D9 | The retained Node 24 dependency-audit output and final `.ait` entry/content scan are attached together; the accepted toolchain risk is still recorded as `PENDING_UPSTREAM`, not zero vulnerabilities. | `PENDING_EXTERNAL` | `ATTACH_SECURITY_OUTPUTS` |
 
+## Same-origin account-isolation protocol
+
+This remains `PENDING_EXTERNAL` until every step is captured on a real console-authorized physical device. Automated unit isolation alone is not device evidence.
+
+1. Fix one same private QR/origin and one physical device/WebView. Record two authorized test accounts as A and B. Do not reinstall the app, clear WebView/app data, clear localStorage, or change the QR URL/origin.
+2. Sign in as A, open the private QR, create and persist a distinctive A state (for example, floor 3 unlocked with sound off and haptics on), close the view, and capture the visible saved state/evidence label.
+3. Switch to B without clearing the WebView, reopen the exact same private QR/origin, and verify B starts at defaults with none of A's cleared floors or settings.
+4. Create and persist a distinct B state (for example, only floor 2 unlocked with sound on and haptics off), close the view, and capture it.
+5. Switch back to A without clearing the WebView, reopen the same private QR/origin, and verify A's original state is unchanged and contains none of B's distinct progression or settings.
+
+Security-first legacy tradeoff: Apps HASH sessions intentionally do not auto-adopt owner-ambiguous unkeyed data. Preserving unchanged raw legacy data is recovery evidence for rollback or manual support; it is not proof of automatic user-visible continuity.
+
 ## Gate decision
 
 - A private-QR claim is prohibited while any automated row lacks exact-commit evidence or any device row remains `PENDING_EXTERNAL`.

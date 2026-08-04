@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAppsInTossPlatform } from './apps-in-toss-platform';
+import { PlatformError, createAppsInTossPlatform } from './apps-in-toss-platform';
 import { createBrowserPlatform } from './browser-platform';
 import { createPlatform } from './create-platform';
 
@@ -62,20 +62,35 @@ describe('createAppsInTossPlatform', () => {
     [undefined, 'UPDATE_REQUIRED'],
     ['INVALID_CATEGORY', 'INVALID_CATEGORY'],
     ['ERROR', 'RETRYABLE_SDK_ERROR'],
-  ] as const)('maps %s without silently creating a local identity', async (sdkResult, code) => {
+    [{ type: 'HASH', hash: '' }, 'RETRYABLE_SDK_ERROR'],
+    [{ type: 'HASH', hash: '   ' }, 'RETRYABLE_SDK_ERROR'],
+  ] as const)('maps unusable SDK identity %j without silently creating a local identity', async (sdkResult, code) => {
     const { sdk } = fakeSdk(sdkResult);
     const port = createAppsInTossPlatform(sdk);
 
-    await expect(port.getIdentity()).rejects.toMatchObject({ code });
+    const result = await port.getIdentity().catch((error: unknown) => error);
+    expect(result).toBeInstanceOf(PlatformError);
+    expect(result).toMatchObject({ code });
+    expect(result).not.toMatchObject({ kind: 'local' });
   });
 
-  it('returns the hash identity', async () => {
+  it('maps a rejected identity SDK call to a retryable platform error without returning local identity', async () => {
     const { sdk } = fakeSdk({ type: 'HASH', hash: 'user-7' });
+    sdk.getUserKeyForGame = async () => Promise.reject(new Error('SDK unavailable'));
+    const result = await createAppsInTossPlatform(sdk).getIdentity().catch((error: unknown) => error);
+
+    expect(result).toBeInstanceOf(PlatformError);
+    expect(result).toMatchObject({ code: 'RETRYABLE_SDK_ERROR' });
+    expect(result).not.toMatchObject({ kind: 'local' });
+  });
+
+  it('preserves every nonblank hash byte-for-byte', async () => {
+    const { sdk } = fakeSdk({ type: 'HASH', hash: ' user/%\uC0AC\uC6A9\uC790 ' });
     const port = createAppsInTossPlatform(sdk);
 
     await expect(port.getIdentity()).resolves.toEqual({
       kind: 'apps-in-toss',
-      key: 'user-7',
+      key: ' user/%\uC0AC\uC6A9\uC790 ',
     });
   });
 

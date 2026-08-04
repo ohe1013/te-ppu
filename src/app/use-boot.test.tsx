@@ -5,13 +5,18 @@ import { StrictMode, type PropsWithChildren } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import type { AudioPort } from '../platform/audio-port';
-import type {
-  ProgressLoadResult,
+import {
+  createLocalProgressRepositoryFactory,
+  type ProgressLoadResult,
   ProgressRepository,
   ProgressRepositoryFactory,
   ProgressState,
 } from '../progression';
-import { PlatformError } from '../platform/apps-in-toss-platform';
+import {
+  PlatformError,
+  createAppsInTossPlatform,
+  type AppsInTossSdk,
+} from '../platform/apps-in-toss-platform';
 import type { PlatformPort, UserIdentity } from '../platform/platform-port';
 import type { AppServices } from './app-services';
 import { useBoot } from './use-boot';
@@ -118,7 +123,65 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function fakeAppsInTossSdk(
+  getUserKeyForGame: AppsInTossSdk['getUserKeyForGame'],
+): AppsInTossSdk {
+  return {
+    SafeAreaInsets: {
+      get: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+      subscribe: () => () => undefined,
+    },
+    closeView: async () => undefined,
+    generateHapticFeedback: async () => undefined,
+    getUserKeyForGame,
+    setDeviceOrientation: async () => undefined,
+  };
+}
+
 describe('useBoot', () => {
+  it.each([
+    ['an empty HASH', async () => ({ type: 'HASH' as const, hash: '' })],
+    ['a whitespace HASH', async () => ({ type: 'HASH' as const, hash: '   ' })],
+    ['a rejected SDK identity call', async () => Promise.reject(new Error('SDK unavailable'))],
+  ])('keeps storage and identity selection untouched for %s, including retry', async (_name, getUserKeyForGame) => {
+    const rawLegacy = '{"owner":"unknown"}';
+    const storage = {
+      reads: [] as string[],
+      values: new Map([['te-ppu.progress', rawLegacy]]),
+      getItem(key: string) {
+        this.reads.push(key);
+        return this.values.get(key) ?? null;
+      },
+      setItem(key: string, value: string) {
+        this.values.set(key, value);
+      },
+    };
+    const storageBackedFactory = createLocalProgressRepositoryFactory(storage);
+    const forIdentity = vi.fn((identity: UserIdentity) => storageBackedFactory.forIdentity(identity));
+    const progressRepositoryFactory = { forIdentity } satisfies ProgressRepositoryFactory;
+    const sdkGetUserKeyForGame = vi.fn(getUserKeyForGame);
+    const platform = createAppsInTossPlatform(fakeAppsInTossSdk(sdkGetUserKeyForGame));
+    const { result } = renderHook(() => useBoot(servicesWithFactory(
+      platform,
+      progressRepositoryFactory,
+    )));
+
+    await waitFor(() => expect(result.current.status).toBe('retryable-error'));
+    expect(forIdentity).not.toHaveBeenCalled();
+    expect(storage.reads).toEqual([]);
+    expect(storage.values.get('te-ppu.progress')).toBe(rawLegacy);
+    expect(sdkGetUserKeyForGame).toHaveBeenCalledOnce();
+    if (result.current.status !== 'retryable-error') throw new Error('Expected retryable boot state.');
+    const retry = result.current.retry;
+    act(() => retry());
+
+    await waitFor(() => expect(result.current.status).toBe('retryable-error'));
+    expect(forIdentity).not.toHaveBeenCalled();
+    expect(storage.reads).toEqual([]);
+    expect(storage.values.get('te-ppu.progress')).toBe(rawLegacy);
+    expect(sdkGetUserKeyForGame).toHaveBeenCalledTimes(2);
+  });
+
   it('starts portrait and common assets before selecting progress after identity resolves', async () => {
     const identity = deferred<UserIdentity>();
     const load = vi.fn(async () => ({
