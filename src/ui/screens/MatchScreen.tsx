@@ -362,7 +362,7 @@ export function MatchScreen({
             <span aria-live="polite" data-testid="match-status">
               {match.view.status}
             </span>
-            <span data-testid="match-tick">{match.view.tick}</span>
+            <span className="match-meta__telemetry" data-testid="match-tick">{match.view.tick}</span>
           </div>
           <SettingsPanel
             icons={{
@@ -390,16 +390,20 @@ export function MatchScreen({
 
       <div className="battle-hud-pair">
         <BattleHud
+          items={commonAssets?.items}
           label="PLAYER"
           model={match.view.sides.player}
           portrait={portraits.player}
           side="player"
+          tiles={commonAssets?.tiles}
         />
         <BattleHud
+          items={commonAssets?.items}
           label="RIVAL"
           model={match.view.sides.opponent}
           portrait={portraits.opponent}
           side="opponent"
+          tiles={commonAssets?.tiles}
         />
       </div>
 
@@ -429,6 +433,7 @@ export function MatchScreen({
       >
         <ItemControls
           dispatch={dispatch}
+          items={commonAssets?.items}
           onRowSelectionChange={handleRowSelectionChange}
           player={player}
           rowSelectionActive={rowSelectionActive}

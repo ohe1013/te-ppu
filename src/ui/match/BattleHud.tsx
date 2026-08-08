@@ -1,4 +1,5 @@
-import type { PublicSideView, SideId } from '../../core/index';
+import type { ItemType, PieceKind, PublicSideView, SideId } from '../../core/index';
+import type { LoadedImageRef } from '../../assets';
 import { AssetImage } from './AssetImage';
 import type { PortraitPresentation } from './portrait-state';
 
@@ -7,9 +8,17 @@ export interface BattleHudProps {
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
   readonly side: SideId;
+  readonly tiles?: Partial<Record<PieceKind, LoadedImageRef>>;
+  readonly items?: Partial<Record<ItemType, LoadedImageRef>>;
 }
 
-export function BattleHud({ label, model, portrait, side }: BattleHudProps) {
+const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
+  'row-clear': 'ROW',
+  freeze: 'FREEZE',
+  'queue-swap': 'SWAP',
+};
+
+export function BattleHud({ items, label, model, portrait, side, tiles }: BattleHudProps) {
   const presentation = portrait ?? {
     alt: `${label} idle portrait`,
     state: 'idle' as const,
@@ -45,12 +54,40 @@ export function BattleHud({ label, model, portrait, side }: BattleHudProps) {
             data-kind={piece.kind}
             key={`${piece.kind}-${index}`}
           >
-            {piece.kind}
+            <AssetImage
+              alt={`${piece.kind} block`}
+              className="battle-hud__next-image"
+              url={tiles?.[piece.kind]?.url}
+            />
+            <span className="battle-hud__next-label">{piece.kind}</span>
           </li>
         ))}
       </ol>
 
-      <dl className="battle-hud__stats">
+      <div aria-label={`${label} item slots`} className="battle-hud__item-ribbon">
+        {(Object.keys(ITEM_LABELS) as ItemType[]).map((item) => {
+          const count = item === 'row-clear'
+            ? model.inventory.rowClear
+            : item === 'freeze' ? model.inventory.freeze : model.inventory.queueSwap;
+          return (
+            <span
+              className="battle-hud__item-slot"
+              data-item={item}
+              data-item-state={count > 0 ? 'ready' : 'empty'}
+              key={item}
+            >
+              <AssetImage
+                alt={`${ITEM_LABELS[item]} item`}
+                className="battle-hud__item-image"
+                url={items?.[item]?.url}
+              />
+              <span className="battle-hud__item-label">{ITEM_LABELS[item]}</span>
+            </span>
+          );
+        })}
+      </div>
+
+      <dl aria-hidden="true" className="battle-hud__stats">
         <div><dt>Combo</dt><dd data-testid={`${side}-combo`}>{model.combo}</dd></div>
         <div><dt>Incoming</dt><dd data-testid={`${side}-incoming`}>{model.incoming}</dd></div>
         <div><dt>Row</dt><dd data-testid={`${side}-row-clear`}>{model.inventory.rowClear}</dd></div>

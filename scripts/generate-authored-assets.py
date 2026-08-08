@@ -3,7 +3,8 @@
 Character masters are produced separately and placed under
 public/assets/characters/<id>/full.webp.  This script creates the strict
 16x16 pixel tiles, item cells, battle atlas, UI SVGs, portrait derivatives,
-and layered 840x1480 floor backgrounds used by the first authored pack.
+and portrait derivatives used by the authored arcade pack. AI-authored
+backgrounds and character masters are intentionally preserved when present.
 """
 
 from __future__ import annotations
@@ -31,40 +32,23 @@ def scale4(image: Image.Image) -> Image.Image:
 
 
 def pixel_tile(kind: str, base: str, pattern: str) -> Image.Image:
+    """Keep tiles close to the original procedural fallback treatment.
+
+    The kind/pattern arguments remain part of the generator API for stable
+    callers, but the authored tile deliberately avoids decorative symbols so
+    the seven Tetris silhouettes stay instantly readable in a busy battle UI.
+    """
     image = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    outline = rgba("#24213b")
-    shadow = rgba("#3b3158")
     fill = rgba(base)
-    light = tuple(min(255, channel + 58) for channel in fill[:3]) + (255,)
-    dark = tuple(max(0, channel - 52) for channel in fill[:3]) + (255,)
-    draw.rounded_rectangle((1, 1, 14, 14), radius=2, fill=outline)
-    draw.rectangle((3, 3, 12, 12), fill=shadow)
-    draw.rectangle((3, 2, 12, 11), fill=fill)
+    light = tuple(min(255, channel + 76) for channel in fill[:3]) + (255,)
+    dark = tuple(max(0, channel - 58) for channel in fill[:3]) + (255,)
+    draw.rounded_rectangle((1, 1, 14, 14), radius=2, fill=rgba("#20163e"))
+    draw.rounded_rectangle((2, 2, 13, 13), radius=2, fill=fill, outline=rgba("#ffffff", 180), width=1)
     draw.line((4, 3, 11, 3), fill=light, width=1)
     draw.line((3, 4, 3, 11), fill=light, width=1)
     draw.line((4, 12, 11, 12), fill=dark, width=1)
     draw.line((12, 4, 12, 11), fill=dark, width=1)
-    if pattern == "stripe":
-        draw.line((4, 7, 11, 7), fill=light, width=1)
-        draw.line((4, 9, 11, 9), fill=dark, width=1)
-    elif pattern == "hook":
-        draw.rectangle((4, 5, 5, 10), fill=light)
-        draw.rectangle((5, 10, 9, 11), fill=dark)
-    elif pattern == "corner":
-        draw.line((5, 5, 10, 10), fill=light, width=1)
-        draw.point((10, 5), fill=dark)
-    elif pattern == "core":
-        draw.rectangle((6, 6, 9, 9), fill=light)
-        draw.point((7, 7), fill=rgba("#fff4a6"))
-    elif pattern == "zig":
-        draw.line((4, 8, 6, 6, 8, 8, 10, 6), fill=light, width=1)
-    elif pattern == "cross":
-        draw.line((8, 4, 8, 10), fill=light, width=1)
-        draw.line((5, 7, 11, 7), fill=light, width=1)
-    elif pattern == "reverse-zig":
-        draw.line((4, 6, 6, 8, 8, 6, 10, 8), fill=light, width=1)
-    draw.rectangle((6, 4, 9, 4), fill=(255, 255, 255, 58))
     return scale4(image)
 
 
@@ -83,15 +67,15 @@ def garbage_tile() -> Image.Image:
 def item_tile(kind: str) -> Image.Image:
     image = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((1, 1, 14, 14), radius=2, fill=rgba("#24213b"))
-    draw.rectangle((3, 3, 12, 12), fill=rgba("#343c66"))
-    draw.rectangle((4, 4, 11, 5), fill=rgba("#6575a9"))
+    draw.rounded_rectangle((1, 1, 14, 14), radius=3, fill=rgba("#20163e"))
+    badge = {"row-clear": "#ffca5c", "freeze": "#65d8ff", "queue-swap": "#df8cff"}[kind]
+    draw.rounded_rectangle((2, 2, 13, 13), radius=3, fill=rgba(badge), outline=rgba("#fff4cf"), width=1)
+    draw.rounded_rectangle((4, 4, 11, 11), radius=2, fill=rgba("#3b2a67"))
     if kind == "row-clear":
         color = rgba("#fff4a6")
         draw.line((4, 8, 11, 8), fill=color, width=2)
-        draw.line((5, 6, 10, 6), fill=rgba("#ffca5c"), width=1)
-        draw.point((4, 8), fill=rgba("#ffffff"))
-        draw.point((11, 8), fill=rgba("#ffffff"))
+        draw.polygon([(4, 8), (6, 6), (6, 10)], fill=rgba("#ffffff"))
+        draw.polygon([(11, 8), (9, 6), (9, 10)], fill=rgba("#ffffff"))
     elif kind == "freeze":
         color = rgba("#8ee8ff")
         draw.line((8, 4, 8, 11), fill=color, width=1)
@@ -145,63 +129,63 @@ def draw_effect_frame(group: str, frame: int, count: int, width: int, height: in
         for offset in (-1, 0, 1):
             draw.ellipse((cx - radius + offset * 18, height * .64 - radius * .25,
                           cx - radius + offset * 18 + radius, height * .64 + radius * .25),
-                         fill=(238, 220, 178, alpha))
+                         fill=(101, 216, 255 if offset else 255, alpha))
     elif group == "rotate-spark":
         radius = 7 + progress * 14
-        color = (255, 220, 74, int(255 * (1 - progress * .35)))
+        color = (255, 111, 177, int(255 * (1 - progress * .35)))
         for idx in range(4):
             angle = progress * math.tau + idx * math.tau / 4
             x = cx + math.cos(angle) * radius
             y = cy + math.sin(angle) * radius
-            draw.rectangle((x - 3, y - 3, x + 3, y + 3), fill=color)
+            draw.polygon([(x, y - 4), (x + 4, y), (x, y + 4), (x - 4, y)], fill=color)
     elif group in ("land-impact", "garbage-land"):
         radius = 8 + progress * (width * .38)
-        color = (255, 236, 176, int(230 * (1 - progress)))
+        color = (101, 216, 255, int(230 * (1 - progress)))
         draw.ellipse((cx - radius, height * .70 - radius * .25,
                       cx + radius, height * .70 + radius * .25), outline=color, width=max(2, width // 32))
         draw.rectangle((cx - width * .18, height * .63, cx + width * .18, height * .7),
-                       fill=(255, 255, 255, int(100 * (1 - progress))))
+                       fill=(255, 111, 177, int(100 * (1 - progress))))
     elif group == "line-clear":
         alpha = int(255 * (1 - abs(progress - .5) * 1.8))
         draw.rectangle((0, height * (.35 - progress * .12), width, height * (.65 + progress * .12)),
-                       fill=(255, 246, 188, max(0, alpha)))
+                       fill=(255, 244, 207, max(0, alpha)))
         for x in range(0, width, max(1, width // 10)):
             draw.rectangle((x + int(progress * 18), 0, x + 6 + int(progress * 18), height),
-                           fill=(255, 255, 255, int(alpha * .6)))
+                           fill=(101, 216, 255, int(alpha * .6)))
     elif group == "attack-shot":
         radius = 9 + int(3 * math.sin(progress * math.tau))
-        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 159, 67, 235))
+        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 111, 177, 235))
         draw.ellipse((cx - radius * .55, cy - radius * .55, cx + radius * .55, cy + radius * .55),
-                     fill=(255, 246, 188, 235))
+                     fill=(255, 244, 207, 235))
         for idx in range(4):
             angle = idx * math.pi / 2 + progress * math.tau
             draw.rectangle((cx + math.cos(angle) * radius * 1.2 - 2,
                             cy + math.sin(angle) * radius * 1.2 - 2,
                             cx + math.cos(angle) * radius * 1.2 + 2,
-                            cy + math.sin(angle) * radius * 1.2 + 2), fill=(255, 93, 115, 225))
+                            cy + math.sin(angle) * radius * 1.2 + 2), fill=(101, 216, 255, 225))
     elif group == "item-acquire":
         radius = 12 + progress * 42
-        color = (255, 220, 74, int(240 * (1 - progress)))
+        color = (255, 202, 92, int(240 * (1 - progress)))
         draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline=color, width=5)
         for idx in range(8):
             angle = idx * math.tau / 8
             x = cx + math.cos(angle) * radius
             y = cy + math.sin(angle) * radius
-            draw.rectangle((x - 5, y - 5, x + 5, y + 5), fill=color)
+            draw.polygon([(x, y - 6), (x + 4, y), (x, y + 6), (x - 4, y)], fill=color)
     elif group == "freeze-overlay":
-        color = (142, 232, 255, 150)
+        color = (101, 216, 255, 170)
         draw.line((0, height * .28, width * .4, 0), fill=color, width=3)
         draw.line((width * .6, height, width, height * .72), fill=(255, 255, 255, 110), width=3)
         draw.line((width * .75, 0, width, height * .25), fill=(77, 180, 226, 120), width=2)
     elif group == "combo-pop":
         radius = 10 + progress * 40
-        color = (184, 108, 255, int(220 * (1 - progress)))
+        color = (255, 111, 177, int(220 * (1 - progress)))
         draw.ellipse((cx - radius, cy - radius * .55, cx + radius, cy + radius * .55), outline=color, width=6)
         for idx in range(6):
             angle = idx * math.tau / 6
             x = cx + math.cos(angle) * radius * 1.1
             y = cy + math.sin(angle) * radius * .65
-            draw.rectangle((x - 5, y - 5, x + 5, y + 5), fill=(255, 220, 74, int(210 * (1 - progress))))
+            draw.polygon([(x, y - 6), (x + 5, y), (x, y + 6), (x - 5, y)], fill=(255, 202, 92, int(210 * (1 - progress))))
     return image
 
 
@@ -266,8 +250,22 @@ ICON_PATHS = {
 
 
 def generate_icons() -> None:
+    colors = {
+        "rotate": "#65d8ff",
+        "settings": "#ffca5c",
+        "sound-on": "#ff8e9e",
+        "sound-off": "#9b8cff",
+        "haptics-on": "#7fe3b0",
+        "haptics-off": "#82779f",
+        "exit": "#ff8e9e",
+    }
     for name, body in ICON_PATHS.items():
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{body}</svg>\n'
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+            f'fill="none" stroke="#fff8e8" stroke-width="1.8" stroke-linecap="round" '
+            f'stroke-linejoin="round"><rect x="1" y="1" width="22" height="22" rx="6" '
+            f'fill="{colors[name]}" stroke="#20163e" stroke-width="1.4"/>{body}</svg>\n'
+        )
         path = ASSETS / "ui" / f"{name}.svg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(svg, encoding="utf-8")
@@ -407,8 +405,11 @@ def generate_background(name: str, colors: tuple[str, str, str]) -> Image.Image:
 
 def generate_backgrounds() -> None:
     for name, colors in FLOOR_PALETTES.items():
+        destination = ASSETS / "backgrounds" / f"{name}.webp"
+        if destination.exists():
+            continue
         image = generate_background(name, colors)
-        write_webp(ASSETS / "backgrounds" / f"{name}.webp", image, quality=82)
+        write_webp(destination, image, quality=82)
 
 
 def main() -> None:

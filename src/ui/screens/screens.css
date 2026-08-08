@@ -2,14 +2,26 @@
   min-height: 100%;
 }
 
+:root {
+  color-scheme: dark;
+  --arcade-ink: #171239;
+  --arcade-deep: #24164e;
+  --arcade-purple: #633f9e;
+  --arcade-cyan: #65d8ff;
+  --arcade-pink: #ff6fb1;
+  --arcade-yellow: #ffca5c;
+  --arcade-cream: #fff4cf;
+}
+
 .app-shell {
   min-height: 100dvh;
   overflow-x: hidden;
   overflow-y: auto;
-  color: #171323;
+  color: var(--arcade-cream);
   background:
-    radial-gradient(circle at 50% 0%, rgb(108 92 231 / 18%), transparent 38%),
-    #f7f6fc;
+    radial-gradient(circle at 50% -10%, rgb(101 216 255 / 24%), transparent 34%),
+    radial-gradient(circle at 12% 80%, rgb(255 111 177 / 16%), transparent 30%),
+    var(--arcade-ink);
 }
 
 :where(.screen-shell) {
@@ -28,6 +40,17 @@
   gap: 1rem;
 }
 
+.screen-shell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0.55rem;
+  border: 2px solid rgb(255 244 207 / 22%);
+  border-radius: 1rem;
+  box-shadow: inset 0 0 0 2px rgb(101 216 255 / 10%);
+  content: '';
+  pointer-events: none;
+}
+
 .screen-shell > :not(.screen-backdrop) {
   position: relative;
   z-index: 1;
@@ -39,15 +62,40 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.26;
+  opacity: 0.36;
   object-fit: cover;
   object-position: center top;
   pointer-events: none;
+  filter: saturate(1.12) contrast(1.04);
 }
 
-.screen-backdrop--art { opacity: 0.18; object-position: right bottom; }
-.screen-backdrop--hero { width: 48%; height: 48%; top: auto; opacity: 0.2; object-position: left bottom; }
-.screen-backdrop--owl { width: 30%; height: 30%; left: auto; top: auto; opacity: 0.22; object-position: right bottom; }
+.screen-backdrop--art {
+  inset: auto 0.7rem 0.7rem auto;
+  width: 68%;
+  height: 68%;
+  opacity: 0.43;
+  object-position: right bottom;
+  mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+}
+
+.screen-backdrop--hero {
+  width: 48%;
+  height: 48%;
+  top: auto;
+  opacity: 0.34;
+  object-position: left bottom;
+  mask-image: linear-gradient(to top, #000 40%, transparent 100%);
+}
+
+.screen-backdrop--owl {
+  width: 30%;
+  height: 30%;
+  left: auto;
+  top: auto;
+  opacity: 0.38;
+  object-position: right bottom;
+  mask-image: linear-gradient(to top, #000 40%, transparent 100%);
+}
 
 .screen-shell h1,
 .screen-shell p {
@@ -55,11 +103,39 @@
 }
 
 .eyebrow {
-  color: #6c5ce7;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  color: var(--arcade-cyan);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-shadow: 2px 2px 0 var(--arcade-purple);
   text-transform: uppercase;
+}
+
+.tower-screen {
+  align-content: start;
+  gap: 0.7rem;
+  padding-top: max(1.65rem, var(--native-close-exclusion-top, 10px));
+  padding-bottom: 2rem;
+}
+
+.tower-screen__header {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem 0.15rem;
+}
+
+.tower-screen__header h1 {
+  color: var(--arcade-cream);
+  font-size: clamp(1.6rem, 7vw, 2.35rem);
+  line-height: 1;
+  text-shadow: 3px 3px 0 var(--arcade-pink), 5px 5px 0 var(--arcade-purple);
+}
+
+.tower-screen__subtitle {
+  max-width: 25rem;
+  color: rgb(255 244 207 / 78%);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .floor-list,
@@ -68,38 +144,206 @@
   gap: 0.75rem;
 }
 
-.floor-card {
+.tower-route {
+  position: relative;
+  gap: 0.7rem;
+  padding: 0.45rem 0.1rem 1.25rem;
+}
+
+.tower-route__rope {
+  position: absolute;
+  z-index: -1;
+  top: 1.5rem;
+  bottom: 1.5rem;
+  left: 50%;
+  width: 0.42rem;
+  border: 2px solid var(--arcade-ink);
+  border-radius: 999px;
+  background: repeating-linear-gradient(180deg, var(--arcade-yellow) 0 1.1rem, var(--arcade-pink) 1.1rem 2.2rem);
+  box-shadow: 0 0 0 2px rgb(255 244 207 / 58%), 0 0 1rem rgb(255 202 92 / 28%);
+  content: '';
+}
+
+.tower-node {
+  position: relative;
+  display: grid;
+  align-items: center;
+  grid-template-columns: 2.35rem minmax(0, 1fr);
+  gap: 0.45rem;
+  min-height: 5.2rem;
+}
+
+.tower-node--left {
+  margin-right: 1.35rem;
+}
+
+.tower-node--right {
+  grid-template-columns: minmax(0, 1fr) 2.35rem;
+  margin-left: 1.35rem;
+}
+
+.tower-node--right .tower-node__marker {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.tower-node--right .tower-node__card {
+  grid-column: 1;
+  grid-row: 1;
+  text-align: right;
+}
+
+.tower-node__marker {
+  display: grid;
+  width: 2.35rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 3px solid var(--arcade-ink);
+  border-radius: 0.55rem;
+  color: var(--arcade-ink);
+  background: var(--arcade-yellow);
+  box-shadow: 0 0 0 2px var(--arcade-cream), 3px 3px 0 rgb(23 18 57 / 68%);
+  font-size: 0.75rem;
+  font-weight: 950;
+}
+
+.tower-node--locked .tower-node__marker {
+  color: #b8aeca;
+  background: #5a4b78;
+  box-shadow: 0 0 0 2px rgb(255 244 207 / 32%), 3px 3px 0 rgb(23 18 57 / 68%);
+}
+
+.tower-node--cleared .tower-node__marker {
+  background: var(--arcade-cyan);
+}
+
+.tower-node__card {
   display: grid;
   gap: 0.25rem;
-  text-align: left;
+  min-width: 0;
+}
+
+.tower-node__opponent {
+  overflow: hidden;
+  color: var(--arcade-cream);
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-shadow: 1px 1px 0 var(--arcade-purple);
+  white-space: nowrap;
 }
 
 :where(.screen-shell) button {
   min-height: 3rem;
-  padding: 0.75rem 1rem;
-  border: 0;
-  border-radius: 0.875rem;
-  color: #fff;
-  background: #6c5ce7;
+  padding: 0.7rem 0.9rem;
+  border: 3px solid var(--arcade-ink);
+  border-radius: 0.7rem;
+  color: var(--arcade-ink);
+  background: var(--arcade-cream);
+  box-shadow: 3px 3px 0 rgb(23 18 57 / 72%);
   font: inherit;
-  font-weight: 750;
+  font-weight: 900;
+  transition: transform 100ms ease, filter 100ms ease;
 }
 
-:where(.screen-shell) button:disabled {
-  color: #777184;
-  background: #dedbe8;
+:where(.screen-shell) button:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 rgb(23 18 57 / 72%);
+}
+
+:where(.screen-shell) button:not(:disabled):hover {
+  filter: brightness(1.08) saturate(1.1);
+}
+
+.floor-card {
+  display: grid;
+  gap: 0.16rem;
+  width: 100%;
+  min-height: 3.4rem !important;
+  padding: 0.55rem 0.7rem !important;
+  text-align: left;
+  background: var(--arcade-yellow) !important;
+}
+
+.tower-node--right .floor-card {
+  text-align: right;
+  background: var(--arcade-pink) !important;
+}
+
+.tower-node--cleared .floor-card {
+  background: var(--arcade-cyan) !important;
+}
+
+.floor-card span {
+  font-size: 0.84rem;
+}
+
+.floor-card small {
+  color: rgb(23 18 57 / 72%);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+:where(.screen-shell) button:disabled,
+.tower-node--locked .floor-card {
+  color: #b8aeca;
+  background: #5a4b78 !important;
+  box-shadow: 2px 2px 0 rgb(23 18 57 / 68%);
 }
 
 .screen-shell .secondary-button {
-  color: #4b4169;
-  background: #e9e6f5;
+  color: var(--arcade-cream);
+  background: var(--arcade-purple);
 }
 
 .notice {
-  padding: 0.875rem;
-  border-radius: 0.75rem;
-  background: #eeeafd;
+  padding: 0.75rem 0.85rem;
+  border: 2px solid var(--arcade-yellow);
+  border-radius: 0.55rem;
+  color: var(--arcade-cream);
+  background: rgb(36 22 78 / 86%);
+  box-shadow: 3px 3px 0 rgb(23 18 57 / 65%);
 }
+
+.character-intro-panel,
+.result-screen__panel,
+.ending-screen__panel {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1.05rem;
+  border: 3px solid var(--arcade-ink);
+  border-radius: 0.85rem;
+  background: rgb(36 22 78 / 90%);
+  box-shadow: 4px 4px 0 rgb(23 18 57 / 72%), inset 0 0 0 2px rgb(255 244 207 / 18%);
+}
+
+.character-intro-panel h1,
+.result-screen__panel h1,
+.ending-screen__panel h1 {
+  color: var(--arcade-cream);
+  font-size: clamp(1.5rem, 7vw, 2.15rem);
+  line-height: 1;
+  text-shadow: 2px 2px 0 var(--arcade-pink);
+}
+
+.character-intro-panel__speech {
+  padding: 0.65rem 0.75rem;
+  border: 2px solid var(--arcade-cyan);
+  border-radius: 0.65rem;
+  color: var(--arcade-ink);
+  background: var(--arcade-cream);
+  font-weight: 850;
+}
+
+.character-intro-panel__telemetry,
+.result-screen__progress {
+  color: rgb(255 244 207 / 75%);
+  font-size: 0.78rem;
+}
+
+.result-screen--win .result-screen__panel h1 { color: var(--arcade-cyan); }
+.result-screen--loss .result-screen__panel h1 { color: var(--arcade-pink); }
 
 @media (min-width: 400px) {
   .screen-actions {

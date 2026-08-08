@@ -35,12 +35,14 @@ export function ResultScreen({
   saveRetrying,
 }: ResultScreenProps) {
   return (
-    <section className="screen-shell" data-testid="result-screen">
+    <section className={`screen-shell result-screen result-screen--${result}`} data-testid="result-screen">
       <ScreenBackdrop image={floorAssets?.background} />
       <ScreenBackdrop className="screen-backdrop--art" image={floorAssets?.fullArt} />
-      <p className="eyebrow">{floor}층 결과</p>
-      <h1>{RESULT_LABELS[result]}</h1>
-      <p>최고 해금 층: {progress.highestUnlockedFloor}</p>
+      <div className="result-screen__panel">
+        <p className="eyebrow">{floor}층 결과</p>
+        <h1>{RESULT_LABELS[result]}</h1>
+        <p className="result-screen__progress">최고 해금 층: {progress.highestUnlockedFloor}</p>
+      </div>
       {savePending && <p className="notice" role="status">진행 상황 저장 중…</p>}
       {saveFailed && (
         <div className="notice" role="alert">
