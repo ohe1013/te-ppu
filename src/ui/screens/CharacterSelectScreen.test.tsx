@@ -153,4 +153,35 @@ describe('CharacterSelectScreen', () => {
 
     expect(onBack).toHaveBeenCalledOnce();
   });
+
+  it('locks every selection input while profile persistence owns the screen', () => {
+    const onBack = vi.fn();
+    const onComplete = vi.fn();
+    render(
+      <CharacterSelectScreen
+        initialCharacterId="hero-engineer"
+        interactionLocked
+        onBack={onBack}
+        onComplete={onComplete}
+      />,
+    );
+    const selectionScreen = screen.getByTestId('character-select-screen');
+    const backgroundButtons = within(selectionScreen).getAllByRole('button');
+
+    expect(backgroundButtons).toHaveLength(9);
+    expect(selectionScreen).toHaveAttribute('inert');
+    for (const button of backgroundButtons) expect(button).toBeDisabled();
+
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Enter', 'Backspace']) {
+      fireEvent.keyDown(selectionScreen, { key });
+    }
+    for (const button of backgroundButtons) fireEvent.click(button);
+
+    expect(selectionScreen).toHaveAttribute(
+      'data-selected-character-id',
+      'hero-engineer',
+    );
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+  });
 });

@@ -5,12 +5,22 @@ import {
   type AppRouteEvent,
 } from './app-route';
 
+const taskFiveEvents = [
+  { type: 'start-run', hasProfile: false },
+  { type: 'open-ranking' },
+  { type: 'change-player' },
+  { type: 'name-completed', initials: 'RVT' },
+  { type: 'character-selected' },
+  { type: 'return-to-title' },
+] satisfies readonly AppRouteEvent[];
+
 const invalidEventCases: ReadonlyArray<readonly [
   string,
   AppRoute,
   readonly AppRouteEvent[],
 ]> = [
   ['boot', { name: 'boot' }, [
+    ...taskFiveEvents,
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
@@ -19,6 +29,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'return-to-tower' },
   ]],
   ['tower', { name: 'tower' }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
@@ -27,6 +38,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'return-to-tower' },
   ]],
   ['floor intro', { name: 'floor-intro', floor: 2, encounterIndex: 0, wins: 0 }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'match-finished', result: 'win' },
@@ -34,6 +46,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'continue' },
   ]],
   ['match', { name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 3 }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
@@ -43,12 +56,14 @@ const invalidEventCases: ReadonlyArray<readonly [
   ['result', {
     name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
   }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
   ]],
   ['ending', { name: 'ending' }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
@@ -57,20 +72,85 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'continue' },
   ]],
   ['owl reveal', { name: 'owl-reveal' }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'owl-match-finished', result: 'win' },
   ]],
   ['owl match', { name: 'owl-match', seed: 7 }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'start-owl-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
   ]],
   ['owl result', { name: 'owl-result', result: 'loss' }, [
+    ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'start-owl-match', seed: 1 },
     { type: 'owl-match-finished', result: 'win' },
+  ]],
+  ['title', { name: 'title' }, [
+    { type: 'boot-ready' },
+    { type: 'name-completed', initials: 'RVT' },
+    { type: 'character-selected' },
+    { type: 'return-to-title' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
+  ['name entry', { name: 'name-entry', intent: 'start-run' }, [
+    { type: 'boot-ready' },
+    { type: 'start-run', hasProfile: false },
+    { type: 'open-ranking' },
+    { type: 'change-player' },
+    { type: 'character-selected' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
+  ['character select', {
+    name: 'character-select', intent: 'change-player', initials: 'LUM',
+  }, [
+    { type: 'boot-ready' },
+    { type: 'start-run', hasProfile: false },
+    { type: 'open-ranking' },
+    { type: 'change-player' },
+    { type: 'name-completed', initials: 'RVT' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
+  ['ranking', { name: 'ranking' }, [
+    { type: 'boot-ready' },
+    { type: 'start-run', hasProfile: false },
+    { type: 'open-ranking' },
+    { type: 'change-player' },
+    { type: 'name-completed', initials: 'RVT' },
+    { type: 'character-selected' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
   ]],
 ];
 

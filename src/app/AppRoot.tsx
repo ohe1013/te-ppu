@@ -118,6 +118,7 @@ export function AppRoot({
   const completionPendingRef = useRef(false);
   const completionTokenRef = useRef(0);
   const profileSavePendingRef = useRef(false);
+  const retryProfileButtonRef = useRef<HTMLButtonElement>(null);
   const mountedRef = useRef(false);
 
   if (boot.status === 'ready' && controllerRef.current === null) {
@@ -128,6 +129,10 @@ export function AppRoot({
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
   }, [boot.status]);
+
+  useEffect(() => {
+    if (profileSaveStatus === 'failed') retryProfileButtonRef.current?.focus();
+  }, [profileSaveStatus]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -374,6 +379,7 @@ export function AppRoot({
                 'hero-engineer': { fullArt: commonAssets?.hero.fullArt },
               }}
               initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
+              interactionLocked={profileSaveStatus !== 'idle'}
               onBack={() => {
                 if (profileSaveStatus === 'idle') returnToTitle();
               }}
@@ -381,16 +387,28 @@ export function AppRoot({
             />
             {profileSaveStatus !== 'idle' && (
               <aside
+                aria-labelledby={profileSaveStatus === 'failed' ? 'profile-save-error-title' : undefined}
                 aria-live="polite"
+                aria-modal={profileSaveStatus === 'failed' ? true : undefined}
                 className={`profile-save-panel profile-save-panel--${profileSaveStatus}`}
                 data-testid="profile-save-panel"
+                onKeyDown={(event) => {
+                  if (profileSaveStatus !== 'failed' || event.key !== 'Tab') return;
+                  event.preventDefault();
+                  retryProfileButtonRef.current?.focus();
+                }}
+                role={profileSaveStatus === 'failed' ? 'dialog' : undefined}
               >
                 {profileSaveStatus === 'saving' ? (
                   <p role="status">SAVING PLAYER PROFILE</p>
                 ) : (
                   <>
-                    <p role="alert">PROFILE SAVE FAILED</p>
-                    <button onClick={() => { void retryProfileSave(); }} type="button">
+                    <p id="profile-save-error-title" role="alert">PROFILE SAVE FAILED</p>
+                    <button
+                      onClick={() => { void retryProfileSave(); }}
+                      ref={retryProfileButtonRef}
+                      type="button"
+                    >
                       RETRY SAVE
                     </button>
                   </>

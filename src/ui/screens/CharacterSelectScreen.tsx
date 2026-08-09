@@ -19,6 +19,7 @@ export interface CharacterSelectScreenProps {
   readonly players?: Readonly<Record<PlayerCharacterId, PlayerCharacterDefinition>>;
   readonly assets?: Partial<Readonly<Record<PlayerCharacterId, PlayerCharacterArt>>>;
   readonly initialCharacterId?: PlayerCharacterId;
+  readonly interactionLocked?: boolean;
   readonly onComplete: (characterId: PlayerCharacterId) => void;
   readonly onBack: () => void;
 }
@@ -26,6 +27,7 @@ export interface CharacterSelectScreenProps {
 export function CharacterSelectScreen({
   assets = {},
   initialCharacterId = 'hero-engineer',
+  interactionLocked = false,
   onBack,
   onComplete,
   players = PLAYER_CHARACTERS,
@@ -44,6 +46,7 @@ export function CharacterSelectScreen({
   }, [selectedId]);
 
   const moveSelection = (direction: ArcadeDirection) => {
+    if (interactionLocked) return;
     if (direction !== 'left' && direction !== 'right') return;
     const offset = direction === 'left' ? -1 : 1;
     const nextIndex = Math.max(0, Math.min(PLAYER_CHARACTER_IDS.length - 1, selectedIndex + offset));
@@ -52,6 +55,10 @@ export function CharacterSelectScreen({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (interactionLocked) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault();
       moveSelection(event.key === 'ArrowLeft' ? 'left' : 'right');
@@ -75,8 +82,9 @@ export function CharacterSelectScreen({
       className="screen-shell onboarding-screen character-select-screen"
       data-selected-character-id={selectedId}
       data-testid="character-select-screen"
+      inert={interactionLocked}
       onKeyDown={handleKeyDown}
-      tabIndex={0}
+      tabIndex={interactionLocked ? -1 : 0}
     >
       <ScreenBackdrop className="screen-backdrop--art" image={assets[selectedId]?.fullArt} />
       <header className="onboarding-screen__header">
@@ -97,8 +105,11 @@ export function CharacterSelectScreen({
               aria-pressed={selectedId === characterId}
               className="character-select-card"
               data-character-id={characterId}
+              disabled={interactionLocked}
               key={characterId}
-              onClick={() => setSelectedId(characterId)}
+              onClick={() => {
+                if (!interactionLocked) setSelectedId(characterId);
+              }}
               type="button"
             >
               <AssetImage
@@ -117,10 +128,27 @@ export function CharacterSelectScreen({
         })}
       </div>
       <div className="onboarding-controls">
-        <ArcadeDirectionPad onDirection={moveSelection} />
+        <ArcadeDirectionPad disabled={interactionLocked} onDirection={moveSelection} />
         <div className="onboarding-controls__actions">
-          <button onClick={() => onComplete(selectedId)} type="button">SELECT</button>
-          <button className="secondary-button" onClick={onBack} type="button">BACK</button>
+          <button
+            disabled={interactionLocked}
+            onClick={() => {
+              if (!interactionLocked) onComplete(selectedId);
+            }}
+            type="button"
+          >
+            SELECT
+          </button>
+          <button
+            className="secondary-button"
+            disabled={interactionLocked}
+            onClick={() => {
+              if (!interactionLocked) onBack();
+            }}
+            type="button"
+          >
+            BACK
+          </button>
         </div>
       </div>
     </section>

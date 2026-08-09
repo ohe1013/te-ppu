@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -83,23 +83,17 @@ class TestProgressRepository implements ProgressRepository {
 }
 
 class DeferredSaveRepository extends TestProgressRepository {
-  private readonly pendingSave: Promise<ProgressSaveResult>;
-  private settlePendingSave: ((result: ProgressSaveResult) => void) | undefined;
-
-  constructor(initial: ProgressState) {
-    super(initial);
-    this.pendingSave = new Promise((resolve) => {
-      this.settlePendingSave = resolve;
-    });
-  }
+  private readonly pendingSaves: Array<(result: ProgressSaveResult) => void> = [];
 
   override async save(state: ProgressState): Promise<ProgressSaveResult> {
     this.saves.push(cloneProgress(state));
-    return this.pendingSave;
+    return new Promise((resolve) => {
+      this.pendingSaves.push(resolve);
+    });
   }
 
   settle(result: ProgressSaveResult) {
-    this.settlePendingSave?.(result);
+    this.pendingSaves.shift()?.(result);
   }
 }
 
@@ -311,39 +305,81 @@ describe('AppRoot', () => {
     });
   });
 
-  it('keeps profile selection visible after save failure and retries before routing', async () => {
+  it('locks profile selection behind a focus-trapped retry modal and retries the failed snapshot', async () => {
     const user = userEvent.setup();
-    const repository = new TestProgressRepository(DEFAULT_PROGRESS, [
-      {
-        ok: false,
-        error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
-      },
-      { ok: true },
-    ]);
+    const repository = new DeferredSaveRepository(DEFAULT_PROGRESS);
     renderGame(repository);
 
     await screen.findByTestId('title-screen');
     await user.click(screen.getByRole('button', { name: 'START RUN' }));
     await enterInitials(user, 'RVT');
-    await chooseCharacter(user, 'star-alchemist');
+    const selectionScreen = await screen.findByTestId('character-select-screen');
+    const starCard = document.querySelector<HTMLButtonElement>(
+      '[data-character-id="star-alchemist"]',
+    );
+    if (starCard === null) throw new Error('missing star-alchemist character card');
+    await user.click(starCard);
+    const backgroundButtons = within(selectionScreen).getAllByRole('button');
+    await user.click(screen.getByRole('button', { name: 'SELECT' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('PROFILE SAVE FAILED');
-    expect(screen.getByTestId('character-select-screen')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('SAVING PLAYER PROFILE');
+    expect(backgroundButtons).toHaveLength(9);
+    expect(selectionScreen).toHaveAttribute('inert');
+    for (const button of backgroundButtons) expect(button).toBeDisabled();
+
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Enter', 'Backspace']) {
+      fireEvent.keyDown(selectionScreen, { key });
+    }
+    for (const button of backgroundButtons) fireEvent.click(button);
+
+    expect(selectionScreen).toHaveAttribute(
+      'data-selected-character-id',
+      'star-alchemist',
+    );
+    expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
+    expect(repository.saves).toHaveLength(1);
+
+    await act(async () => repository.settle({
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    }));
+
+    const retryDialog = await screen.findByRole('dialog', { name: 'PROFILE SAVE FAILED' });
+    expect(retryDialog).toHaveAttribute('aria-modal', 'true');
+    const retry = within(retryDialog).getByRole('button', { name: 'RETRY SAVE' });
+    expect(retry).toHaveFocus();
+    expect(selectionScreen).toHaveAttribute('inert');
+    for (const button of backgroundButtons) expect(button).toBeDisabled();
+
+    await user.tab();
+    expect(retry).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(retry).toHaveFocus();
+
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Enter', 'Backspace']) {
+      fireEvent.keyDown(selectionScreen, { key });
+    }
+    for (const button of backgroundButtons) fireEvent.click(button);
+
+    expect(selectionScreen).toHaveAttribute(
+      'data-selected-character-id',
+      'star-alchemist',
+    );
+    expect(screen.queryByTestId('title-screen')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
     expect(repository.saves).toHaveLength(1);
 
     await user.keyboard('{Enter}');
-    expect(screen.getByTestId('character-select-screen')).toBeVisible();
-    expect(repository.saves).toHaveLength(1);
-
-    await user.keyboard('{Backspace}');
-    expect(screen.getByTestId('character-select-screen')).toBeVisible();
-    expect(screen.queryByTestId('title-screen')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'RETRY SAVE' }));
-    expect(await screen.findByTestId('tower-screen')).toBeVisible();
-    expect(repository.saves).toHaveLength(2);
+    await waitFor(() => expect(repository.saves).toHaveLength(2));
     expect(repository.saves[1]).toEqual(repository.saves[0]);
+    expect(repository.saves[1]?.profile).toEqual({
+      initials: 'RVT',
+      characterId: 'star-alchemist',
+    });
+    expect(selectionScreen).toBeVisible();
+
+    await act(async () => repository.settle({ ok: true }));
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
   });
 
   it('renders local ranking props without using a leaderboard service', async () => {
