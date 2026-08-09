@@ -26,21 +26,23 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'continue' },
     { type: 'return-to-tower' },
   ]],
-  ['floor intro', { name: 'floor-intro', floor: 2 }, [
+  ['floor intro', { name: 'floor-intro', floor: 2, encounterIndex: 0, wins: 0 }, [
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'match-finished', result: 'win' },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
   ]],
-  ['match', { name: 'match', floor: 2, seed: 3 }, [
+  ['match', { name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 3 }, [
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
   ]],
-  ['result', { name: 'result', floor: 2, result: 'loss' }, [
+  ['result', {
+    name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
+  }, [
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
@@ -57,6 +59,44 @@ const invalidEventCases: ReadonlyArray<readonly [
 ];
 
 describe('reduceRoute', () => {
+  it('carries encounter progress through an intermediate victory', () => {
+    const intro = reduceRoute({ name: 'tower' }, { type: 'select-floor', floor: 2 });
+    const match = reduceRoute(intro, { type: 'start-match', seed: 73 });
+    const result = reduceRoute(match, { type: 'match-finished', result: 'win' });
+    const nextIntro = reduceRoute(result, { type: 'continue' });
+
+    expect(intro).toEqual({ name: 'floor-intro', floor: 2, encounterIndex: 0, wins: 0 });
+    expect(match).toEqual({
+      name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 73,
+    });
+    expect(result).toEqual({
+      name: 'result',
+      floor: 2,
+      encounterIndex: 0,
+      wins: 0,
+      result: 'win',
+      seriesComplete: false,
+    });
+    expect(nextIntro).toEqual({ name: 'floor-intro', floor: 2, encounterIndex: 1, wins: 1 });
+  });
+
+  it('marks only the third victory as a completed series', () => {
+    const result = reduceRoute(
+      { name: 'match', floor: 5, encounterIndex: 2, wins: 2, seed: 50 },
+      { type: 'match-finished', result: 'win' },
+    );
+
+    expect(result).toEqual({
+      name: 'result',
+      floor: 5,
+      encounterIndex: 2,
+      wins: 2,
+      result: 'win',
+      seriesComplete: true,
+    });
+    expect(reduceRoute(result, { type: 'continue' })).toEqual({ name: 'ending' });
+  });
+
   it('moves through boot, floor selection, match start, and result', () => {
     const tower = reduceRoute({ name: 'boot' }, { type: 'boot-ready' });
     const intro = reduceRoute(tower, { type: 'select-floor', floor: 2 });
@@ -64,39 +104,52 @@ describe('reduceRoute', () => {
     const result = reduceRoute(match, { type: 'match-finished', result: 'loss' });
 
     expect(tower).toEqual({ name: 'tower' });
-    expect(intro).toEqual({ name: 'floor-intro', floor: 2 });
-    expect(match).toEqual({ name: 'match', floor: 2, seed: 73 });
-    expect(result).toEqual({ name: 'result', floor: 2, result: 'loss' });
+    expect(intro).toEqual({ name: 'floor-intro', floor: 2, encounterIndex: 0, wins: 0 });
+    expect(match).toEqual({
+      name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 73,
+    });
+    expect(result).toEqual({
+      name: 'result',
+      floor: 2,
+      encounterIndex: 0,
+      wins: 0,
+      result: 'loss',
+      seriesComplete: false,
+    });
   });
 
   it('retries the same floor with a fresh seed', () => {
     expect(reduceRoute(
-      { name: 'result', floor: 2, result: 'loss' },
+      {
+        name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
+      },
       { type: 'retry', seed: 91 },
-    )).toEqual({ name: 'match', floor: 2, seed: 91 });
+    )).toEqual({
+      name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 91,
+    });
   });
 
   it.each(['loss', 'draw'] as const)('returns to the tower after a floor-two %s', (result) => {
     expect(reduceRoute(
-      { name: 'result', floor: 2, result },
+      { name: 'result', floor: 2, encounterIndex: 0, wins: 0, result, seriesComplete: false },
       { type: 'continue' },
     )).toEqual({ name: 'tower' });
   });
 
   it('returns to the tower after continuing from floor-three and floor-four victories', () => {
     expect(reduceRoute(
-      { name: 'result', floor: 3, result: 'win' },
+      { name: 'result', floor: 3, encounterIndex: 2, wins: 2, result: 'win', seriesComplete: true },
       { type: 'continue' },
     )).toEqual({ name: 'tower' });
     expect(reduceRoute(
-      { name: 'result', floor: 4, result: 'win' },
+      { name: 'result', floor: 4, encounterIndex: 2, wins: 2, result: 'win', seriesComplete: true },
       { type: 'continue' },
     )).toEqual({ name: 'tower' });
   });
 
   it('ends only after continuing from a floor-five victory', () => {
     expect(reduceRoute(
-      { name: 'result', floor: 5, result: 'win' },
+      { name: 'result', floor: 5, encounterIndex: 2, wins: 2, result: 'win', seriesComplete: true },
       { type: 'continue' },
     )).toEqual({ name: 'ending' });
   });

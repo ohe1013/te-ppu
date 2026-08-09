@@ -8,9 +8,14 @@ import {
 import {
   applyFloorResult,
   canSelectFloor,
+  getFloorEncounter,
   isFinalFloor,
+  resolveEncounter,
+  startFloorSeries,
   type Floor,
+  type FloorEncounter,
   type FloorResult,
+  type FloorSeriesState,
   type ProgressRepository,
   type ProgressState,
 } from '../progression/index';
@@ -25,8 +30,25 @@ export type TowerRoute =
   | 'ENDING';
 
 export type StartFloorResult =
-  | { readonly ok: true; readonly match: MatchState }
+  | {
+      readonly ok: true;
+      readonly match: MatchState;
+      readonly encounter: FloorEncounter;
+      readonly series: FloorSeriesState;
+    }
   | { readonly ok: false; readonly reason: 'LOCKED_FLOOR' | 'NO_SELECTED_FLOOR' };
+
+export type StartEncounterResult =
+  | {
+      readonly ok: true;
+      readonly match: MatchState;
+      readonly encounter: FloorEncounter;
+      readonly series: FloorSeriesState;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
+    };
 
 export type TowerSaveResult =
   | { readonly ok: true; readonly route: TowerRoute }
@@ -49,6 +71,20 @@ function cloneProgress(state: ProgressState): ProgressState {
     settings: { ...state.settings },
   };
 }
+
+export type CompleteEncounterResult =
+  | ({
+      readonly ok: true;
+      readonly encounter: FloorEncounter;
+      readonly series: FloorSeriesState | null;
+      readonly floorCompleted: boolean;
+    } & Extract<TowerSaveResult, { readonly ok: true }>)
+  | ({
+      readonly ok: false;
+      readonly encounter: FloorEncounter | null;
+      readonly series: FloorSeriesState | null;
+      readonly floorCompleted: boolean;
+    } & Extract<TowerSaveResult, { readonly ok: false }>);
 
 function routeFor(floor: Floor, result: FloorResult): TowerRoute {
   if (result === 'LOSS') return 'RESULT_LOSS';
@@ -76,6 +112,7 @@ function isSettingsUpdate(
 export class TowerController {
   private currentProgress: ProgressState;
   private currentSelectedFloor: Floor | null = null;
+  private currentSeriesState: FloorSeriesState | null = null;
   private currentMatch: MatchState | null = null;
   private currentAi: AiController | null = null;
   private currentRoute: TowerRoute = 'TOWER';
@@ -102,6 +139,15 @@ export class TowerController {
     return this.currentMatch;
   }
 
+  get currentSeries(): FloorSeriesState | null {
+    return this.currentSeriesState === null ? null : { ...this.currentSeriesState };
+  }
+
+  get currentEncounter(): FloorEncounter | null {
+    const series = this.currentSeriesState;
+    return series === null ? null : getFloorEncounter(series.floor, series.encounterIndex);
+  }
+
   get ai(): AiController | null {
     return this.currentAi;
   }
@@ -119,6 +165,20 @@ export class TowerController {
       return { ok: false, reason: 'LOCKED_FLOOR' };
     }
     this.currentSelectedFloor = floor;
+    this.currentSeriesState = startFloorSeries(floor);
+    const started = this.startEncounter(matchSeed);
+    if (!started.ok) return { ok: false, reason: 'NO_SELECTED_FLOOR' };
+    return started;
+  }
+
+  startEncounter(matchSeed: number): StartEncounterResult {
+    const floor = this.currentSelectedFloor;
+    const series = this.currentSeriesState;
+    if (floor === null) return { ok: false, reason: 'NO_SELECTED_FLOOR' };
+    if (series === null || series.floor !== floor) {
+      return { ok: false, reason: 'NO_ACTIVE_SERIES' };
+    }
+
     this.currentMatch = createMatch({ matchSeed });
     this.currentAi = createAiController(
       getAiFloorProfile(floor),
@@ -126,7 +186,12 @@ export class TowerController {
       'opponent',
     );
     this.currentRoute = 'MATCH';
-    return { ok: true, match: this.currentMatch };
+    return {
+      ok: true,
+      match: this.currentMatch,
+      encounter: getFloorEncounter(series.floor, series.encounterIndex),
+      series: { ...series },
+    };
   }
 
   restartFloor(matchSeed: number): StartFloorResult {
@@ -136,6 +201,70 @@ export class TowerController {
     return this.startFloor(this.currentSelectedFloor, matchSeed);
   }
 
+  async completeEncounter(result: FloorResult): Promise<CompleteEncounterResult> {
+    const floor = this.currentSelectedFloor;
+    const series = this.currentSeriesState;
+    const encounter = this.currentEncounter;
+    if (floor === null) {
+      return {
+        ok: false,
+        reason: 'NO_SELECTED_FLOOR',
+        route: this.currentRoute,
+        encounter: null,
+        series: null,
+        floorCompleted: false,
+      };
+    }
+    if (
+      this.currentRoute !== 'MATCH'
+      || this.currentMatch === null
+      || this.currentAi === null
+      || series === null
+      || encounter === null
+    ) {
+      return {
+        ok: false,
+        reason: 'NO_ACTIVE_MATCH',
+        route: this.currentRoute,
+        encounter,
+        series: this.currentSeries,
+        floorCompleted: false,
+      };
+    }
+
+    const resolution = resolveEncounter(series, result);
+    this.currentMatch = null;
+    this.currentAi = null;
+    if (resolution.kind === 'next-encounter') {
+      this.currentSeriesState = resolution.series;
+      this.currentRoute = 'FLOOR_INTRO';
+      return {
+        ok: true,
+        route: this.currentRoute,
+        encounter: resolution.encounter,
+        series: { ...resolution.series },
+        floorCompleted: false,
+      };
+    }
+
+    this.currentSeriesState = null;
+    this.currentRoute = routeFor(floor, result);
+    if (resolution.kind === 'series-loss') {
+      return {
+        ok: true,
+        route: this.currentRoute,
+        encounter,
+        series: null,
+        floorCompleted: false,
+      };
+    }
+
+    this.currentProgress = applyFloorResult(this.currentProgress, floor, 'WIN');
+    const save = await this.persistCurrentProgress();
+    return { ...save, encounter, series: null, floorCompleted: true };
+  }
+
+  /** @deprecated Use completeEncounter for the three-opponent floor gauntlet. */
   async completeFloor(result: FloorResult): Promise<TowerSaveResult> {
     const floor = this.currentSelectedFloor;
     if (floor === null) {
@@ -153,6 +282,7 @@ export class TowerController {
     this.currentRoute = routeFor(floor, result);
     this.currentMatch = null;
     this.currentAi = null;
+    this.currentSeriesState = null;
     return this.persistCurrentProgress();
   }
 

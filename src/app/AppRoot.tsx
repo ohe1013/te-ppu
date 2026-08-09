@@ -33,6 +33,8 @@ import { useBoot } from './use-boot';
 export interface MatchRouteViewProps {
   readonly audioPort: AudioPort;
   readonly floor: Floor;
+  readonly encounterIndex: 0 | 1 | 2;
+  readonly wins: 0 | 1 | 2;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => Promise<void>;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -162,10 +164,14 @@ export function AppRoot({
     };
   }, [services.assetManager, services.audioPort]);
 
-  function startFloor(floor: Floor) {
+  function startIntro(
+    intro: Extract<AppRoute, { name: 'floor-intro' }>,
+  ) {
     if (controller === null) return;
     const seed = createMatchSeed();
-    const started = controller.startFloor(floor, seed);
+    const started = intro.encounterIndex === 0
+      ? controller.startFloor(intro.floor, seed)
+      : controller.startEncounter(seed);
     if (started.ok) dispatchRoute({ type: 'start-match', seed });
   }
 
@@ -181,8 +187,11 @@ export function AppRoot({
     completionPendingRef.current = true;
     const completionToken = completionTokenRef.current + 1;
     completionTokenRef.current = completionToken;
-    setResultSavePending(true);
-    const save = controller.completeFloor(toControllerResult(result));
+    const finalWin = route.name === 'match'
+      && result === 'win'
+      && route.encounterIndex === 2;
+    setResultSavePending(finalWin);
+    const save = controller.completeEncounter(toControllerResult(result));
     dispatchRoute({ type: 'match-finished', result });
     refreshControllerView();
     await save;
@@ -234,7 +243,7 @@ export function AppRoot({
             floor={route.floor}
             floorAssets={floorAssets}
             onBack={() => dispatchRoute({ type: 'return-to-tower' })}
-            onStart={() => startFloor(route.floor)}
+            onStart={() => startIntro(route)}
           />
         );
         break;
@@ -242,6 +251,8 @@ export function AppRoot({
         content = renderMatch({
           audioPort: services.audioPort,
           floor: route.floor,
+          encounterIndex: route.encounterIndex,
+          wins: route.wins,
           commonAssets,
           floorAssets,
           seed: route.seed,

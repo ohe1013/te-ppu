@@ -77,6 +77,71 @@ function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): 
 }
 
 describe('tower controller', () => {
+  it('requires three encounter wins and preserves the in-memory series between matches', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    const started = controller.startFloor(1, 10);
+    expect(started).toMatchObject({
+      ok: true,
+      encounter: { index: 0, characterId: 'quartermaster' },
+      series: { floor: 1, encounterIndex: 0, wins: 0 },
+    });
+
+    const first = await controller.completeEncounter('WIN');
+    expect(first).toMatchObject({
+      ok: true,
+      route: 'FLOOR_INTRO',
+      floorCompleted: false,
+      series: { encounterIndex: 1, wins: 1 },
+      encounter: { characterId: 'clock-moth' },
+    });
+    expect(repository.saved).toHaveLength(0);
+
+    const secondMatch = controller.startEncounter(11);
+    expect(secondMatch).toMatchObject({
+      ok: true,
+      match: { matchSeed: 11 },
+      series: { encounterIndex: 1, wins: 1 },
+      encounter: { index: 1, characterId: 'clock-moth' },
+    });
+
+    await controller.completeEncounter('WIN');
+    expect(repository.saved).toHaveLength(0);
+    const thirdMatch = controller.startEncounter(12);
+    expect(thirdMatch).toMatchObject({
+      ok: true,
+      series: { encounterIndex: 2, wins: 2 },
+      encounter: { index: 2, characterId: 'moss-golem' },
+    });
+
+    const final = await controller.completeEncounter('WIN');
+    expect(final).toMatchObject({ ok: true, route: 'RESULT_WIN', floorCompleted: true });
+    expect(repository.saved).toHaveLength(1);
+    expect(controller.currentSeries).toBeNull();
+    expect(controller.match).toBeNull();
+    expect(controller.ai).toBeNull();
+    expect(controller.progress.highestUnlockedFloor).toBe(2);
+  });
+
+  it('clears an intermediate series on loss without persisting unchanged progress', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+    await controller.completeEncounter('WIN');
+    controller.startEncounter(11);
+
+    const result = await controller.completeEncounter('LOSS');
+    expect(result).toMatchObject({
+      ok: true,
+      route: 'RESULT_LOSS',
+      floorCompleted: false,
+      series: null,
+    });
+    expect(controller.currentSeries).toBeNull();
+    expect(repository.saved).toHaveLength(0);
+  });
+
   it('rejects locked floors and starts unlocked floors with the selected AI profile', () => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
@@ -86,7 +151,7 @@ describe('tower controller', () => {
     expect(controller.selectedFloor).toBeNull();
 
     const started = controller.startFloor(1, 10);
-    expect(started).toEqual({ ok: true, match: controller.match });
+    expect(started).toMatchObject({ ok: true, match: controller.match });
     expect(controller.match).toMatchObject({ matchSeed: 10 });
     expect(controller.ai?.side).toBe('opponent');
     expect(controller.selectedFloor).toBe(1);

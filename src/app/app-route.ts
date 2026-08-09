@@ -1,4 +1,5 @@
 import { isFinalFloor, type Floor } from '../progression';
+import type { EncounterIndex } from '../progression';
 
 export type { Floor } from '../progression';
 
@@ -7,9 +8,16 @@ export type MatchResult = 'win' | 'loss' | 'draw';
 export type AppRoute =
   | { name: 'boot' }
   | { name: 'tower' }
-  | { name: 'floor-intro'; floor: Floor }
-  | { name: 'match'; floor: Floor; seed: number }
-  | { name: 'result'; floor: Floor; result: MatchResult }
+  | { name: 'floor-intro'; floor: Floor; encounterIndex: EncounterIndex; wins: 0 | 1 | 2 }
+  | { name: 'match'; floor: Floor; encounterIndex: EncounterIndex; wins: 0 | 1 | 2; seed: number }
+  | {
+      name: 'result';
+      floor: Floor;
+      encounterIndex: EncounterIndex;
+      wins: 0 | 1 | 2;
+      result: MatchResult;
+      seriesComplete: boolean;
+    }
   | { name: 'ending' };
 
 export type AppRouteEvent =
@@ -31,24 +39,50 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
       return event.type === 'boot-ready' ? { name: 'tower' } : route;
     case 'tower':
       return event.type === 'select-floor'
-        ? { name: 'floor-intro', floor: event.floor }
+        ? { name: 'floor-intro', floor: event.floor, encounterIndex: 0, wins: 0 }
         : route;
     case 'floor-intro':
       return event.type === 'start-match'
-        ? { name: 'match', floor: route.floor, seed: event.seed }
+        ? {
+            name: 'match',
+            floor: route.floor,
+            encounterIndex: route.encounterIndex,
+            wins: route.wins,
+            seed: event.seed,
+          }
         : route;
     case 'match':
       return event.type === 'match-finished'
-        ? { name: 'result', floor: route.floor, result: event.result }
+        ? {
+            name: 'result',
+            floor: route.floor,
+            encounterIndex: route.encounterIndex,
+            wins: route.wins,
+            result: event.result,
+            seriesComplete: event.result === 'win' && route.encounterIndex === 2,
+          }
         : route;
     case 'result':
       if (event.type === 'retry') {
-        return { name: 'match', floor: route.floor, seed: event.seed };
+        return {
+          name: 'match',
+          floor: route.floor,
+          encounterIndex: 0,
+          wins: 0,
+          seed: event.seed,
+        };
       }
       if (event.type === 'continue') {
-        return isFinalFloor(route.floor) && route.result === 'win'
-          ? { name: 'ending' }
-          : { name: 'tower' };
+        if (route.result !== 'win') return { name: 'tower' };
+        if (!route.seriesComplete) {
+          return {
+            name: 'floor-intro',
+            floor: route.floor,
+            encounterIndex: (route.encounterIndex + 1) as EncounterIndex,
+            wins: (route.wins + 1) as 0 | 1 | 2,
+          };
+        }
+        return isFinalFloor(route.floor) ? { name: 'ending' } : { name: 'tower' };
       }
       return route;
     case 'ending':

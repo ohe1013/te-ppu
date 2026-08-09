@@ -160,10 +160,11 @@ function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
   return { forIdentity: () => repository };
 }
 
-function TestMatch({ floor, onFinished }: MatchRouteViewProps): ReactNode {
+function TestMatch({ floor, encounterIndex, wins, onFinished }: MatchRouteViewProps): ReactNode {
   return (
     <section data-testid="match-screen">
       <h1>{floor}층 대전</h1>
+      <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
       <button type="button" onClick={() => void onFinished('win')}>finish win</button>
       <button type="button" onClick={() => void onFinished('loss')}>finish loss</button>
       <button type="button" onClick={() => void onFinished('draw')}>finish draw</button>
@@ -206,6 +207,33 @@ async function enterMatch(
   expect(screen.getByTestId('match-screen')).toBeInTheDocument();
 }
 
+async function finishWin(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'finish win' }));
+  await screen.findByTestId('result-screen');
+}
+
+async function continueToNextEncounter(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '계속' }));
+  await screen.findByTestId('floor-intro-screen');
+  await user.click(screen.getByRole('button', { name: '대전 시작' }));
+  await screen.findByTestId('match-screen');
+}
+
+async function completeFloor(
+  user: ReturnType<typeof userEvent.setup>,
+  continueAfterFinal = true,
+) {
+  for (let encounterIndex = 0; encounterIndex < 3; encounterIndex += 1) {
+    await finishWin(user);
+    if (encounterIndex < 2) {
+      await continueToNextEncounter(user);
+    }
+  }
+  if (continueAfterFinal) {
+    await user.click(screen.getByRole('button', { name: '계속' }));
+  }
+}
+
 describe('AppRoot', () => {
   it('persists match progress through the exact repository selected during boot', async () => {
     const user = userEvent.setup();
@@ -229,7 +257,13 @@ describe('AppRoot', () => {
     );
 
     await enterMatch(user, 1, 800);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await finishWin(user);
+    expect(repositoryA.saves).toHaveLength(0);
+    await continueToNextEncounter(user);
+    await finishWin(user);
+    expect(repositoryA.saves).toHaveLength(0);
+    await continueToNextEncounter(user);
+    await finishWin(user);
     await waitFor(() => expect(repositoryA.saves).toHaveLength(1));
     expect(repositoryA.loads).toBe(1);
     expect(repositoryB.loads).toBe(0);
@@ -327,18 +361,27 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await enterMatch(user, 1, 800);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
-    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    await finishWin(user);
 
     await user.click(screen.getByRole('button', { name: '다시 대전' }));
     expect(screen.getByTestId('match-screen')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('0:0');
+    await finishWin(user);
+    await continueToNextEncounter(user);
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('1:1');
+    await finishWin(user);
     await user.click(screen.getByRole('button', { name: '계속' }));
+    await screen.findByTestId('floor-intro-screen');
+    await user.click(screen.getByRole('button', { name: '타워로' }));
 
     expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '2층 선택' })).toBeDisabled();
+
+    await enterMatch(user, 1, 800);
+    await completeFloor(user, false);
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '계속' }));
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
   });
 
@@ -376,8 +419,8 @@ describe('AppRoot', () => {
     await waitFor(() => expect(manager.loadFloor).toHaveBeenCalledWith(5));
     expect(manager.prefetchFloor).not.toHaveBeenCalled();
     await user.click(screen.getByTestId('floor-intro-screen').querySelectorAll('button')[1]!);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await screen.findByTestId('match-screen');
+    await completeFloor(user, false);
     const resultButtons = screen.getByTestId('result-screen').querySelectorAll('button');
     await user.click(resultButtons[resultButtons.length - 1]!);
     const ending = await screen.findByTestId('ending-screen');
@@ -425,14 +468,10 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
     await user.click(screen.getByRole('button', { name: `finish ${result}` }));
     await screen.findByTestId('result-screen');
-    await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '계속' }));
 
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeDisabled();
-    expect(repository.saves[0]).toMatchObject({
-      highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-    });
+    expect(repository.saves).toHaveLength(0);
   });
 
   it('unlocks floors four and five through victories without ending early', async () => {
@@ -441,8 +480,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await enterMatch(user, 3, 450);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '계속' }));
 
@@ -451,8 +489,7 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
 
     await enterMatch(user, 4, 317);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(2));
     await user.click(screen.getByRole('button', { name: '계속' }));
 
@@ -466,8 +503,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await enterMatch(user, 5, 200);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '계속' }));
 
@@ -484,11 +520,11 @@ describe('AppRoot', () => {
       await enterMatch(user, 5, 200);
       await user.click(screen.getByRole('button', { name: `finish ${result}` }));
       await screen.findByTestId('result-screen');
-      await waitFor(() => expect(repository.saves).toHaveLength(1));
       await user.click(screen.getByRole('button', { name: '계속' }));
 
       expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
       expect(screen.queryByTestId('ending-screen')).not.toBeInTheDocument();
+      expect(repository.saves).toHaveLength(0);
     },
   );
 
@@ -504,8 +540,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await enterMatch(user, 1, 800);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await completeFloor(user, false);
     expect(screen.getByText('최고 해금 층: 2')).toBeInTheDocument();
     const retrySave = await screen.findByRole('button', { name: '저장 다시 시도' });
 
@@ -523,8 +558,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await enterMatch(user, 1, 800);
-    await user.click(screen.getByRole('button', { name: 'finish win' }));
-    await screen.findByTestId('result-screen');
+    await completeFloor(user, false);
 
     expect(screen.getByRole('status')).toHaveTextContent('진행 상황 저장 중');
     expect(screen.getByRole('button', { name: '다시 대전' })).toBeDisabled();
