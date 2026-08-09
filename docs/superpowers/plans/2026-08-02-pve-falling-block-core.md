@@ -243,11 +243,11 @@ git commit -m "feat(core): add seven-bag pieces and SRS rotation"
 Create fixtures proving: collision rejects overlap/out-of-range cells; one through four full rows clear simultaneously and rows above preserve order; explicit visible-row deletion shifts all rows above once and does not scan another full row; a garbage cell lands above the topmost cell rather than entering a hole; landing above row zero reports top-out without mutating the input board.
 
 ```ts
-it('does not scan rows after explicit deletion', () => {
+it('does not scan rows after deleting the bottom visible row and prepending an empty row', () => {
   const board = boardWithFullRow(10, boardWithCell(23, 0));
   const result = deleteVisibleRow(board, 19);
   expect(result.deleted).toBe(true);
-  expect(result.board.cells.slice(10 * 10, 11 * 10).every(Boolean)).toBe(true);
+  expect(result.board.cells.slice(11 * 10, 12 * 10).every(Boolean)).toBe(true);
 });
 ```
 

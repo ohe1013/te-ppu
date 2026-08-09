@@ -1,0 +1,887 @@
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { availableParallelism } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import { runAiSimulation } from '../src/sim/aiSimulation';
+import { FLOORS, isFloor, type Floor } from '../src/progression/index';
+
+const VALIDATION_MATCHES_PER_FLOOR = 1_000;
+const HEAP_SAMPLE_INTERVAL = 250;
+// Four isolates kept this allocation-heavy search below 256 MiB and scaled well on
+// Windows; 16 isolates consumed roughly 1 GiB and suffered an external worker kill.
+const MAX_VALIDATION_WORKERS = 4;
+const MAX_HEAP_DELTA = 32 * 1024 * 1024;
+const MAX_LINEAR_BYTES_PER_1_000 = 256 * 1024;
+
+export interface ValidationTask {
+  readonly index: number;
+  readonly floor: Floor;
+  readonly seed: number;
+}
+
+export interface ValidationSelection {
+  readonly floor?: Floor;
+  readonly seedFrom?: number;
+  readonly seedTo?: number;
+}
+
+interface MatchResult extends ValidationTask {
+  readonly outcome: 'player' | 'opponent' | 'draw';
+  readonly rejectedCommands: number;
+  readonly exceededTickLimit: boolean;
+  readonly ticks: number;
+  readonly durationMs: number;
+}
+
+export interface WorkerCounters {
+  localMatches: number;
+  readonly wins: Record<Floor, number>;
+  readonly completedByFloor: Record<Floor, number>;
+  rejectedCommands: number;
+  cappedMatches: number;
+}
+
+export interface WorkerHeapSample {
+  readonly checkpoint: number;
+  readonly localMatches: number;
+  readonly heapUsed: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+}
+
+export interface WorkerCheckpointAggregate {
+  readonly completed: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+  readonly heapUsed: number;
+}
+
+export interface ResultDerivedValidationCounters {
+  readonly totalMatches: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+}
+
+interface HeapSample {
+  readonly matches: number;
+  readonly heapUsed: number;
+}
+
+interface WorkerReport {
+  readonly workerIndex: number;
+  readonly heapSamples: readonly WorkerHeapSample[];
+  readonly finalHeapDelta: number;
+}
+
+type WorkerMessage =
+  | { readonly type: 'match'; readonly result: MatchResult }
+  | ({ readonly type: 'heap'; readonly workerIndex: number } & WorkerHeapSample)
+  | { readonly type: 'tasks-done'; readonly workerIndex: number }
+  | { readonly type: 'done'; readonly workerIndex: number };
+
+type ControlMessage =
+  | { readonly type: 'heap'; readonly checkpoint: number }
+  | { readonly type: 'finish' };
+
+export interface ValidationReport {
+  readonly matchesPerFloor: number;
+  readonly totalMatches: number;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+  readonly rejectedCases: readonly Pick<MatchResult, 'floor' | 'seed' | 'rejectedCommands'>[];
+  readonly cappedCases: readonly Pick<MatchResult, 'floor' | 'seed' | 'ticks'>[];
+  readonly winRates: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly floorDurationsMs: Readonly<Record<Floor, number>>;
+  readonly elapsedMs: number;
+  readonly workers: readonly WorkerReport[];
+  readonly heapSamples: readonly HeapSample[];
+  readonly finalHeapDelta: number;
+  readonly linearBytesPer1_000: number;
+}
+
+export interface ValidationCheckpoint {
+  readonly completed: number;
+  readonly total: number;
+  readonly rejectedCommands: number;
+  readonly cappedMatches: number;
+  readonly wins: Readonly<Record<Floor, number>>;
+  readonly completedByFloor: Readonly<Record<Floor, number>>;
+  readonly heapUsed: number;
+  readonly heapDelta: number;
+}
+
+export interface ValidationProblemCase {
+  readonly floor: Floor;
+  readonly seed: number;
+  readonly ticks: number;
+  readonly rejectedCommands: number;
+  readonly exceededTickLimit: boolean;
+}
+
+export interface ValidationOptions extends ValidationSelection {
+  readonly tickLimit?: number;
+  readonly onProblemCase?: (result: ValidationProblemCase) => void;
+}
+
+export interface ValidationArguments extends ValidationSelection {
+  readonly tickLimit?: number;
+}
+
+function assertPositiveSafeInteger(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive safe integer`);
+  }
+}
+
+const zeroByFloor = (): Record<Floor, number> => ({
+  1: 0,
+  2: 0,
+  3: 0,
+  4: 0,
+  5: 0,
+});
+
+export function updateWorkerCounters(
+  counters: WorkerCounters,
+  result: Pick<MatchResult, 'floor' | 'outcome' | 'rejectedCommands' | 'exceededTickLimit'>,
+): void {
+  counters.localMatches += 1;
+  counters.completedByFloor[result.floor] += 1;
+  if (result.outcome === 'player') counters.wins[result.floor] += 1;
+  counters.rejectedCommands += result.rejectedCommands;
+  if (result.exceededTickLimit) counters.cappedMatches += 1;
+}
+
+export function aggregateWorkerCheckpointSamples(
+  checkpoint: number,
+  samples: ReadonlyMap<number, WorkerHeapSample>,
+): WorkerCheckpointAggregate {
+  const wins = zeroByFloor();
+  const completedByFloor = zeroByFloor();
+  let completed = 0;
+  let rejectedCommands = 0;
+  let cappedMatches = 0;
+  let heapUsed = 0;
+  for (const [workerIndex, sample] of samples) {
+    if (sample.checkpoint !== checkpoint) {
+      throw new Error(
+        `worker ${workerIndex} sample checkpoint ${sample.checkpoint} `
+          + `does not match aggregate checkpoint ${checkpoint}`,
+      );
+    }
+    const sampleCompleted = Object.values(sample.completedByFloor)
+      .reduce((sum, count) => sum + count, 0);
+    if (sampleCompleted !== sample.localMatches) {
+      throw new Error(
+        `worker ${workerIndex} heap checkpoint ${checkpoint} completedByFloor `
+          + `${sampleCompleted} does not match localMatches ${sample.localMatches}`,
+      );
+    }
+    completed += sample.localMatches;
+    for (const floor of FLOORS) {
+      wins[floor] += sample.wins[floor];
+      completedByFloor[floor] += sample.completedByFloor[floor];
+    }
+    rejectedCommands += sample.rejectedCommands;
+    cappedMatches += sample.cappedMatches;
+    heapUsed += sample.heapUsed;
+  }
+  const completedFromFloors = Object.values(completedByFloor)
+    .reduce((sum, count) => sum + count, 0);
+  if (completedFromFloors !== completed) {
+    throw new Error(
+      `heap checkpoint ${checkpoint} completedByFloor ${completedFromFloors} `
+        + `does not match completed ${completed}`,
+    );
+  }
+  return {
+    completed,
+    wins,
+    completedByFloor,
+    rejectedCommands,
+    cappedMatches,
+    heapUsed,
+  };
+}
+
+export function assertFinalWorkerSnapshotCountersMatchResults(
+  checkpoint: number,
+  samples: ReadonlyMap<number, WorkerHeapSample>,
+  expected: ResultDerivedValidationCounters,
+): void {
+  const aggregate = aggregateWorkerCheckpointSamples(checkpoint, samples);
+  const compare = (name: string, actual: number, resultDerived: number) => {
+    if (actual !== resultDerived) {
+      throw new Error(
+        `final worker ${name} ${actual} does not match result-derived ${resultDerived}`,
+      );
+    }
+  };
+  compare('totalMatches', aggregate.completed, expected.totalMatches);
+  for (const floor of FLOORS) {
+    compare(`floor ${floor} wins`, aggregate.wins[floor], expected.wins[floor]);
+    compare(
+      `floor ${floor} completed`,
+      aggregate.completedByFloor[floor],
+      expected.completedByFloor[floor],
+    );
+  }
+  compare('rejectedCommands', aggregate.rejectedCommands, expected.rejectedCommands);
+  compare('cappedMatches', aggregate.cappedMatches, expected.cappedMatches);
+}
+
+export function buildSelectedValidationTasks(
+  matchesPerFloor: number,
+  selection: ValidationSelection,
+): readonly ValidationTask[] {
+  assertPositiveSafeInteger('matchesPerFloor', matchesPerFloor);
+  if (selection.floor !== undefined && !isFloor(selection.floor)) {
+    throw new RangeError(`floor must be one of ${FLOORS.join(', ')}`);
+  }
+  const seedFrom = selection.seedFrom ?? 1;
+  const seedTo = selection.seedTo ?? matchesPerFloor;
+  assertPositiveSafeInteger('seedFrom', seedFrom);
+  assertPositiveSafeInteger('seedTo', seedTo);
+  if (seedFrom > seedTo) throw new RangeError('seedFrom must not exceed seedTo');
+  if (seedTo > matchesPerFloor) {
+    throw new RangeError('seedTo must not exceed matchesPerFloor');
+  }
+
+  const selectedFloors: readonly Floor[] = selection.floor === undefined
+    ? FLOORS
+    : [selection.floor];
+  const tasks: ValidationTask[] = [];
+  for (const floor of selectedFloors) {
+    for (let seed = seedFrom; seed <= seedTo; seed += 1) {
+      tasks.push({ index: tasks.length, floor, seed });
+    }
+  }
+  return tasks;
+}
+
+export function assertExactValidationTaskCoverage(
+  expectedTasks: readonly ValidationTask[],
+  results: readonly Pick<ValidationTask, 'index' | 'floor' | 'seed'>[],
+): void {
+  const resultsByIndex = new Map<number, Pick<ValidationTask, 'index' | 'floor' | 'seed'>>();
+  for (const result of results) {
+    if (resultsByIndex.has(result.index)) {
+      throw new Error(`duplicate validation result index ${result.index}`);
+    }
+    resultsByIndex.set(result.index, result);
+  }
+  const expectedIndices = new Set<number>();
+  for (const expected of expectedTasks) {
+    expectedIndices.add(expected.index);
+    const result = resultsByIndex.get(expected.index);
+    if (result === undefined) {
+      throw new Error(
+        `missing validation result index ${expected.index} `
+          + `(floor ${expected.floor}, seed ${expected.seed})`,
+      );
+    }
+    if (result.floor !== expected.floor || result.seed !== expected.seed) {
+      throw new Error(
+        `validation result index ${expected.index} expected floor ${expected.floor} `
+          + `seed ${expected.seed}, received floor ${result.floor} seed ${result.seed}`,
+      );
+    }
+  }
+  for (const result of results) {
+    if (!expectedIndices.has(result.index)) {
+      throw new Error(
+        `unexpected validation result index ${result.index} `
+          + `(floor ${result.floor}, seed ${result.seed})`,
+      );
+    }
+  }
+}
+
+export function selectValidationTasksForWorker(
+  tasks: readonly ValidationTask[],
+  workerIndex: number,
+  workerCount: number,
+): readonly ValidationTask[] {
+  if (!Number.isSafeInteger(workerIndex) || workerIndex < 0) {
+    throw new RangeError('workerIndex must be a non-negative safe integer');
+  }
+  assertPositiveSafeInteger('workerCount', workerCount);
+  if (workerIndex >= workerCount) {
+    throw new RangeError('workerIndex must be less than workerCount');
+  }
+  return tasks.filter(({ index }) => index % workerCount === workerIndex);
+}
+
+export function recordValidationWorkerTasksDone(
+  doneWorkers: Set<number>,
+  workerIndex: number,
+  workerCount: number,
+): boolean {
+  if (!Number.isSafeInteger(workerIndex) || workerIndex < 0) {
+    throw new RangeError('workerIndex must be a non-negative safe integer');
+  }
+  assertPositiveSafeInteger('workerCount', workerCount);
+  if (workerIndex >= workerCount) {
+    throw new RangeError('workerIndex must be less than workerCount');
+  }
+  if (doneWorkers.has(workerIndex)) return false;
+  doneWorkers.add(workerIndex);
+  return doneWorkers.size === workerCount;
+}
+
+function collectHeap(): number {
+  if (global.gc === undefined) throw new Error('validate:ai requires Node --expose-gc');
+  global.gc();
+  return process.memoryUsage().heapUsed;
+}
+
+function linearBytesPer1_000(samples: readonly HeapSample[]): number {
+  if (samples.length < 2) return 0;
+  const meanX = samples.reduce((sum, sample) => sum + sample.matches, 0) / samples.length;
+  const meanY = samples.reduce((sum, sample) => sum + sample.heapUsed, 0) / samples.length;
+  let numerator = 0;
+  let denominator = 0;
+  for (const sample of samples) {
+    const x = sample.matches - meanX;
+    numerator += x * (sample.heapUsed - meanY);
+    denominator += x * x;
+  }
+  return denominator === 0 ? 0 : (numerator / denominator) * 1_000;
+}
+
+export function assertCompleteHeapCheckpointCoverage(
+  requestedCheckpoints: readonly number[],
+  receivedCounts: ReadonlyMap<number, number>,
+  workerCount: number,
+): void {
+  for (const checkpoint of requestedCheckpoints) {
+    const received = receivedCounts.get(checkpoint) ?? 0;
+    if (received !== workerCount) {
+      throw new Error(
+        `heap checkpoint ${checkpoint} received ${received} of ${workerCount} worker samples`,
+      );
+    }
+  }
+}
+
+function emit(message: WorkerMessage): void {
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
+async function runWorkerProcess(options: {
+  readonly workerIndex: number;
+  readonly workerCount: number;
+  readonly matchesPerFloor: number;
+  readonly totalTasks: number;
+  readonly floor?: Floor;
+  readonly seedFrom?: number;
+  readonly seedTo?: number;
+  readonly tickLimit?: number;
+}): Promise<void> {
+  assertPositiveSafeInteger('totalTasks', options.totalTasks);
+  if (options.tickLimit !== undefined) assertPositiveSafeInteger('tickLimit', options.tickLimit);
+  const selected = buildSelectedValidationTasks(options.matchesPerFloor, options);
+  if (selected.length !== options.totalTasks) {
+    throw new Error(
+      `worker totalTasks ${options.totalTasks} does not match selected task count ${selected.length}`,
+    );
+  }
+  const tasks = selectValidationTasksForWorker(
+    selected,
+    options.workerIndex,
+    options.workerCount,
+  );
+  const controls: ControlMessage[] = [];
+  let wake: (() => void) | undefined;
+  const controlsInput = createInterface({ input: process.stdin });
+  controlsInput.on('line', (line) => {
+    controls.push(JSON.parse(line) as ControlMessage);
+    wake?.();
+    wake = undefined;
+  });
+  controlsInput.on('close', () => {
+    controls.push({ type: 'finish' });
+    wake?.();
+    wake = undefined;
+  });
+  const counters: WorkerCounters = {
+    localMatches: 0,
+    wins: zeroByFloor(),
+    completedByFloor: zeroByFloor(),
+    rejectedCommands: 0,
+    cappedMatches: 0,
+  };
+  const drainControls = (): boolean => {
+    let shouldExit = false;
+    for (const control of controls.splice(0)) {
+      if (control.type === 'finish') {
+        shouldExit = true;
+      } else {
+        emit({
+          type: 'heap',
+          workerIndex: options.workerIndex,
+          checkpoint: control.checkpoint,
+          localMatches: counters.localMatches,
+          heapUsed: collectHeap(),
+          wins: { ...counters.wins },
+          completedByFloor: { ...counters.completedByFloor },
+          rejectedCommands: counters.rejectedCommands,
+          cappedMatches: counters.cappedMatches,
+        });
+        if (control.checkpoint === options.totalTasks) shouldExit = true;
+      }
+    }
+    return shouldExit;
+  };
+
+  if (tasks[0] !== undefined) {
+    runAiSimulation({ seed: tasks[0].seed, floor: tasks[0].floor, tickLimit: 240 });
+  }
+  emit({
+    type: 'heap',
+    workerIndex: options.workerIndex,
+    checkpoint: 0,
+    localMatches: 0,
+    heapUsed: collectHeap(),
+    wins: { ...counters.wins },
+    completedByFloor: { ...counters.completedByFloor },
+    rejectedCommands: counters.rejectedCommands,
+    cappedMatches: counters.cappedMatches,
+  });
+
+  let finalCheckpointHandled = false;
+  for (const task of tasks) {
+    const started = performance.now();
+    const summary = runAiSimulation({
+      seed: task.seed,
+      floor: task.floor,
+      ...(options.tickLimit === undefined ? {} : { tickLimit: options.tickLimit }),
+    });
+    updateWorkerCounters(counters, {
+      floor: task.floor,
+      outcome: summary.outcome,
+      rejectedCommands: summary.rejectedCommands,
+      exceededTickLimit: summary.exceededTickLimit,
+    });
+    emit({
+      type: 'match',
+      result: {
+        ...task,
+        outcome: summary.outcome,
+        rejectedCommands: summary.rejectedCommands,
+        exceededTickLimit: summary.exceededTickLimit,
+        ticks: summary.ticks,
+        durationMs: performance.now() - started,
+      },
+    });
+    await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
+    finalCheckpointHandled = drainControls() || finalCheckpointHandled;
+  }
+
+  emit({ type: 'tasks-done', workerIndex: options.workerIndex });
+  while (!finalCheckpointHandled) {
+    if (drainControls()) break;
+    await new Promise<void>((resolveControl) => { wake = resolveControl; });
+  }
+  controlsInput.close();
+  process.stdin.pause();
+  emit({ type: 'done', workerIndex: options.workerIndex });
+}
+
+interface WorkerHandle {
+  readonly workerIndex: number;
+  readonly child: ChildProcessWithoutNullStreams;
+  readonly completion: Promise<void>;
+  readonly heapSamples: WorkerHeapSample[];
+}
+
+function launchWorker(
+  options: {
+    readonly workerIndex: number;
+    readonly workerCount: number;
+    readonly matchesPerFloor: number;
+    readonly totalTasks: number;
+    readonly floor?: Floor;
+    readonly seedFrom?: number;
+    readonly seedTo?: number;
+    readonly tickLimit?: number;
+  },
+  onMessage: (message: WorkerMessage) => void,
+): WorkerHandle {
+  const child = spawn(process.execPath, [
+    '--expose-gc',
+    '--import',
+    'tsx',
+    fileURLToPath(import.meta.url),
+    '--worker',
+    JSON.stringify(options),
+  ], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, AI_VALIDATION_WORKER: '1' },
+  });
+  const heapSamples: WorkerHeapSample[] = [];
+  const completion = new Promise<void>((resolveWorker, rejectWorker) => {
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    createInterface({ input: child.stdout }).on('line', (line) => {
+      try {
+        const message = JSON.parse(line) as WorkerMessage;
+        if (message.type === 'heap') heapSamples.push(message);
+        onMessage(message);
+      } catch (error) {
+        rejectWorker(new Error(`worker ${options.workerIndex} invalid JSON: ${String(error)}\n${line}`));
+      }
+    });
+    child.on('error', rejectWorker);
+    child.on('close', (code) => {
+      if (code === 0) resolveWorker();
+      else rejectWorker(new Error(`validation worker ${options.workerIndex} exited ${code}: ${stderr}`));
+    });
+  });
+  return { workerIndex: options.workerIndex, child, completion, heapSamples };
+}
+
+function sendControl(handle: WorkerHandle, control: ControlMessage): void {
+  handle.child.stdin.write(`${JSON.stringify(control)}\n`);
+}
+
+export async function runValidation(
+  matchesPerFloor: number,
+  onCheckpoint?: (checkpoint: ValidationCheckpoint) => void,
+  options: ValidationOptions = {},
+): Promise<ValidationReport> {
+  assertPositiveSafeInteger('matchesPerFloor', matchesPerFloor);
+  if (options.tickLimit !== undefined) assertPositiveSafeInteger('tickLimit', options.tickLimit);
+  const tasks = buildSelectedValidationTasks(matchesPerFloor, options);
+  if (tasks.length === 0) throw new RangeError('validation selection must contain at least one match');
+  const workerCount = Math.min(
+    MAX_VALIDATION_WORKERS,
+    availableParallelism(),
+    tasks.length,
+  );
+  const total = tasks.length;
+  const started = performance.now();
+  const results: MatchResult[] = [];
+  const heaps = new Map<number, Map<number, WorkerHeapSample>>();
+  const requestedCheckpoints = new Set<number>([0]);
+  const doneWorkers = new Set<number>();
+  const handles: WorkerHandle[] = [];
+
+  const aggregateCheckpoint = (checkpoint: number) => {
+    const checkpointHeaps = heaps.get(checkpoint);
+    if (checkpointHeaps?.size !== workerCount) return;
+    const baselineHeaps = heaps.get(0);
+    if (baselineHeaps?.size !== workerCount) return;
+    const aggregate = aggregateWorkerCheckpointSamples(checkpoint, checkpointHeaps);
+    const baseline = [...baselineHeaps.values()]
+      .reduce((sum, sample) => sum + sample.heapUsed, 0);
+    onCheckpoint?.({
+      completed: aggregate.completed,
+      total,
+      rejectedCommands: aggregate.rejectedCommands,
+      cappedMatches: aggregate.cappedMatches,
+      wins: aggregate.wins,
+      completedByFloor: aggregate.completedByFloor,
+      heapUsed: aggregate.heapUsed,
+      heapDelta: aggregate.heapUsed - baseline,
+    });
+  };
+
+  const requestHeap = (checkpoint: number) => {
+    if (requestedCheckpoints.has(checkpoint)) return;
+    requestedCheckpoints.add(checkpoint);
+    for (const handle of handles) sendControl(handle, { type: 'heap', checkpoint });
+  };
+
+  const onMessage = (message: WorkerMessage) => {
+    if (message.type === 'match') {
+      results.push(message.result);
+      if (message.result.rejectedCommands > 0 || message.result.exceededTickLimit) {
+        options.onProblemCase?.({
+          floor: message.result.floor,
+          seed: message.result.seed,
+          ticks: message.result.ticks,
+          rejectedCommands: message.result.rejectedCommands,
+          exceededTickLimit: message.result.exceededTickLimit,
+        });
+      }
+      const completed = results.length;
+      if (completed < total && completed % HEAP_SAMPLE_INTERVAL === 0) requestHeap(completed);
+      return;
+    }
+    if (message.type === 'heap') {
+      const checkpoint = heaps.get(message.checkpoint) ?? new Map<number, WorkerHeapSample>();
+      checkpoint.set(message.workerIndex, message);
+      heaps.set(message.checkpoint, checkpoint);
+      aggregateCheckpoint(message.checkpoint);
+      return;
+    }
+    if (message.type === 'tasks-done'
+      && recordValidationWorkerTasksDone(doneWorkers, message.workerIndex, workerCount)) {
+      requestHeap(total);
+    }
+  };
+
+  for (let workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
+    handles.push(launchWorker({
+      workerIndex,
+      workerCount,
+      matchesPerFloor,
+      totalTasks: total,
+      ...(options.floor === undefined ? {} : { floor: options.floor }),
+      ...(options.seedFrom === undefined ? {} : { seedFrom: options.seedFrom }),
+      ...(options.seedTo === undefined ? {} : { seedTo: options.seedTo }),
+      ...(options.tickLimit === undefined ? {} : { tickLimit: options.tickLimit }),
+    }, onMessage));
+  }
+  try {
+    await Promise.all(handles.map(({ completion }) => completion));
+  } catch (error) {
+    for (const handle of handles) {
+      if (!handle.child.killed) handle.child.kill();
+    }
+    throw error;
+  }
+  assertCompleteHeapCheckpointCoverage(
+    [...requestedCheckpoints],
+    new Map([...heaps].map(([checkpoint, samples]) => [checkpoint, samples.size])),
+    workerCount,
+  );
+
+  const ordered = results.sort((left, right) => left.index - right.index);
+  assertExactValidationTaskCoverage(tasks, ordered);
+  const wins = zeroByFloor();
+  const completedByFloor = zeroByFloor();
+  const floorDurationsMs = zeroByFloor();
+  let rejectedCommands = 0;
+  let cappedMatches = 0;
+  for (const result of ordered) {
+    completedByFloor[result.floor] += 1;
+    if (result.outcome === 'player') wins[result.floor] += 1;
+    rejectedCommands += result.rejectedCommands;
+    if (result.exceededTickLimit) cappedMatches += 1;
+    floorDurationsMs[result.floor] += result.durationMs;
+  }
+  assertFinalWorkerSnapshotCountersMatchResults(total, heaps.get(total)!, {
+    totalMatches: ordered.length,
+    wins,
+    completedByFloor,
+    rejectedCommands,
+    cappedMatches,
+  });
+  const heapSamples = [...heaps.entries()]
+    .filter(([, values]) => values.size === workerCount)
+    .map(([, values]) => ({
+      matches: [...values.values()].reduce((sum, sample) => sum + sample.localMatches, 0),
+      heapUsed: [...values.values()].reduce((sum, sample) => sum + sample.heapUsed, 0),
+    }))
+    .sort((left, right) => left.matches - right.matches);
+  const workers = handles.map((handle): WorkerReport => {
+    const samples = handle.heapSamples.sort((left, right) => left.checkpoint - right.checkpoint);
+    return {
+      workerIndex: handle.workerIndex,
+      heapSamples: samples,
+      finalHeapDelta: samples.at(-1)!.heapUsed - samples[0]!.heapUsed,
+    };
+  });
+  const winRates = zeroByFloor();
+  for (const floor of FLOORS) {
+    const completed = completedByFloor[floor];
+    winRates[floor] = completed === 0 ? 0 : wins[floor] / completed;
+  }
+  return {
+    matchesPerFloor: Math.max(...Object.values(completedByFloor)),
+    totalMatches: ordered.length,
+    rejectedCommands,
+    cappedMatches,
+    rejectedCases: ordered
+      .filter(({ rejectedCommands: rejected }) => rejected > 0)
+      .map(({ floor, seed, rejectedCommands: rejected }) => ({ floor, seed, rejectedCommands: rejected })),
+    cappedCases: ordered
+      .filter(({ exceededTickLimit }) => exceededTickLimit)
+      .map(({ floor, seed, ticks }) => ({ floor, seed, ticks })),
+    winRates,
+    completedByFloor,
+    floorDurationsMs,
+    elapsedMs: performance.now() - started,
+    workers,
+    heapSamples,
+    finalHeapDelta: heapSamples.at(-1)!.heapUsed - heapSamples[0]!.heapUsed,
+    linearBytesPer1_000: linearBytesPer1_000(heapSamples),
+  };
+}
+
+export function assertCanonicalFloorMatchCounts(
+  completedByFloor: Readonly<Record<Floor, number>>,
+): void {
+  for (const floor of FLOORS) {
+    if (completedByFloor[floor] !== VALIDATION_MATCHES_PER_FLOOR) {
+      throw new Error(
+        `expected ${VALIDATION_MATCHES_PER_FLOOR} floor ${floor} matches, `
+          + `received ${completedByFloor[floor]}`,
+      );
+    }
+  }
+}
+
+function assertValidation(report: ValidationReport): void {
+  const expectedMatches = VALIDATION_MATCHES_PER_FLOOR * FLOORS.length;
+  if (report.totalMatches !== expectedMatches) {
+    throw new Error(`expected ${expectedMatches} matches, received ${report.totalMatches}`);
+  }
+  assertCanonicalFloorMatchCounts(report.completedByFloor);
+  if (report.rejectedCommands !== 0) {
+    throw new Error(`expected zero rejected commands: ${JSON.stringify(report.rejectedCases)}`);
+  }
+  if (report.cappedMatches !== 0) {
+    throw new Error(`expected zero capped matches: ${JSON.stringify(report.cappedCases)}`);
+  }
+  for (let index = 1; index < FLOORS.length; index += 1) {
+    const lower = FLOORS[index - 1]!;
+    const upper = FLOORS[index]!;
+    if (!(report.winRates[lower] < report.winRates[upper])) {
+      throw new Error(`win rates are not strictly ordered: ${JSON.stringify(report.winRates)}`);
+    }
+  }
+  if (report.finalHeapDelta > MAX_HEAP_DELTA) {
+    throw new Error(`aggregate heap delta ${report.finalHeapDelta} exceeds 32 MiB`);
+  }
+  if (report.linearBytesPer1_000 > MAX_LINEAR_BYTES_PER_1_000) {
+    throw new Error(`linear heap growth ${report.linearBytesPer1_000} exceeds 256 KiB/1000`);
+  }
+  for (const worker of report.workers) {
+    if (worker.finalHeapDelta > MAX_HEAP_DELTA) {
+      throw new Error(`worker ${worker.workerIndex} heap delta ${worker.finalHeapDelta} exceeds 32 MiB`);
+    }
+  }
+}
+
+function formatRate(wins: number, completed: number): string {
+  return completed === 0 ? '-' : `${(wins / completed * 100).toFixed(1)}%`;
+}
+
+const VALIDATION_ARGUMENT_NAMES = [
+  '--floor',
+  '--seed-from',
+  '--seed-to',
+  '--tick-limit',
+] as const;
+
+type ValidationArgumentName = typeof VALIDATION_ARGUMENT_NAMES[number];
+
+export function parseValidationArguments(args: readonly string[]): ValidationArguments {
+  const values: Partial<Record<ValidationArgumentName, number>> = {};
+  const seen = new Set<ValidationArgumentName>();
+  for (let index = 0; index < args.length; index += 2) {
+    const argument = args[index]!;
+    if (!argument.startsWith('--')) {
+      throw new Error(`unexpected positional argument: ${argument}`);
+    }
+    if (argument.includes('=')) {
+      throw new Error(`equals syntax is not supported: ${argument}`);
+    }
+    if (!VALIDATION_ARGUMENT_NAMES.includes(argument as ValidationArgumentName)) {
+      throw new Error(`unknown argument: ${argument}`);
+    }
+    const name = argument as ValidationArgumentName;
+    if (seen.has(name)) throw new Error(`duplicate argument: ${name}`);
+    const raw = args[index + 1];
+    if (raw === undefined || raw.startsWith('--')) {
+      throw new Error(`missing value for argument: ${name}`);
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new RangeError(`${name} must be a positive safe integer`);
+    }
+    seen.add(name);
+    values[name] = value;
+  }
+
+  const floorValue = values['--floor'];
+  if (floorValue !== undefined && !isFloor(floorValue)) {
+    throw new RangeError(`--floor must be one of ${FLOORS.join(', ')}`);
+  }
+  const seedFrom = values['--seed-from'];
+  const seedTo = values['--seed-to'];
+  const filtered = floorValue !== undefined || seedFrom !== undefined || seedTo !== undefined;
+  if (filtered && (floorValue === undefined || seedFrom === undefined || seedTo === undefined)) {
+    throw new Error('filtered validation requires --floor, --seed-from, and --seed-to');
+  }
+  if (seedFrom !== undefined && seedTo !== undefined && seedFrom > seedTo) {
+    throw new RangeError('--seed-from must not exceed --seed-to');
+  }
+  return {
+    ...(floorValue === undefined ? {} : { floor: floorValue }),
+    ...(seedFrom === undefined ? {} : { seedFrom }),
+    ...(seedTo === undefined ? {} : { seedTo }),
+    ...(values['--tick-limit'] === undefined ? {} : { tickLimit: values['--tick-limit'] }),
+  };
+}
+
+function logProblemCase(problem: ValidationProblemCase): void {
+  console.error(
+    `case=floor${problem.floor}/seed${problem.seed}; rejected=${problem.rejectedCommands}; `
+      + `capped=${problem.exceededTickLimit ? 1 : 0}; ticks=${problem.ticks}`,
+  );
+}
+
+async function main(): Promise<void> {
+  const { floor, seedFrom, seedTo, tickLimit } = parseValidationArguments(process.argv.slice(2));
+  const filtered = floor !== undefined || seedFrom !== undefined || seedTo !== undefined;
+  const matchesPerFloor = filtered ? seedTo! : VALIDATION_MATCHES_PER_FLOOR;
+  const report = await runValidation(matchesPerFloor, (checkpoint) => {
+    const rates = FLOORS.map((floor) =>
+      formatRate(checkpoint.wins[floor], checkpoint.completedByFloor[floor]));
+    console.error(
+      `checkpoint=${checkpoint.completed}/${checkpoint.total}; rates=${rates.join('/')}; `
+        + `rejected=${checkpoint.rejectedCommands}; capped=${checkpoint.cappedMatches}; `
+        + `heapDeltaMiB=${(checkpoint.heapDelta / 1024 / 1024).toFixed(2)}`,
+    );
+  }, {
+    ...(floor === undefined ? {} : { floor }),
+    ...(seedFrom === undefined ? {} : { seedFrom }),
+    ...(seedTo === undefined ? {} : { seedTo }),
+    ...(tickLimit === undefined ? {} : { tickLimit }),
+    onProblemCase: logProblemCase,
+  });
+  if (filtered) {
+    console.log(
+      `filtered matches=${report.totalMatches}; floor=${floor}; seeds=${seedFrom}-${seedTo}; `
+        + `rejected=${report.rejectedCommands}; capped=${report.cappedMatches}`,
+    );
+    if (report.rejectedCommands !== 0 || report.cappedMatches !== 0) {
+      throw new Error('filtered validation found rejected or capped matches');
+    }
+    return;
+  }
+  assertValidation(report);
+  const rates = FLOORS.map((floor) => (report.winRates[floor] * 100).toFixed(1));
+  const ordering = FLOORS.map((floor) => `floor${floor}`).join(' < ');
+  console.log(
+    `${report.totalMatches} matches; rejected=0; capped=0; ${ordering}; heap=PASS; `
+      + `wins=${rates.join('%<')}%; elapsed=${(report.elapsedMs / 1000).toFixed(1)}s`,
+  );
+}
+
+const isExecutedScript = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+if (isExecutedScript) {
+  const args = process.argv.slice(2);
+  if (process.env.AI_VALIDATION_WORKER === '1') {
+    if (args.length !== 2 || args[0] !== '--worker') {
+      throw new Error('validation worker requires exactly --worker <json-options>');
+    }
+    await runWorkerProcess(JSON.parse(args[1]!));
+  } else {
+    await main();
+  }
+}

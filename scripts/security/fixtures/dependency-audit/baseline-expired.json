@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "owner": "fixture-maintainers",
+    "reviewedOn": "1999-12-01",
+    "expiresOn": "2000-01-01",
+    "scope": "private-prototype-only",
+    "status": "PENDING_UPSTREAM"
+  },
+  "vulnerabilities": {
+    "alpha": {
+      "severity": "critical",
+      "isDirect": false,
+      "range": "<=1.0.0",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-test-alpha",
+          "source": 1001,
+          "dependency": "alpha",
+          "title": "fixture alpha advisory",
+          "url": "https://github.com/advisories/GHSA-test-alpha",
+          "severity": "critical",
+          "cwe": ["CWE-100"],
+          "cvss": { "score": 9.1, "vectorString": "CVSS:3.1/AV:N" },
+          "range": "<=1.0.0"
+        }
+      ],
+      "effects": ["tool"],
+      "nodes": [
+        { "path": "node_modules/alpha", "version": "1.0.0" }
+      ],
+      "fixAvailable": false
+    },
+    "beta": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=2.0.0",
+      "via": [
+        { "kind": "dependency", "name": "alpha" }
+      ],
+      "effects": ["tool"],
+      "nodes": [
+        { "path": "node_modules/beta", "version": "2.0.0" }
+      ],
+      "fixAvailable": false
+    }
+  }
+}

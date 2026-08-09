@@ -1,0 +1,1080 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "owner": "te-ppu prototype maintainers",
+    "reviewedOn": "2026-08-02",
+    "expiresOn": "2026-09-02",
+    "scope": "private-prototype-only",
+    "status": "PENDING_UPSTREAM"
+  },
+  "vulnerabilities": {
+    "@apps-in-toss/analytics": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "<=0.0.0-dev.1765960737704 || >=1.0.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/react-native"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/analytics",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/cli": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "2.0.0 - 2.10.8",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/plugins"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/web-config"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/framework"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/cli",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/framework": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "<=0.0.0-dev.1765960737704 || >=1.0.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/analytics"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/cli"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/native-modules"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/plugins"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/react-native"
+        },
+        {
+          "kind": "dependency",
+          "name": "@toss/tds-react-native"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/framework",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/native-modules": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/react-native"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/framework"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/native-modules",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/plugin-compat": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        },
+        {
+          "kind": "dependency",
+          "name": "react-native"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/plugins"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/plugins": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "<=0.0.0-dev.1765960737704 || >=1.0.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/plugin-compat"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-micro-frontend"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-sentry"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugins",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@apps-in-toss/web-config": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@babel/core"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/cli",
+        "@apps-in-toss/web-framework"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/web-config",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@apps-in-toss/web-framework": {
+      "severity": "low",
+      "isDirect": true,
+      "range": "<=2.10.8",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/cli"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/framework"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/plugins"
+        },
+        {
+          "kind": "dependency",
+          "name": "@apps-in-toss/web-config"
+        },
+        {
+          "kind": "dependency",
+          "name": "@babel/core"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/cli"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/mpack"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/react-native"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/web-framework",
+          "version": "2.10.8"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@babel/core": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "<=7.29.0",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-4x5r-pxfx-6jf8",
+          "source": 1123528,
+          "dependency": "@babel/core",
+          "title": "@babel/core: Arbitrary File Read via sourceMappingURL Comment",
+          "url": "https://github.com/advisories/GHSA-4x5r-pxfx-6jf8",
+          "severity": "low",
+          "cwe": [
+            "CWE-200",
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 3.2,
+            "vectorString": "CVSS:3.1/AV:L/AC:H/PR:N/UI:N/S:C/C:L/I:N/A:N"
+          },
+          "range": "<=7.29.0"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/web-config",
+        "@apps-in-toss/web-framework",
+        "@granite-js/mpack"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@babel/core",
+          "version": "7.23.9"
+        },
+        {
+          "path": "node_modules/@granite-js/mpack/node_modules/@babel/core",
+          "version": "7.28.5"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@fastify/ajv-compiler": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "3.1.0 - 3.6.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "fast-uri"
+        }
+      ],
+      "effects": [
+        "fastify"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@fastify/ajv-compiler",
+          "version": "3.6.0"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@fastify/fast-json-stringify-compiler": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "3.0.0 - 5.0.0-pre.fv5.1",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "fast-json-stringify"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@fastify/fast-json-stringify-compiler",
+          "version": "4.3.0"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@fastify/middie": {
+      "severity": "critical",
+      "isDirect": false,
+      "range": "<=9.3.1",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-8p85-9qpw-fwgw",
+          "source": 1114184,
+          "dependency": "@fastify/middie",
+          "title": "@fastify/middie has Improper Path Normalization when Using Path-Scoped Middleware",
+          "url": "https://github.com/advisories/GHSA-8p85-9qpw-fwgw",
+          "severity": "high",
+          "cwe": [
+            "CWE-20"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": "<9.2.0"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-v9ww-2j6r-98q6",
+          "source": 1116761,
+          "dependency": "@fastify/middie",
+          "title": "@fastify/middie vulnerable to middleware bypass via deprecated ignoreDuplicateSlashes option",
+          "url": "https://github.com/advisories/GHSA-v9ww-2j6r-98q6",
+          "severity": "high",
+          "cwe": [
+            "CWE-436"
+          ],
+          "cvss": {
+            "score": 7.4,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+          },
+          "range": "<=9.3.1"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-cxrg-g7r8-w69p",
+          "source": 1112322,
+          "dependency": "@fastify/middie",
+          "title": "Fastify Middie Middleware Path Bypass",
+          "url": "https://github.com/advisories/GHSA-cxrg-g7r8-w69p",
+          "severity": "high",
+          "cwe": [
+            "CWE-177"
+          ],
+          "cvss": {
+            "score": 8.4,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:C/C:H/I:H/A:L"
+          },
+          "range": "<=9.0.3"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-72c6-fx6q-fr5w",
+          "source": 1116760,
+          "dependency": "@fastify/middie",
+          "title": "@fastify/middie vulnerable to middleware authentication bypass in child plugin scopes",
+          "url": "https://github.com/advisories/GHSA-72c6-fx6q-fr5w",
+          "severity": "critical",
+          "cwe": [
+            "CWE-436"
+          ],
+          "cvss": {
+            "score": 9.1,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+          },
+          "range": "<=9.3.1"
+        }
+      ],
+      "effects": [
+        "@granite-js/mpack"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@fastify/middie",
+          "version": "8.3.0"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@granite-js/cli": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/mpack"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/cli",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@granite-js/mpack": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@babel/core"
+        },
+        {
+          "kind": "dependency",
+          "name": "@fastify/middie"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        },
+        {
+          "kind": "dependency",
+          "name": "fastify"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/web-framework",
+        "@granite-js/cli",
+        "@granite-js/react-native"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/mpack",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@granite-js/plugin-core": {
+      "severity": "low",
+      "isDirect": false,
+      "range": ">=0.1.9",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "fastify"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/plugin-compat",
+        "@apps-in-toss/plugins",
+        "@granite-js/cli",
+        "@granite-js/mpack",
+        "@granite-js/plugin-micro-frontend",
+        "@granite-js/plugin-sentry",
+        "@granite-js/react-native"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/plugin-core",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "@granite-js/plugin-micro-frontend": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "0.0.0-dev-20250725013859 || >=0.1.9",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/plugin-micro-frontend",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@granite-js/plugin-sentry": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "0.0.0-dev-20250725013859 || >=0.1.9",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/plugins"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/plugin-sentry",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@granite-js/react-native": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/cli"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/mpack"
+        },
+        {
+          "kind": "dependency",
+          "name": "@granite-js/plugin-core"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/analytics",
+        "@apps-in-toss/framework",
+        "@apps-in-toss/native-modules",
+        "@toss/tds-react-native"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@granite-js/react-native",
+          "version": "1.0.20"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@react-native-community/cli": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "4.13.0 - 9.3.5 || 10.2.0 - 13.5.2",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli-doctor"
+        },
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli-doctor"
+        },
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli-hermes"
+        }
+      ],
+      "effects": [
+        "react-native"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/react-native-0.72.6/node_modules/@react-native-community/cli",
+          "version": "11.3.7"
+        },
+        {
+          "path": "node_modules/@react-native-community/cli",
+          "version": "11.4.1"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@react-native-community/cli-doctor": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=13.5.2",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli-platform-ios"
+        },
+        {
+          "kind": "dependency",
+          "name": "ip"
+        }
+      ],
+      "effects": [
+        "@react-native-community/cli"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/@react-native-community/cli-doctor",
+          "version": "11.3.7"
+        },
+        {
+          "path": "node_modules/@react-native-community/cli-doctor",
+          "version": "11.4.1"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@react-native-community/cli-hermes": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=10.2.0 || 11.0.0-alpha.0 - 11.4.0 || 12.0.0-alpha.0 - 12.3.5 || 13.0.0 - 13.5.2",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "ip"
+        }
+      ],
+      "effects": [
+        "@react-native-community/cli"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/@react-native-community/cli-hermes",
+          "version": "11.3.7"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@react-native-community/cli-platform-ios": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "10.2.0 - 13.1.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "fast-xml-parser"
+        }
+      ],
+      "effects": [
+        "@react-native-community/cli-doctor",
+        "react-native"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/@react-native-community/cli-doctor/node_modules/@react-native-community/cli-platform-ios",
+          "version": "11.3.7"
+        },
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/react-native-0.72.6/node_modules/@react-native-community/cli-platform-ios",
+          "version": "11.3.7"
+        },
+        {
+          "path": "node_modules/@react-native-community/cli-platform-ios",
+          "version": "11.4.1"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "@toss/tds-react-native": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@granite-js/react-native"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/framework"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@toss/tds-react-native",
+          "version": "2.0.4"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "esbuild": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "0.27.3 - 0.28.0",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-g7r4-m6w7-qqqr",
+          "source": 1120680,
+          "dependency": "esbuild",
+          "title": "esbuild allows arbitrary file read when running the development server on Windows",
+          "url": "https://github.com/advisories/GHSA-g7r4-m6w7-qqqr",
+          "severity": "low",
+          "cwe": [
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 2.5,
+            "vectorString": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N"
+          },
+          "range": ">=0.27.3 <0.28.1"
+        }
+      ],
+      "effects": [],
+      "nodes": [
+        {
+          "path": "node_modules/tsup/node_modules/esbuild",
+          "version": "0.27.7"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "fast-json-stringify": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "3.1.0 - 6.0.0",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "fast-uri"
+        }
+      ],
+      "effects": [
+        "@fastify/fast-json-stringify-compiler"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/fast-json-stringify",
+          "version": "5.16.1"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "fast-uri": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=3.1.1",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-q3j6-qgpj-74h6",
+          "source": 1117870,
+          "dependency": "fast-uri",
+          "title": "fast-uri vulnerable to path traversal via percent-encoded dot segments",
+          "url": "https://github.com/advisories/GHSA-q3j6-qgpj-74h6",
+          "severity": "high",
+          "cwe": [
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<=3.1.0"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-v39h-62p7-jpjc",
+          "source": 1117884,
+          "dependency": "fast-uri",
+          "title": "fast-uri vulnerable to host confusion via percent-encoded authority delimiters",
+          "url": "https://github.com/advisories/GHSA-v39h-62p7-jpjc",
+          "severity": "high",
+          "cwe": [
+            "CWE-436"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<=3.1.1"
+        }
+      ],
+      "effects": [
+        "@fastify/ajv-compiler",
+        "fast-json-stringify"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/fast-uri",
+          "version": "2.4.4"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "fast-xml-parser": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "<5.7.0",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-gh4j-gqv2-49f6",
+          "source": 1117911,
+          "dependency": "fast-xml-parser",
+          "title": "fast-xml-parser XMLBuilder: XML Comment and CDATA Injection via Unescaped Delimiters",
+          "url": "https://github.com/advisories/GHSA-gh4j-gqv2-49f6",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-91"
+          ],
+          "cvss": {
+            "score": 6.1,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+          },
+          "range": "<5.7.0"
+        }
+      ],
+      "effects": [
+        "@react-native-community/cli-platform-ios"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/fast-xml-parser",
+          "version": "4.5.7"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "fastify": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=5.8.2",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-mrq3-vjjr-p77c",
+          "source": 1112876,
+          "dependency": "fastify",
+          "title": "Fastify Vulnerable to DoS via Unbounded Memory Allocation in sendWebStream",
+          "url": "https://github.com/advisories/GHSA-mrq3-vjjr-p77c",
+          "severity": "low",
+          "cwe": [
+            "CWE-770"
+          ],
+          "cvss": {
+            "score": 3.7,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L"
+          },
+          "range": "<=5.7.2"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-444r-cwp2-x5xf",
+          "source": 1115367,
+          "dependency": "fastify",
+          "title": "fastify: request.protocol and request.host Spoofable via X-Forwarded-Proto/Host from Untrusted Connections",
+          "url": "https://github.com/advisories/GHSA-444r-cwp2-x5xf",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-348"
+          ],
+          "cvss": {
+            "score": 6.1,
+            "vectorString": "CVSS:3.1/AV:A/AC:H/PR:N/UI:N/S:C/C:H/I:N/A:N"
+          },
+          "range": "<=5.8.2"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-jx2c-rxcm-jvmq",
+          "source": 1112877,
+          "dependency": "fastify",
+          "title": "Fastify's Content-Type header tab character allows body validation bypass",
+          "url": "https://github.com/advisories/GHSA-jx2c-rxcm-jvmq",
+          "severity": "high",
+          "cwe": [
+            "CWE-436"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<5.7.2"
+        },
+        {
+          "kind": "dependency",
+          "name": "@fastify/ajv-compiler"
+        },
+        {
+          "kind": "dependency",
+          "name": "@fastify/fast-json-stringify-compiler"
+        },
+        {
+          "kind": "dependency",
+          "name": "find-my-way"
+        }
+      ],
+      "effects": [
+        "@granite-js/plugin-core"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/fastify",
+          "version": "4.14.0"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "find-my-way": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=9.6.0",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-c96f-x56v-gq3h",
+          "source": 1124273,
+          "dependency": "find-my-way",
+          "title": "find-my-way: DDoS with HTTP2",
+          "url": "https://github.com/advisories/GHSA-c96f-x56v-gq3h",
+          "severity": "high",
+          "cwe": [
+            "CWE-1321"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<=9.6.0"
+        },
+        {
+          "kind": "advisory",
+          "id": "GHSA-rrr8-f88r-h8q6",
+          "source": 1099853,
+          "dependency": "find-my-way",
+          "title": "find-my-way has a ReDoS vulnerability in multiparametric routes",
+          "url": "https://github.com/advisories/GHSA-rrr8-f88r-h8q6",
+          "severity": "high",
+          "cwe": [
+            "CWE-1333"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": ">=5.5.0 <8.2.2"
+        }
+      ],
+      "effects": [
+        "fastify"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/find-my-way",
+          "version": "7.7.0"
+        }
+      ],
+      "fixAvailable": {
+        "name": "@apps-in-toss/web-framework",
+        "version": "3.0.0",
+        "isSemVerMajor": true
+      }
+    },
+    "ip": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "via": [
+        {
+          "kind": "advisory",
+          "id": "GHSA-2p57-rm9w-gvfp",
+          "source": 1101851,
+          "dependency": "ip",
+          "title": "ip SSRF improper categorization in isPublic",
+          "url": "https://github.com/advisories/GHSA-2p57-rm9w-gvfp",
+          "severity": "high",
+          "cwe": [
+            "CWE-918"
+          ],
+          "cvss": {
+            "score": 8.1,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+          },
+          "range": "<=2.0.1"
+        }
+      ],
+      "effects": [
+        "@react-native-community/cli-doctor",
+        "@react-native-community/cli-hermes"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/ip",
+          "version": "1.1.9"
+        }
+      ],
+      "fixAvailable": true
+    },
+    "react-native": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=0.0.0-ffdfbbec0 || 0.64.0-rc.0 - 0.70.15 || 0.71.4 - 0.74.0-rc.9 || >=0.87.0-nightly-20260507-ba204faa7",
+      "via": [
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli-platform-ios"
+        },
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli"
+        },
+        {
+          "kind": "dependency",
+          "name": "@react-native-community/cli"
+        }
+      ],
+      "effects": [
+        "@apps-in-toss/plugin-compat"
+      ],
+      "nodes": [
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/react-native",
+          "version": "0.72.17"
+        },
+        {
+          "path": "node_modules/@apps-in-toss/plugin-compat/node_modules/react-native-0.72.6",
+          "version": "0.72.6"
+        }
+      ],
+      "fixAvailable": true
+    }
+  }
+}

@@ -161,11 +161,11 @@ export interface PlacementCandidate {
   clearedLines: number
   acquiredItems: readonly ItemType[]
   attack: number
-  topOut: boolean
+  topOut: boolean | 'unknown'
 }
 ```
 
-For each unique rotation, scan every column whose rotated cells fit, descend until the next row collides, and deduplicate by sorted `x:y` landing-cell key. Build routes as zero or more `{type:'rotate-clockwise'}`, repeated `{type:'move',dx:-1|1}`, then `{type:'hard-drop'}`. Reject a candidate when replaying its route against the public board cannot reach the same landing; this keeps SRS/collision disagreements out of controller output.
+For each unique rotation, scan every column whose rotated cells fit, descend until the next row collides, and deduplicate by sorted `x:y` landing-cell key. Build routes as zero or more `{type:'rotate-clockwise'}`, repeated `{type:'move',dx:-1|1}`, then `{type:'hard-drop'}`. Reject a candidate when replaying its route against the public board cannot reach the same landing; this keeps SRS/collision disagreements out of controller output. Preserve the observed `ghostY` for the unchanged direct hard drop. Because `AiObservation` intentionally omits hidden rows, enumeration must not inspect `view.self.next` to infer the post-lock spawn and must report hidden-state-dependent top-out as `'unknown'`.
 
 - [ ] **Step 4: Implement exact features, recursive public lookahead, and mistakes**
 
@@ -183,13 +183,13 @@ const score = dot(profile.weights, {
 })
 ```
 
-Treat `topOut` as `Number.NEGATIVE_INFINITY`. Recurse over only `view.self.next.slice(0, profile.lookahead)`, multiplying each future score by `futureDiscount`. Sort by score descending, then rotation, column, landing row, and command-string order. Floor 1 samples uniformly from the first five; floor 2 uses cumulative `[0.6,0.3,0.1]`; floor 3 takes index zero. Consume exactly one seeded mistake draw per new placement decision.
+Treat only `topOut === true` as `Number.NEGATIVE_INFINITY`; score `'unknown'` from the visible projection. Slice previews once at the scoring boundary and pass that explicit list through recursion: floor 1 consumes none, floor 2 consumes `next[0]` once, and floor 3 consumes `next[0]` followed by `next[1]`, never a stale tuple or a third preview. Multiply each future score by `futureDiscount`. Sort by score descending, then rotation, column, landing row, and command-string order. Floor 1 samples uniformly from the first five; floor 2 uses cumulative `[0.6,0.3,0.1]`; floor 3 takes index zero. Consume exactly one seeded mistake draw per new placement decision.
 
 - [ ] **Step 5: Verify current/next-depth and deterministic selection**
 
 Run: `npm test -- tests/ai/candidates.test.ts tests/ai/evaluate.test.ts`
 
-Expected: PASS, including fixtures where floor 1 ignores previews, floor 2 changes for preview one, and floor 3 changes only when preview two changes.
+Expected: PASS, including identical public observations whose hidden states produce different actual top-out outcomes, floor 1 near-top rankings that ignore previews, floor 2 consuming only preview one, floor 3 consuming exactly previews one and two, and runtime third-preview invariance.
 
 - [ ] **Step 6: Commit**
 
@@ -352,9 +352,17 @@ export interface SimulationSummary {
 
 Create a fresh match, derive controller seeds from the match seed, call controllers only with `createAiObservation`, merge returned `TimedCommand[]` by tick/side, and advance with `stepMatch`. Stop at a terminal result or 36,000 ticks (ten simulated minutes). Hash canonical state and ordered events with Node SHA-256. Count rejected-command events.
 
+Because core intentionally has no rejected-command event, audit protocol validity against the authoritative pre-tick snapshot: reject malformed owner/tick/side output, commands emitted while the side is ineligible, and sequential same-side item use after its charge or effect is exhausted. Eligible movement, rotation, and drop probes remain accepted when collision rules make them no-ops. A valid owned item also remains accepted when an unobservable opponent command, such as a same-tick freeze, later suppresses its effect; do not retroactively redefine emission validity from post-merge resolution.
+
+Keep lookahead deterministic and bounded for validation throughput. Floor 1 remains immediate-only; floor 2 retains the stable best four root placements before expanding preview one; floor 3 retains the stable best four roots and then the stable best four root/preview-one paths before expanding preview two. Break score ties with the existing rotation/column/landing-row/command ordering.
+
+The tested player always uses the exact approved floor profile. The fixed calibration opponent is a separate `SimulationController` fixture wrapping an approved floor-2 controller: it advances the controller's eligible-call clock at a deterministic 27/23 ratio, pauses credit while frozen or non-active, emits at most one command per real tick, and defers unused virtual-call credit after an emission. This is the weakest measured fixture cadence that resolved long regression seeds 75, 111, and 552 and preserved strict `1% < 47% < 100%` ordering across a 100-seed-per-floor sample with zero rejected or capped matches. Do not widen `AiFloorProfile` or represent the 23-tick fixture cadence as an approved gameplay profile.
+
 - [ ] **Step 4: Add the 3,000-match validation script**
 
 Install the exact script runner with `npm install --save-dev tsx@4.23.1`. Run 1,000 fixed seeds per floor against one fixed benchmark controller. Assert zero rejected commands, zero tick-limit exits, and strictly ordered win rates `floor1 < floor2 < floor3`. With `global.gc()`, sample retained heap every 250 matches; require final delta no greater than 32 MiB and linear growth no greater than 256 KiB per 1,000 matches.
+
+Run the matches in at most four long-lived worker isolates. Keep workers alive through the final coordinator-requested GC checkpoint, aggregate samples across every worker, and sort match results by fixed task index before producing the report so worker completion timing cannot affect validation output.
 
 ```json
 {

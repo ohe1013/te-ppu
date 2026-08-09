@@ -1,0 +1,120 @@
+.item-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.item-control {
+  min-height: 3rem;
+  padding: 0.35rem 0.25rem;
+  border: 3px solid #171239;
+  border-radius: 0.65rem;
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  align-items: center;
+  gap: 0.24rem;
+  color: #171239;
+  background: #ffca5c;
+  box-shadow: 3px 3px 0 #171239;
+  font: inherit;
+  font-size: clamp(0.62rem, 2.7vw, 0.78rem);
+  font-weight: 950;
+  touch-action: manipulation;
+}
+
+.item-control[data-item="freeze"] { background: #65d8ff; }
+.item-control[data-item="queue-swap"] { background: #df8cff; }
+
+.item-control--cancel {
+  display: grid;
+  grid-template-columns: 1fr;
+  color: #fff4cf;
+  background: #633f9e;
+}
+
+.item-control:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 #171239;
+}
+
+.item-control:disabled {
+  opacity: 0.4;
+  filter: grayscale(0.8);
+}
+
+.item-control__image {
+  width: 1.35rem;
+  height: 1.35rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item-control__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-control__count {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.row-selector {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  grid-template-rows: repeat(20, minmax(0, 1fr));
+  overflow: hidden;
+  touch-action: none;
+}
+
+.screen-shell button.row-selector__action {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+}
+
+.row-selector__action:focus-visible {
+  z-index: 3;
+  outline: 0.15rem solid rgb(255 232 128 / 96%);
+  outline-offset: -0.2rem;
+}
+
+.row-selector__highlight {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  border-block: 0.125rem solid rgb(255 232 128 / 92%);
+  background: rgb(255 216 92 / 22%);
+  pointer-events: none;
+}
+
+.item-controls__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

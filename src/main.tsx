@@ -1,0 +1,45 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { AppRoot, type AppRootProps } from './app/AppRoot';
+import {
+  createAppServices,
+  type AppServiceOverrides,
+} from './app/app-services';
+import { resolveRuntimeMode } from './app/runtime-mode';
+import { SafeAreaProvider } from './platform/safe-area-provider';
+import './styles/global.css';
+
+const runtimeMode = resolveRuntimeMode(import.meta.env.VITE_RUNTIME_MODE);
+const root = document.getElementById('root');
+
+if (root === null) {
+  throw new Error('Root element #root was not found.');
+}
+const rootElement = root;
+
+async function mountApplication(): Promise<void> {
+  let renderMatch: AppRootProps['renderMatch'];
+  let serviceOverrides: AppServiceOverrides | undefined;
+
+  if (import.meta.env.VITE_E2E_DRIVER === 'true') {
+    const { createE2EWiring } = await import('./test-support/e2e-wiring');
+    const wiring = createE2EWiring();
+    serviceOverrides = wiring.serviceOverrides;
+    renderMatch = wiring.renderMatch;
+  }
+  const services = createAppServices(
+    runtimeMode,
+    window.localStorage,
+    serviceOverrides,
+  );
+
+  createRoot(rootElement).render(
+    <StrictMode>
+      <SafeAreaProvider platform={services.platform}>
+        <AppRoot services={services} renderMatch={renderMatch} />
+      </SafeAreaProvider>
+    </StrictMode>,
+  );
+}
+
+void mountApplication();

@@ -17,12 +17,12 @@
 - Reuse the already implemented `TowerController` from `src/app/towerController.ts` for unlocks, fresh starts/restarts, in-memory save failures, and save retry; React must not duplicate those transitions.
 - `GameCommand` is exactly `{ type: 'move'; dx: -1 | 1 } | { type: 'rotate-clockwise' } | { type: 'soft-drop'; active: boolean } | { type: 'hard-drop' } | { type: 'use-row-clear'; row: number } | { type: 'use-freeze' } | { type: 'use-queue-swap' }`; `TimedCommand` is exactly `{ tick: number; side: SideId; command: GameCommand }`.
 - `useMatchLoop` owns immutable `MatchState`, calls `stepMatch`, gives AI only `createAiObservation(state, 'opponent')`, and renders only `createPublicMatchView(state)`. The view is `{ tick; status: 'countdown' | 'playing' | 'player-won' | 'opponent-won' | 'draw'; sides: Record<SideId, PublicSideView> }`; each side exposes only `board`, `active`, `ghostY`, two-entry `next`, `combo`, `incoming`, `inventory`, `freezeTicks`, `phase`, and `topOut`.
-- Use React 19 and PixiJS/`@pixi/react` major version 8; initialize Pixi with `preference="webgl"`. Do not use WebGPU, SSR, `eval`, `new Function`, or `iframe`.
-- Use `@apps-in-toss/web-framework` exactly `2.10.8`, `granite.config.ts`, `webViewProps.type = 'game'`, `ait build`, and app name `te-ppu-prototype`.
+- Use React 19 and PixiJS/`@pixi/react` major version 8; initialize Pixi with `preference="webgl"`. Do not use WebGPU, SSR, `eval`, `new Function`, or `iframe`. The WebGPU exclusion is a project compatibility choice; the iframe prohibition is an Apps-in-Toss rule.
+- Use `@apps-in-toss/web-framework` exactly `2.10.8`, `granite.config.ts`, `webViewProps.type = 'game'`, and `ait build`. `te-ppu-prototype` is the private local app ID, but the QR/device build must use the exact app ID registered in the Apps-in-Toss console.
 - The layout is portrait-only. At 360x640 through 430x932, both visible 10x20 boards remain the same size, appear simultaneously, and never become minimaps.
 - The first usable screen must appear within 10 seconds. No screen opens with an automatic bottom sheet.
-- Safe Area includes Dynamic Island and the framework X-button reserve. Use `SafeAreaInsets.get()` for the initial value and `SafeAreaInsets.subscribe()` for changes; never use deprecated `getSafeAreaInsets()`.
-- Call `setDeviceOrientation({ type: 'portrait' })`; disable the iOS swipe-back gesture. Call `closeView()` only after the in-app exit confirmation succeeds.
+- Safe Area covers system insets such as Dynamic Island, but not the native game X button. Use `SafeAreaInsets.get()` for the initial value and `SafeAreaInsets.subscribe()` for changes, never deprecated `getSafeAreaInsets()`, and reserve a separate conservative top-right exclusion rectangle using `right + 10` and `top + 10` so authored controls cannot overlap the X button.
+- Call `setDeviceOrientation({ type: 'portrait' })`; disable iOS back/forward swipe at build time with `webViewProps.allowsBackForwardNavigationGestures = false`. Call `closeView()` only after the in-app exit confirmation succeeds.
 - Handle every `getUserKeyForGame()` result explicitly: `{ type: 'HASH', hash }`, `'INVALID_CATEGORY'`, `'ERROR'`, and `undefined`.
 - This remains a private prototype: no ads, in-app purchases, public release, final branding, or unreviewed third-party IP assets.
 
@@ -93,16 +93,22 @@ import { defineConfig } from '@apps-in-toss/web-framework/config';
 
 export default defineConfig({
   appName: 'te-ppu-prototype',
-  brand: { displayName: '탑 블록 대전', primaryColor: '#6c5ce7', icon: '/prototype-mark.svg' },
+  brand: { displayName: '탑 블록 대전', primaryColor: '#6c5ce7', icon: process.env.AIT_ICON_URL ?? '/prototype-mark.svg' },
   web: { host: 'localhost', port: 5173, commands: { dev: 'vite --host 0.0.0.0 --mode apps', build: 'npm run typecheck && vite build --mode apps' } },
-  webViewProps: { type: 'game' },
+  webViewProps: {
+    type: 'game',
+    allowsBackForwardNavigationGestures: false,
+    bounces: false,
+    pullToRefreshEnabled: false,
+    overScrollMode: 'never',
+  },
   navigationBar: { withBackButton: false, withHomeButton: false, withTitle: false, transparentBackground: true, theme: 'dark' },
   permissions: [],
   outdir: 'dist',
 });
 ```
 
-Create `prototype-mark.svg` from only a violet square, three white ascending rectangles, and no text or third-party asset.
+Create a square `prototype-mark.svg` source from only a violet background and three white ascending rectangles, with no text or third-party asset. The local path is only an automated-build fallback. Before Sandbox/private-QR testing, upload a 600x600 rasterized copy to the same Apps-in-Toss console app, set `AIT_ICON_URL` to that console-hosted image URL, and make `appName`/`displayName` exactly match the registered metadata.
 
 - [ ] **Step 3: Write the failing runtime-mode test**
 
@@ -165,7 +171,6 @@ export interface PlatformPort {
   getInitialSafeArea(): SafeArea;
   subscribeSafeArea(listener: (value: SafeArea) => void): () => void;
   lockPortrait(): Promise<void>;
-  disableSystemBack(): Promise<void>;
   haptic(type: 'tickWeak' | 'tap' | 'success' | 'error'): Promise<void>;
   close(): Promise<void>;
 }
@@ -204,7 +209,6 @@ import {
   generateHapticFeedback,
   getUserKeyForGame,
   setDeviceOrientation,
-  setIosSwipeGestureEnabled,
 } from '@apps-in-toss/web-framework';
 
 async function getIdentity(): Promise<UserIdentity> {
@@ -216,9 +220,9 @@ async function getIdentity(): Promise<UserIdentity> {
 }
 ```
 
-Use `SafeAreaInsets.get()` only for initial state, then `SafeAreaInsets.subscribe({ onEvent })` with cleanup. `lockPortrait()` calls `setDeviceOrientation({ type: 'portrait' })`; `disableSystemBack()` calls `setIosSwipeGestureEnabled({ isEnabled: false })`; `close()` calls `closeView()`.
+Use `SafeAreaInsets.get()` only for initial state, then return the exact cleanup from `SafeAreaInsets.subscribe({ onEvent: listener })`. `lockPortrait()` calls `setDeviceOrientation({ type: 'portrait' })`; the build-time WebView configuration owns iOS swipe-back disabling; `close()` calls `closeView()`.
 
-The browser port returns zero insets, a `local-browser` identity, no-op orientation/back/haptic calls, and marks close requests in memory for tests. Select the browser port only for Vite `browser`/`e2e` modes; `.ait` mode always selects the Apps-in-Toss port and never masks SDK errors with the browser identity.
+The browser port returns zero insets, a `local-browser` identity, no-op orientation/haptic calls, and marks close requests in memory for tests. Select the browser port only for Vite `browser`/`e2e` modes; `.ait` mode always selects the Apps-in-Toss port and never masks SDK errors with the browser identity.
 
 - [ ] **Step 4: Implement boot and progress behavior**
 
@@ -230,13 +234,13 @@ export type BootState =
   | { status: 'retryable-error'; retry: () => void; message: string };
 ```
 
-`useBoot` concurrently locks portrait, disables system back, obtains identity, creates `createLocalProgressRepository(window.localStorage)`, and loads progress. For `ProgressLoadResult.ok === false`, continue with the returned in-memory `state` and show a retryable persistence notice. If `recoveredFromCorruption` is true, show the recovery notice already backed by the progression layer.
+`useBoot` concurrently locks portrait, obtains identity, creates `createLocalProgressRepository(window.localStorage)`, and loads progress. For `ProgressLoadResult.ok === false`, continue with the returned in-memory `state` and show a retryable persistence notice. If `recoveredFromCorruption` is true, show the recovery notice already backed by the progression layer.
 
 - [ ] **Step 5: Run tests**
 
 Run: `npm test -- src/platform/apps-in-toss-platform.test.ts src/app/use-boot.test.tsx`
 
-Expected: PASS; the four user-key branches, Safe Area cleanup, portrait/back calls, and progress recovery paths are covered.
+Expected: PASS; the four user-key branches, Safe Area cleanup, portrait calls, and progress recovery paths are covered. Configuration tests separately assert the game WebView and disabled iOS navigation gesture.
 
 - [ ] **Step 6: Commit**
 
@@ -578,7 +582,7 @@ Expected: FAIL because lifecycle components are missing.
 
 - [ ] **Step 3: Implement lifecycle coordination**
 
-Handle `visibilitychange`, `pagehide`, and `window.blur`. Background entry pauses the match, resets every held input, and suspends Web Audio. Foreground entry starts a wall-clock UI countdown while match time remains paused; reset the match-loop frame timestamp before clearing the pause reason.
+Handle `visibilitychange` as the primary signal and pair `pagehide`/`window.blur` with `pageshow`/`window.focus`. Make duplicate or out-of-order signals idempotent. Background entry pauses the match, resets every held input, and suspends Web Audio. Foreground entry starts a wall-clock UI countdown while match time remains paused; reset the match-loop frame timestamp before clearing the pause reason. Any SDK-native transparent-overlay visibility signal is supplementary, must be isolated behind the platform adapter with cleanup, and remains device-verified rather than browser-assumed.
 
 Provide an in-app `게임 나가기` action. It opens a React dialog (`role="dialog"`, focus trapped) and pauses both sides before asking. The confirm handler awaits `closeView()` through `PlatformPort.close`; it never mutates browser history. Keep the SDK game navigation X visible through `webViewProps.type='game'`; verify its native confirmation separately in QR QA.
 
@@ -600,7 +604,7 @@ Run `git add src/platform src/ui/match src/ui/screens/MatchScreen.tsx src/app/Ap
 
 ### Task 9: Add Playwright Coverage and the `.ait`/Sandbox/QR Release Gate
 
-**Files:** Create `playwright.config.ts`, `.env.e2e`, `src/test-support/e2e-driver.ts`, `src/test-support/e2e-platform.ts`, `tests/e2e/app-flow.spec.ts`, `tests/e2e/portrait-layout.spec.ts`, `tests/e2e/lifecycle-controls.spec.ts`, `scripts/verify-ait-package.mjs`, and `docs/qa/apps-in-toss-private-qr.md`; modify `src/app/app-services.ts`.
+**Files:** Create `playwright.config.ts`, `.env.e2e`, `src/test-support/e2e-driver.ts`, `src/test-support/e2e-platform.ts`, `tests/e2e/app-flow.spec.ts`, `tests/e2e/portrait-layout.spec.ts`, `tests/e2e/lifecycle-controls.spec.ts`, `scripts/verify-ait-package.mjs`, and `docs/qa/apps-in-toss-private-qr.md`; modify `src/app/app-services.ts`. Consume the checked-in `security/dependency-audit-baseline.json` and `docs/security/dependency-audit-exception.md` without regenerating the reviewed baseline.
 
 **Interfaces:**
 - Consumes: dependency-injected platform/match services from prior tasks.
@@ -649,7 +653,7 @@ Expected before driver: FAIL because `window.__TE_PPU_E2E__` is absent.
 
 Implement the E2E driver only behind `import.meta.env.VITE_E2E_DRIVER === 'true'`, rerun, and expect both portrait projects to pass with no horizontal overflow and equal board rectangles.
 
-- [ ] **Step 4: Add a deterministic `.ait` size gate**
+- [ ] **Step 4: Add a deterministic `.ait` size and dependency-content gate**
 
 ```js
 import { readFile, readdir } from 'node:fs/promises';
@@ -672,20 +676,49 @@ const [path] = files;
 const entries = unzipSync(new Uint8Array(await readFile(path)));
 const bytes = Object.values(entries).reduce((sum, value) => sum + value.byteLength, 0);
 if (bytes > 100 * 1024 * 1024) throw new Error(`Uncompressed bundle is ${bytes} bytes; limit is 104857600`);
-console.log(`AIT_OK ${path} ${bytes}`);
+
+const vulnerablePackages = [
+  '@fastify/middie',
+  'fastify',
+  'find-my-way',
+  'fast-uri',
+  'ip',
+  '@react-native-community/cli',
+  '@react-native-community/cli-doctor',
+  '@react-native-community/cli-hermes',
+];
+const decoder = new TextDecoder();
+const findings = [];
+for (const [entryName, data] of Object.entries(entries)) {
+  const normalizedName = entryName.replaceAll('\\', '/');
+  for (const packageName of vulnerablePackages) {
+    if (normalizedName.includes(`node_modules/${packageName}/`)) findings.push(`${entryName}:path:${packageName}`);
+  }
+  if (!/\.(?:js|cjs|mjs|json|map)$/i.test(entryName)) continue;
+  const source = decoder.decode(data);
+  for (const packageName of vulnerablePackages) {
+    if (source.includes(`"${packageName}"`) || source.includes(`'${packageName}'`)) {
+      findings.push(`${entryName}:content:${packageName}`);
+    }
+  }
+}
+if (findings.length > 0) throw new Error(`Vulnerable package marker found in .ait: ${findings.join(', ')}`);
+console.log(`AIT_OK ${path} ${bytes} vulnerablePackageMarkers=0`);
 ```
+
+First test this gate with a synthetic archive containing a quoted `@fastify/middie` module marker and require failure with the entry name, then test a marker-free archive and require `AIT_OK`. A passing artifact scan does not resolve the installed toolchain findings; it only supports the private-prototype reachability decision.
 
 - [ ] **Step 5: Run the automated preflight**
 
-Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build:ait`, and `npm run check:ait` separately; each must exit 0. Then run `rg -n "eval\(|new Function|WebGPU|ReactDOMServer|<iframe" src` and require exit 1 with no output.
+Run `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run check:dependency-audit`, `npm run build:ait`, and `npm run check:ait` separately under the supported Node 24 runtime; each must exit 0. Then scan all authored runtime/config surfaces, case-insensitively, for `eval(`, `new Function`, `webgpu`, `navigator.gpu`, `ReactDOMServer`, iframe markup, and dynamic iframe creation; require no findings in `src`, `index.html`, `public`, and the build configuration files.
 
-Expected: both Playwright projects pass; exactly one generated `.ait` exists; `check:ait` prints `AIT_OK` below 104857600 bytes; the source-policy scan finds nothing.
+Expected: both Playwright projects pass; `check:dependency-audit` prints each accepted finding as `KNOWN_EXCEPTION` and ends with `DEPENDENCY_AUDIT_BASELINE_MATCH ... status=PENDING_UPSTREAM` without claiming a clean audit; exactly one generated `.ait` exists; `check:ait` prints `AIT_OK` below 104857600 bytes with `vulnerablePackageMarkers=0`; the source-policy scan finds nothing.
 
 - [ ] **Step 6: Prepare and, when credentials/devices are available, record the private-device gate**
 
 Write `docs/qa/apps-in-toss-private-qr.md` with checkboxes and exact expected results for:
 
-1. Latest Android and iOS sandbox launch the `.ait` build and return a mock game user key without boot failure.
+1. The console app ID/display name match the bundle, `AIT_ICON_URL` points to the 600x600 original icon uploaded to that console app, and latest Android/iOS Sandbox launch the `.ait` build and return a mock game user key without boot failure.
 2. Console private QR launches on the real Toss app and returns a stable HASH identity; `INVALID_CATEGORY`, `ERROR`, and unsupported app-version screens are not observed.
 3. Portrait lock, Dynamic Island/Safe Area, native game X, in-app exit confirmation, and `closeView()` work without overlap.
 4. Both 10x20 boards remain equal and visible at once; joystick, rotation, all three items, AI item effects, incoming/offset/return effects, and resume countdown are usable.
@@ -693,8 +726,9 @@ Write `docs/qa/apps-in-toss-private-qr.md` with checkboxes and exact expected re
 6. A ten-minute match shows no sustained frame collapse, white screen, runaway memory growth, or lost WebGL context; decorative particles reduce before critical effects disappear.
 7. The first usable screen appears within 10 seconds and no bottom sheet opens automatically.
 8. The build remains marked private and is not submitted for public review.
+9. Attach the Node 24 dependency-audit output and final `.ait` entry/content scan. Mark the accepted toolchain risk `PENDING_UPSTREAM`; a passing archive scan must not be recorded as zero dependency vulnerabilities.
 
-Expected for repository completion: every automated command passes and the checklist clearly marks device-only items `PENDING_EXTERNAL` rather than inventing evidence. Expected before any Apps-in-Toss release claim: a workspace member runs the sandbox and real-Toss private QR checks and attaches device/build/deployment evidence for every checkbox.
+Expected for repository completion: every automated command passes, device-only items are `PENDING_EXTERNAL`, and the reviewed dependency exception remains `PENDING_UPSTREAM` rather than inventing resolution. Expected before any private Apps-in-Toss QR claim: a workspace member runs the sandbox and real-Toss private QR checks and attaches device/build/deployment evidence for every checkbox. Public submission remains blocked by `docs/security/dependency-audit-exception.md` until an official compatible fix, a fully revalidated major migration, or separate formal risk acceptance.
 
 - [ ] **Step 7: Commit**
 
@@ -707,5 +741,6 @@ Run `git add playwright.config.ts .env.e2e src/test-support tests/e2e scripts/ve
 - [ ] Run `npm run typecheck` — expected: exit 0.
 - [ ] Run `npm test` — expected: all Vitest suites pass with 0 failures.
 - [ ] Run `npm run test:e2e` — expected: both 360x640 Chromium and 430x932 WebKit projects pass.
-- [ ] Run `npm run build:ait`, then run `npm run check:ait` — expected: exactly one `.ait` exists and prints `AIT_OK` under the 100 MB uncompressed limit.
-- [ ] Review `docs/qa/apps-in-toss-private-qr.md` — expected: automated evidence is recorded, unavailable sandbox/real-Toss device checks are explicitly `PENDING_EXTERNAL`, and public-release submission remains excluded.
+- [ ] Run `npm run check:dependency-audit` under Node 24 — expected: exact reviewed exceptions are printed, exit 0, and final status is `PENDING_UPSTREAM`, never a clean-audit claim.
+- [ ] Run `npm run build:ait`, then run `npm run check:ait` — expected: exactly one `.ait` exists and prints `AIT_OK` under the 100 MB uncompressed limit with zero vulnerable package markers in archive paths or textual payloads.
+- [ ] Review `docs/qa/apps-in-toss-private-qr.md` — expected: automated evidence is recorded, unavailable sandbox/real-Toss device checks are explicitly `PENDING_EXTERNAL`, dependency findings remain `PENDING_UPSTREAM`, and public-release submission remains excluded.
