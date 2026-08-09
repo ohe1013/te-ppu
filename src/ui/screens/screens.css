@@ -771,6 +771,173 @@
   color: var(--arcade-pink);
 }
 
+.onboarding-screen {
+  align-content: start;
+  gap: 0.8rem;
+  padding-top: max(1.65rem, var(--native-close-exclusion-top, 10px));
+  padding-bottom: max(1.5rem, var(--safe-area-bottom, 0px));
+  outline: none;
+}
+
+.onboarding-screen__header {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.onboarding-screen__header h1 {
+  color: var(--arcade-cream);
+  font-size: clamp(1.7rem, 8vw, 2.35rem);
+  line-height: 1;
+  text-shadow: 3px 3px 0 var(--arcade-pink), 5px 5px 0 var(--arcade-purple);
+}
+
+.onboarding-screen__header > p:last-child {
+  color: rgb(255 244 207 / 78%);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.name-entry-screen__draft {
+  display: block;
+  padding: 0.65rem 0.85rem;
+  border: 3px solid var(--arcade-ink);
+  border-radius: 0.75rem;
+  color: var(--arcade-ink);
+  background: var(--arcade-yellow);
+  box-shadow: 4px 4px 0 rgb(23 18 57 / 72%), inset 0 0 0 2px rgb(255 244 207 / 58%);
+  font-size: clamp(1.8rem, 10vw, 2.8rem);
+  font-weight: 950;
+  letter-spacing: 0.32em;
+  text-align: center;
+}
+
+.name-keyboard {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  border: 3px solid var(--arcade-ink);
+  border-radius: 0.85rem;
+  background: rgb(36 22 78 / 84%);
+  box-shadow: 4px 4px 0 rgb(23 18 57 / 62%), inset 0 0 0 2px rgb(101 216 255 / 14%);
+}
+
+.name-keyboard__row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.name-keyboard__key {
+  min-height: 2.55rem !important;
+  padding: 0.3rem 0.15rem !important;
+  border-width: 2px !important;
+  font-size: 0.78rem;
+}
+
+.name-keyboard__key[aria-pressed="true"],
+.character-select-card[aria-pressed="true"] {
+  outline: 3px solid var(--arcade-cyan);
+  outline-offset: 2px;
+  filter: brightness(1.08) saturate(1.08);
+}
+
+.onboarding-screen button:focus-visible {
+  outline: 3px solid var(--arcade-yellow);
+  outline-offset: 2px;
+}
+
+.onboarding-controls {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 1fr) minmax(7rem, 1fr);
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.arcade-direction-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(2.7rem, 1fr));
+  grid-template-rows: repeat(3, 2.7rem);
+  gap: 0.2rem;
+}
+
+.arcade-direction-pad__button {
+  min-height: 0 !important;
+  padding: 0.2rem !important;
+  color: var(--arcade-cream) !important;
+  background: var(--arcade-purple) !important;
+  font-size: 1rem;
+}
+
+.arcade-direction-pad__button--up { grid-column: 2; grid-row: 1; }
+.arcade-direction-pad__button--left { grid-column: 1; grid-row: 2; }
+.arcade-direction-pad__button--right { grid-column: 3; grid-row: 2; }
+.arcade-direction-pad__button--down { grid-column: 2; grid-row: 3; }
+
+.onboarding-controls__back {
+  align-self: end;
+}
+
+.onboarding-controls__actions {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.character-select-screen__cards {
+  display: grid;
+  grid-auto-columns: minmax(10.5rem, 78%);
+  grid-auto-flow: column;
+  gap: 0.7rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 0.55rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-color: var(--arcade-cyan) rgb(36 22 78 / 72%);
+}
+
+.character-select-card {
+  display: grid;
+  align-content: start;
+  gap: 0.38rem;
+  min-height: 16rem !important;
+  padding: 0.65rem !important;
+  text-align: left;
+  scroll-snap-align: center;
+}
+
+.character-select-card__art {
+  display: grid;
+  width: 100%;
+  height: 7.5rem;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--arcade-ink);
+  border-radius: 0.55rem;
+  background: linear-gradient(145deg, var(--arcade-cyan), var(--arcade-pink));
+  object-fit: contain;
+}
+
+.character-select-card__identity {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.character-select-card__identity strong {
+  font-size: 1.05rem;
+}
+
+.character-select-card__identity small,
+.character-select-card__story {
+  color: rgb(23 18 57 / 72%);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.character-select-card__title {
+  color: var(--arcade-purple);
+  font-size: 0.75rem;
+  font-weight: 950;
+}
+
 @media (min-width: 400px) {
   .screen-actions {
     grid-template-columns: 1fr 1fr;
