@@ -333,8 +333,9 @@ describe('BattleCanvas', () => {
     );
 
     expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
-      'data-effect-ids', 'tick-0:0:attack-shot',
+      'data-effect-ids', '',
     );
+    expect(screen.getByTestId('attack-ribbon')).toBeInTheDocument();
     expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
   });
 
@@ -506,8 +507,9 @@ describe('BattleCanvas', () => {
     );
     const playerScene = screen.getByTestId('player-board-scene');
 
-    expect(playerScene).toHaveAttribute('data-effect-ids', 'tick-18:0:attack-shot');
-    expect(playerScene).toHaveAttribute('data-effect-snapshots', '18/18');
+    expect(playerScene).toHaveAttribute('data-effect-ids', '');
+    expect(screen.getByTestId('attack-ribbon')).toBeInTheDocument();
+    expect(playerScene).toHaveAttribute('data-effect-snapshots', '');
     clock.advanceBy(300);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
   });

@@ -19,6 +19,7 @@ import {
 } from '../app/use-match-loop';
 import { BoardScene } from './BoardScene';
 import { computeBoardLayout } from './board-layout';
+import { computeAttackRibbon } from './attack-ribbon';
 import {
   effectsForEvents,
   effectsForCommandFeedback,
@@ -243,14 +244,10 @@ export function BattleCanvas({
   const textures = isAtlasData(atlas)
     ? textureCacheRef.current.resolveAtlas(atlas)
     : atlas;
-  const boardEffects = effects.filter((effect) => (
-    effect.group !== 'attack-shot'
-    || resolveBattleAnimationFrames(textures, 'attack-shot') === null
-  ));
-  const fallbackAttacks = effects.filter((effect) => (
-    effect.group === 'attack-shot'
-    && resolveBattleAnimationFrames(textures, 'attack-shot') === null
-  ));
+  const boardEffects = effects.filter((effect) => effect.group !== 'attack-shot');
+  const attackEffects = effects.filter((effect) => effect.group === 'attack-shot');
+  const hasAttackAtlas = resolveBattleAnimationFrames(textures, 'attack-shot') !== null;
+  const fallbackAttacks = hasAttackAtlas ? [] : attackEffects;
   const layout = computeBoardLayout(metrics.width, metrics.height);
 
   useEffect(() => () => textureCacheRef.current?.destroy(), []);
@@ -327,39 +324,62 @@ export function BattleCanvas({
           side="opponent"
           textureCache={textureCacheRef.current}
         />
-        {effects.flatMap((effect) => {
+        {attackEffects.flatMap((effect) => {
           if (effect.group !== 'attack-shot') return [];
           const frames = resolveBattleAnimationFrames(textures, effect.group);
           if (frames === null) return [];
           const from = effect.side === 'player' ? layout.player : layout.opponent;
           const to = effect.side === 'player' ? layout.opponent : layout.player;
           const progress = effect.presentationProgress ?? effectProgress;
+          const ribbon = computeAttackRibbon(from, to, progress);
+          const size = Math.max(24, Math.min(72, ribbon.length * 0.2));
           return [
             <pixiAnimatedSprite
               anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
               animationSpeed={BATTLE_ANIMATIONS['attack-shot'].fps / 60}
               autoPlay
               data-testid="attack-shot-sprite"
+              height={size}
               key={effect.id}
               loop
+              rotation={ribbon.angle}
               textures={frames}
-              x={from.x + from.width / 2 + (to.x - from.x) * progress}
-              y={from.y + from.height / 2 + (to.y - from.y) * progress}
+              width={size}
+              x={ribbon.x}
+              y={ribbon.y}
             />,
           ];
         })}
         {fallbackAttacks.length > 0 && (
           <pixiGraphics
+            data-testid="attack-ribbon"
             draw={(graphics: Graphics) => {
               graphics.clear();
               for (const effect of fallbackAttacks) {
                 const from = effect.side === 'player' ? layout.player : layout.opponent;
                 const to = effect.side === 'player' ? layout.opponent : layout.player;
                 const progress = effect.presentationProgress ?? effectProgress;
-                const x = from.x + from.width / 2 + (to.x - from.x) * progress;
-                const y = from.y + from.height / 2 + (to.y - from.y) * progress;
-                graphics.circle(x, y, Math.max(4, Math.min(from.width, from.height) * 0.08))
-                  .fill({ color: 0xff9f43 });
+                const ribbon = computeAttackRibbon(from, to, progress);
+                const half = Math.max(12, Math.min(42, ribbon.length * 0.16));
+                const directionX = Math.cos(ribbon.angle);
+                const directionY = Math.sin(ribbon.angle);
+                graphics
+                  .moveTo(ribbon.x - directionX * half, ribbon.y - directionY * half)
+                  .lineTo(ribbon.x + directionX * half, ribbon.y + directionY * half)
+                  .stroke({
+                    color: effect.side === 'player' ? 0x65d8ff : 0xff6fb1,
+                    width: Math.max(4, Math.min(from.width, from.height) * 0.06),
+                  });
+                graphics.circle(
+                  ribbon.x,
+                  ribbon.y,
+                  Math.max(5, Math.min(from.width, from.height) * 0.1),
+                ).fill({ color: 0xffca5c });
+                graphics.circle(
+                  ribbon.x,
+                  ribbon.y,
+                  Math.max(8, Math.min(from.width, from.height) * 0.15),
+                ).stroke({ color: 0xfff4cf, width: 2 });
               }
             }}
           />
