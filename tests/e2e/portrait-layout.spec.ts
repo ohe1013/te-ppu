@@ -98,7 +98,7 @@ for (const { viewport } of PORTRAITS) {
 
     const firstFloor = floorCards.first();
     const lastFloor = floorCards.last();
-    await expectInsideViewport(firstFloor, viewport, 'first floor card');
+    await expectInsideViewport(lastFloor, viewport, 'top floor card');
     const lastFloorBeforeScroll = await lastFloor.boundingBox();
     expect(lastFloorBeforeScroll, 'last floor card should have a bounding box').not.toBeNull();
     expect(lastFloorBeforeScroll!.x).toBeGreaterThanOrEqual(-0.5);
@@ -112,7 +112,6 @@ for (const { viewport } of PORTRAITS) {
         .toBeGreaterThanOrEqual(scrollTopBefore);
 
       await page.setViewportSize({ width: viewport.width, height: 480 });
-      await firstFloor.scrollIntoViewIfNeeded();
       const constrainedBefore = await appShell.evaluate((node) => ({
         clientHeight: node.clientHeight,
         scrollHeight: node.scrollHeight,
@@ -120,9 +119,9 @@ for (const { viewport } of PORTRAITS) {
       }));
       expect(constrainedBefore.scrollHeight, 'the constrained tower should overflow app-shell')
         .toBeGreaterThan(constrainedBefore.clientHeight);
-      await lastFloor.scrollIntoViewIfNeeded();
+      await firstFloor.scrollIntoViewIfNeeded();
       const constrainedScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
-      expect(constrainedScrollTopAfter, 'floor 5 should scroll the constrained app-shell')
+      expect(constrainedScrollTopAfter, 'floor 1 should scroll the constrained app-shell')
         .toBeGreaterThan(constrainedBefore.scrollTop);
       await page.setViewportSize(viewport);
     }

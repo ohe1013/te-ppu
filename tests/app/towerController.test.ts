@@ -295,6 +295,38 @@ describe('tower controller', () => {
     expect(repository.saved).toEqual([controller.progress]);
   });
 
+  it('reveals and starts the hidden owl match after the floor-five boss', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(progressUnlockedThrough(5), repository);
+    const started = controller.startFloor(5, 50);
+    if (!started.ok) throw new Error('floor 5 should start');
+
+    for (let index = 0; index < 3; index += 1) {
+      if (index > 0) {
+        const next = controller.startEncounter(50 + index);
+        if (!next.ok) throw new Error('next floor encounter should start');
+      }
+      await controller.completeEncounter('WIN');
+    }
+
+    expect(controller.route).toBe('OWL_REVEAL');
+    const owlMatch = controller.startOwlMatch(77);
+    expect(owlMatch).toMatchObject({ ok: true, match: { matchSeed: 77 } });
+    expect(await controller.completeOwlMatch('LOSS')).toEqual({
+      ok: true,
+      route: 'OWL_RESULT',
+    });
+    expect(controller.progress.difficultyProgress.easy.owlDefeated).toBe(false);
+
+    expect(controller.startOwlMatch(78)).toMatchObject({ ok: true });
+    expect(await controller.completeOwlMatch('WIN')).toEqual({
+      ok: true,
+      route: 'ENDING',
+    });
+    expect(controller.progress.difficultyProgress.easy.owlDefeated).toBe(true);
+    expect(controller.progress.unlockedDifficulties.normal).toBe(true);
+  });
+
   it.each([
     { floor: 3 as const, result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
     { floor: 3 as const, result: 'DRAW' as const, route: 'RESULT_DRAW' as const },

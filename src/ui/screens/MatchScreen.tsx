@@ -32,7 +32,13 @@ import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { ProgressState } from '../../progression/index';
-import { getFloorEncounter, type EncounterIndex, type FloorEncounter } from '../../progression/index';
+import {
+  getFloorEncounter,
+  type Difficulty,
+  type EncounterIndex,
+  type FloorEncounter,
+  type OwlEncounter,
+} from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
 import { AssetIcon } from '../match/AssetIcon';
@@ -60,6 +66,8 @@ export interface MatchScreenProps {
   readonly floor: Floor;
   readonly encounterIndex?: EncounterIndex;
   readonly wins?: 0 | 1 | 2;
+  readonly difficulty?: Difficulty;
+  readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -130,6 +138,7 @@ function ignoreEffect(operation: () => Promise<void>): void {
 
 function portraitRoleFor(side: 'player' | 'opponent', characterId: CharacterId): PortraitRole {
   if (side === 'player') return 'hero';
+  if (characterId === 'owl-companion') return 'owl';
   return characterId === 'demon-king' ? 'demon-king' : 'lieutenant';
 }
 
@@ -151,7 +160,7 @@ function presentationFor(
 ): PortraitPresentation {
   const state = resolvePortraitState({
     ...memory,
-    dangerState: role === 'demon-king' ? 'rage' : 'panic',
+    dangerState: role === 'demon-king' || role === 'owl' ? 'rage' : 'panic',
     tick: view.tick,
   });
   return createPortraitPresentation(
@@ -220,6 +229,7 @@ function usePortraitPresentations(
 export function MatchScreen({
   audioPort,
   commonAssets,
+  difficulty = 'easy',
   encounterIndex = 0,
   floor,
   wins = 0,
@@ -231,9 +241,12 @@ export function MatchScreen({
   seed,
   settings,
   settingsSaveFailed,
+  specialEncounter,
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
-  const encounter: FloorEncounter = getFloorEncounter(floor, encounterIndex);
+  const encounter: FloorEncounter | OwlEncounter = specialEncounter
+    ?? getFloorEncounter(floor, encounterIndex);
+  const isOwlMatch = specialEncounter !== undefined;
   const heroCharacter = {
     id: 'hero-engineer' as const,
     name: '견습 마도공학자',
@@ -277,8 +290,8 @@ export function MatchScreen({
     }
   }, []);
   const ai = useMemo(
-    () => createAiController(getAiFloorProfile(floor), seed),
-    [floor, seed],
+    () => createAiController(getAiFloorProfile(floor, difficulty), seed),
+    [difficulty, floor, seed],
   );
   const match = useMatchLoopImpl({
     ai,
@@ -289,10 +302,21 @@ export function MatchScreen({
   const resolvedPortraitSources = useMemo(() => ({
     player: { ...portraitUrls(commonAssets?.hero.portraits), ...portraitSources?.player },
     opponent: {
-      ...portraitUrls(commonAssets?.rivals[encounter.characterId]?.portraits),
+      ...portraitUrls(isOwlMatch
+        ? commonAssets?.owl.portraits
+        : commonAssets?.rivals[getFloorEncounter(floor, encounterIndex).characterId]?.portraits),
       ...portraitSources?.opponent,
     },
-  }), [commonAssets?.hero.portraits, commonAssets?.rivals, encounter.characterId, portraitSources]);
+  }), [
+    commonAssets?.hero.portraits,
+    commonAssets?.owl.portraits,
+    commonAssets?.rivals,
+    encounter.characterId,
+    encounterIndex,
+    floor,
+    isOwlMatch,
+    portraitSources,
+  ]);
   const portraits = usePortraitPresentations(
     floor,
     encounter.characterId,
@@ -377,13 +401,18 @@ export function MatchScreen({
   return (
     <section
       className="screen-shell match-screen"
+      data-encounter-kind={isOwlMatch ? 'owl' : 'floor'}
       data-floor={floor}
       data-testid="match-screen"
     >
       <header className="match-header">
         <div className="match-header__series">
-          <span className="match-header__series-badge">{floor}F · {encounterIndex + 1}/3</span>
-          <span className="match-header__series-wins">승리 {wins ?? 0}/3</span>
+          <span className="match-header__series-badge">
+            {isOwlMatch ? 'HIDDEN BOSS' : `${floor}F · ${encounterIndex + 1}/3`}
+          </span>
+          <span className="match-header__series-wins">
+            {isOwlMatch ? 'OWL' : `승리 ${wins ?? 0}/3`}
+          </span>
         </div>
         <div className="match-header__actions">
           <div className="match-meta match-meta--live">

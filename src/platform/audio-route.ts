@@ -13,6 +13,10 @@ export function musicForRoute(route: AppRoute): MusicTrack | null {
       if (route.floor <= 2) return 'early-floors';
       if (route.floor <= 4) return 'late-floors';
       return 'demon-king';
+    case 'owl-reveal':
+    case 'owl-match':
+    case 'owl-result':
+      return 'demon-king';
     case 'ending':
       return 'ending';
   }

@@ -1,6 +1,8 @@
 import {
+  DIFFICULTIES,
   FLOORS,
   getDifficultyProgress,
+  type Difficulty,
   type Floor,
   type ProgressState,
   getFloorEncounters,
@@ -14,17 +16,33 @@ export interface TowerScreenProps {
   readonly progress: ProgressState;
   readonly notice: string | null;
   readonly onSelectFloor: (floor: Floor) => void;
+  readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
   readonly commonAssets?: CommonAssets | null;
 }
 
-export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: TowerScreenProps) {
+const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
+  easy: 'EASY',
+  normal: 'NORMAL',
+  hard: 'HARD',
+};
+
+export function TowerScreen({
+  commonAssets,
+  notice,
+  onSelectDifficulty = () => undefined,
+  onSelectFloor,
+  progress,
+}: TowerScreenProps) {
   const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
   return (
-    <section className="screen-shell tower-screen" data-testid="tower-screen">
-      <ScreenBackdrop image={commonAssets?.towerBackdrop} />
+    <section
+      className="screen-shell tower-screen"
+      data-difficulty={progress.selectedDifficulty}
+      data-testid="tower-screen"
+    >
       <ScreenBackdrop
         className="screen-backdrop--demon"
-        image={commonAssets?.rivals['demon-king']?.fullArt}
+        image={commonAssets?.rivals?.['demon-king']?.fullArt}
       />
       <div className="tower-screen__header">
         <div className="tower-screen__brand">
@@ -43,8 +61,39 @@ export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: T
         <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
       </div>
       {notice !== null && <p className="notice" role="status">{notice}</p>}
-      <div aria-label="타워 층 선택" className="floor-list tower-route">
-        <span aria-hidden="true" className="tower-route__rope" />
+      <fieldset aria-label="난이도 선택" className="difficulty-selector">
+        <legend>난이도</legend>
+        <div className="difficulty-selector__options">
+          {DIFFICULTIES.map((difficulty) => {
+            const unlocked = progress.unlockedDifficulties[difficulty];
+            return (
+              <button
+                aria-label={DIFFICULTY_LABELS[difficulty]}
+                aria-pressed={progress.selectedDifficulty === difficulty}
+                className={`difficulty-selector__option difficulty-selector__option--${difficulty}`}
+                data-difficulty={difficulty}
+                disabled={!unlocked}
+                key={difficulty}
+                onClick={() => onSelectDifficulty(difficulty)}
+                type="button"
+              >
+                {DIFFICULTY_LABELS[difficulty]}
+                {!unlocked && <small>LOCKED</small>}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div
+        aria-label="타워 층 선택"
+        className="floor-list tower-route tower-route--ascending"
+        data-testid="tower-route"
+      >
+        <ScreenBackdrop
+          className="screen-backdrop--tower-route"
+          image={commonAssets?.towerBackdrop}
+        />
+        <span aria-hidden="true" className="tower-route__shaft" />
         {FLOORS.map((floor, index) => {
           const unlocked = floor <= activeProgress.highestUnlockedFloor;
           const cleared = activeProgress.clearedFloors[floor];
@@ -55,6 +104,7 @@ export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: T
               className={`tower-node tower-node--${index % 2 === 0 ? 'left' : 'right'} ${
                 cleared ? 'tower-node--cleared' : unlocked ? 'tower-node--open' : 'tower-node--locked'
               }`}
+              data-floor={floor}
               key={floor}
             >
               <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}</span>

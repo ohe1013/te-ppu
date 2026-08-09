@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommonAssets, LoadedImageRef } from '../../assets';
 import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
 import { TowerScreen } from './TowerScreen';
@@ -61,5 +61,56 @@ describe('TowerScreen', () => {
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeDisabled();
     expect(screen.getAllByRole('list', { name: '층별 라이벌 순서' })).toHaveLength(5);
+  });
+
+  it('keeps floors in logical order while rendering an upward tower route', () => {
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        notice={null}
+        onSelectDifficulty={() => undefined}
+        onSelectFloor={() => undefined}
+        progress={progress}
+      />,
+    );
+
+    const route = screen.getByTestId('tower-route');
+    expect(route).toHaveClass('tower-route--ascending');
+    expect(route.querySelector('.tower-route__shaft')).toBeInTheDocument();
+    expect([...route.querySelectorAll<HTMLElement>('[data-floor]')].map((node) => node.dataset.floor))
+      .toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('shows locked difficulty choices and selects an unlocked difficulty', () => {
+    const onSelectDifficulty = vi.fn();
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        notice={null}
+        onSelectDifficulty={onSelectDifficulty}
+        onSelectFloor={() => undefined}
+        progress={progress}
+      />,
+    );
+
+    expect(screen.getByRole('group', { name: '난이도 선택' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'EASY' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'HARD' })).toBeDisabled();
+
+    const unlockedNormal = cloneProgressState(progress);
+    unlockedNormal.unlockedDifficulties.normal = true;
+    cleanup();
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        notice={null}
+        onSelectDifficulty={onSelectDifficulty}
+        onSelectFloor={() => undefined}
+        progress={unlockedNormal}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
+    expect(onSelectDifficulty).toHaveBeenCalledWith('normal');
   });
 });

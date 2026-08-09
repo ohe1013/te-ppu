@@ -149,10 +149,13 @@ function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
   return { forIdentity: () => repository };
 }
 
-function TestMatch({ floor, encounterIndex, wins, onFinished }: MatchRouteViewProps): ReactNode {
-  const encounter = getFloorEncounter(floor, encounterIndex);
+function TestMatch({ floor, encounterIndex, wins, onFinished, specialEncounter }: MatchRouteViewProps): ReactNode {
+  const encounter = specialEncounter ?? getFloorEncounter(floor, encounterIndex);
   return (
-    <section data-testid="match-screen">
+    <section
+      data-encounter-kind={specialEncounter === undefined ? 'floor' : 'owl'}
+      data-testid="match-screen"
+    >
       <h1>{floor}층 대전</h1>
       <h2>{encounter.displayName}</h2>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
@@ -221,7 +224,7 @@ async function completeFloor(
     }
   }
   if (continueAfterFinal) {
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
   }
 }
 
@@ -405,7 +408,7 @@ describe('AppRoot', () => {
     renderGame(new TestProgressRepository(floorFiveProgress), createTestPlatform(), manager);
 
     const tower = await screen.findByTestId('tower-screen');
-    await user.click(tower.querySelectorAll('button')[4]!);
+    await user.click(screen.getByRole('button', { name: '5층 선택' }));
     await waitFor(() => expect(manager.loadFloor).toHaveBeenCalledWith(5));
     expect(manager.prefetchFloor).not.toHaveBeenCalled();
     await user.click(screen.getByTestId('floor-intro-screen').querySelectorAll('button')[1]!);
@@ -413,6 +416,12 @@ describe('AppRoot', () => {
     await completeFloor(user, false);
     const resultButtons = screen.getByTestId('result-screen').querySelectorAll('button');
     await user.click(resultButtons[resultButtons.length - 1]!);
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await screen.findByTestId('match-screen');
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('owl-result-screen');
+    await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
     const ending = await screen.findByTestId('ending-screen');
 
     expect(manager.releaseFloor).not.toHaveBeenCalledWith(5);
@@ -431,6 +440,22 @@ describe('AppRoot', () => {
       name: '3층 선택',
       description: '클리어 완료 · 재도전 가능',
     })).toBeEnabled();
+  });
+
+  it('persists difficulty selection and exposes the active difficulty on the app shell', async () => {
+    const user = userEvent.setup();
+    const unlocked = cloneProgressState(floorOneProgress);
+    unlocked.unlockedDifficulties.normal = true;
+    const repository = new TestProgressRepository(unlocked);
+    renderGame(repository);
+
+    await screen.findByTestId('tower-screen');
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
+    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
+    expect(screen.getByTestId('tower-screen')).toHaveAttribute('data-difficulty', 'normal');
   });
 
   it.each([
@@ -488,7 +513,26 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
   });
 
-  it('reaches the ending after a floor-five victory', async () => {
+  it('reaches the ending after defeating the floor-five boss and hidden owl', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress);
+    renderGame(repository);
+
+    await enterMatch(user, 5, 200);
+    await completeFloor(user, false);
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await screen.findByTestId('match-screen');
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('owl-result-screen');
+    await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
+
+    expect(screen.getByTestId('ending-screen')).toBeInTheDocument();
+  });
+
+  it('reveals the hidden owl boss after the floor-five victory', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorFiveProgress);
     renderGame(repository);
@@ -498,7 +542,40 @@ describe('AppRoot', () => {
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '탑으로' }));
 
-    expect(screen.getByTestId('ending-screen')).toBeInTheDocument();
+    expect(await screen.findByTestId('owl-reveal-screen')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute(
+      'data-encounter-kind',
+      'owl',
+    );
+  });
+
+  it('unlocks Normal only after the hidden owl is defeated', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress);
+    renderGame(repository);
+
+    await enterMatch(user, 5, 200);
+    await completeFloor(user, false);
+    await waitFor(() => expect(repository.saves).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await screen.findByTestId('match-screen');
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('owl-result-screen');
+    await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
+
+    await screen.findByTestId('ending-screen');
+    expect(screen.getByTestId('ending-screen')).toHaveAttribute('data-next-difficulty', 'normal');
+    await user.click(screen.getByRole('button', { name: 'NORMAL 선택하러 가기' }));
+    await screen.findByTestId('tower-screen');
+    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+
+    await waitFor(() => expect(screen.getByTestId('app-shell')).toHaveAttribute(
+      'data-difficulty',
+      'normal',
+    ));
   });
 
   it.each(['loss', 'draw'] as const)(

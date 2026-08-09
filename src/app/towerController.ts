@@ -13,6 +13,7 @@ import {
   getFloorEncounter,
   isFinalFloor,
   isDifficulty,
+  nextDifficulty,
   resolveEncounter,
   startFloorSeries,
   type Floor,
@@ -30,6 +31,9 @@ export type TowerRoute =
   | 'RESULT_WIN'
   | 'RESULT_LOSS'
   | 'RESULT_DRAW'
+  | 'OWL_REVEAL'
+  | 'OWL_MATCH'
+  | 'OWL_RESULT'
   | 'ENDING';
 
 export type StartFloorResult =
@@ -51,7 +55,11 @@ export type StartEncounterResult =
   | {
       readonly ok: false;
       readonly reason: 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
-    };
+  };
+
+export type StartOwlMatchResult =
+  | { readonly ok: true; readonly match: MatchState }
+  | { readonly ok: false; readonly reason: 'NO_OWL_REVEAL' };
 
 export type TowerSaveResult =
   | { readonly ok: true; readonly route: TowerRoute }
@@ -180,7 +188,7 @@ export class TowerController {
 
     this.currentMatch = createMatch({ matchSeed });
     this.currentAi = createAiController(
-      getAiFloorProfile(floor),
+      getAiFloorProfile(floor, this.currentProgress.selectedDifficulty),
       deriveAiSeed(matchSeed),
       'opponent',
     );
@@ -198,6 +206,20 @@ export class TowerController {
       return { ok: false, reason: 'NO_SELECTED_FLOOR' };
     }
     return this.startFloor(this.currentSelectedFloor, matchSeed);
+  }
+
+  startOwlMatch(matchSeed: number): StartOwlMatchResult {
+    if (this.currentRoute !== 'OWL_REVEAL' && this.currentRoute !== 'OWL_RESULT') {
+      return { ok: false, reason: 'NO_OWL_REVEAL' };
+    }
+    this.currentMatch = createMatch({ matchSeed });
+    this.currentAi = createAiController(
+      getAiFloorProfile(5, this.currentProgress.selectedDifficulty),
+      deriveAiSeed(matchSeed),
+      'opponent',
+    );
+    this.currentRoute = 'OWL_MATCH';
+    return { ok: true, match: this.currentMatch };
   }
 
   async completeEncounter(result: FloorResult): Promise<CompleteEncounterResult> {
@@ -247,8 +269,8 @@ export class TowerController {
     }
 
     this.currentSeriesState = null;
-    this.currentRoute = routeFor(floor, result);
     if (resolution.kind === 'series-loss') {
+      this.currentRoute = routeFor(floor, result);
       return {
         ok: true,
         route: this.currentRoute,
@@ -259,8 +281,38 @@ export class TowerController {
     }
 
     this.currentProgress = applyFloorResult(this.currentProgress, floor, 'WIN');
+    this.currentRoute = isFinalFloor(floor) ? 'OWL_REVEAL' : 'RESULT_WIN';
     const save = await this.persistCurrentProgress();
     return { ...save, encounter, series: null, floorCompleted: true };
+  }
+
+  async completeOwlMatch(result: FloorResult): Promise<TowerSaveResult> {
+    if (
+      this.currentRoute !== 'OWL_MATCH'
+      || this.currentMatch === null
+      || this.currentAi === null
+    ) {
+      return { ok: false, reason: 'NO_ACTIVE_MATCH', route: this.currentRoute };
+    }
+
+    this.currentMatch = null;
+    this.currentAi = null;
+    if (result !== 'WIN') {
+      this.currentRoute = 'OWL_RESULT';
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const difficulty = this.currentProgress.selectedDifficulty;
+    const next = cloneProgress(this.currentProgress);
+    const run = next.difficultyProgress[difficulty];
+    next.difficultyProgress[difficulty] = { ...run, owlDefeated: true };
+    const nextDifficultyValue = nextDifficulty(difficulty);
+    if (nextDifficultyValue !== null) {
+      next.unlockedDifficulties[nextDifficultyValue] = true;
+    }
+    this.currentProgress = next;
+    this.currentRoute = 'ENDING';
+    return this.persistCurrentProgress();
   }
 
   /** @deprecated Use completeEncounter for the three-opponent floor gauntlet. */

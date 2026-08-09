@@ -146,6 +146,31 @@ describe('MatchScreen', () => {
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
 
+  it('renders the hidden owl encounter as the opponent instead of a floor rival', () => {
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        difficulty="hard"
+        floor={5}
+        seed={17}
+        specialEncounter={{
+          characterId: 'owl-companion',
+          displayName: 'Owl Architect',
+          title: 'Tower Architect',
+          intro: 'The tower architect reveals the truth.',
+          winLine: 'The tower opens.',
+          lossLine: 'The tower resets.',
+        }}
+        onFinished={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Owl Architect battle status' }))
+      .toHaveAttribute('data-character-id', 'owl-companion');
+    expect(screen.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByText('HIDDEN BOSS')).toBeInTheDocument();
+  });
+
   it('connects item actions, row highlighting, joystick, and rotation to the match loop', () => {
     const loop = activeLoop();
     useMatchLoopMock.mockReturnValue(loop);

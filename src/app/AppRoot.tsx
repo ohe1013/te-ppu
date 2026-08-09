@@ -11,6 +11,8 @@ import { BootScreen } from '../ui/screens/BootScreen';
 import { MatchScreen } from '../ui/screens/MatchScreen';
 import { ResultScreen } from '../ui/screens/ResultScreen';
 import { TowerScreen } from '../ui/screens/TowerScreen';
+import { OwlRevealScreen } from '../ui/screens/OwlRevealScreen';
+import { OwlResultScreen } from '../ui/screens/OwlResultScreen';
 import '../ui/screens/screens.css';
 import {
   reduceRoute,
@@ -24,7 +26,12 @@ import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
 import type { ProgressState } from '../progression/index';
-import { FINAL_FLOOR, getFloorEncounter } from '../progression/index';
+import {
+  FINAL_FLOOR,
+  getFloorEncounter,
+  OWL_ENCOUNTER,
+  type OwlEncounter,
+} from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
 import { TowerController } from './towerController';
@@ -35,6 +42,8 @@ export interface MatchRouteViewProps {
   readonly floor: Floor;
   readonly encounterIndex: 0 | 1 | 2;
   readonly wins: 0 | 1 | 2;
+  readonly difficulty: ProgressState['selectedDifficulty'];
+  readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => Promise<void>;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -82,9 +91,16 @@ export function AppRoot({
 }: AppRootProps) {
   const boot = useBoot(services);
   const [route, dispatchRoute] = useReducer(reduceRoute, { name: 'boot' } satisfies AppRoute);
-  const displayedFloor = route.name === 'floor-intro' || route.name === 'match' || route.name === 'result'
+  const displayedFloor = route.name === 'floor-intro'
+    || route.name === 'match'
+    || route.name === 'result'
     ? route.floor
-    : route.name === 'ending' ? FINAL_FLOOR : null;
+    : route.name === 'owl-reveal'
+      || route.name === 'owl-match'
+      || route.name === 'owl-result'
+      || route.name === 'ending'
+      ? FINAL_FLOOR
+      : null;
   const floorAssets = useFloorAssets(services.assetManager, displayedFloor);
   const commonAssets = boot.status === 'ready' ? services.assetManager.getCommonAssets() : null;
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
@@ -201,6 +217,28 @@ export function AppRoot({
     refreshControllerView();
   }
 
+  function startOwlMatch(): void {
+    if (controller === null) return;
+    const started = controller.startOwlMatch(createMatchSeed());
+    if (started.ok) dispatchRoute({ type: 'start-owl-match', seed: started.match.matchSeed });
+  }
+
+  async function finishOwlMatch(result: MatchResult): Promise<void> {
+    if (controller === null || completionPendingRef.current) return;
+    completionPendingRef.current = true;
+    const completionToken = completionTokenRef.current + 1;
+    completionTokenRef.current = completionToken;
+    setResultSavePending(result === 'win');
+    const save = controller.completeOwlMatch(toControllerResult(result));
+    dispatchRoute({ type: 'owl-match-finished', result });
+    refreshControllerView();
+    await save;
+    if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
+    completionPendingRef.current = false;
+    setResultSavePending(false);
+    refreshControllerView();
+  }
+
   async function retrySave(): Promise<boolean> {
     if (controller === null || saveRetrying) return false;
     setSaveRetrying(true);
@@ -222,6 +260,17 @@ export function AppRoot({
     return result.ok;
   }
 
+  async function selectDifficulty(
+    difficulty: ProgressState['selectedDifficulty'],
+  ): Promise<boolean> {
+    if (controller === null) return false;
+    const save = controller.selectDifficulty(difficulty);
+    refreshControllerView();
+    const result = await save;
+    if (mountedRef.current) refreshControllerView();
+    return result.ok;
+  }
+
   let content: ReactNode;
   if (boot.status !== 'ready' || controller === null || route.name === 'boot') {
     content = <BootScreen state={boot} />;
@@ -233,7 +282,48 @@ export function AppRoot({
             commonAssets={commonAssets}
             notice={boot.notice}
             progress={controller.progress}
+            onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
             onSelectFloor={(floor) => dispatchRoute({ type: 'select-floor', floor })}
+          />
+        );
+        break;
+      case 'owl-reveal':
+        content = (
+          <OwlRevealScreen
+            commonAssets={commonAssets}
+            difficulty={controller.progress.selectedDifficulty}
+            floorAssets={floorAssets}
+            onBack={() => dispatchRoute({ type: 'return-to-tower' })}
+            onStart={startOwlMatch}
+          />
+        );
+        break;
+      case 'owl-match':
+        content = renderMatch({
+          audioPort: services.audioPort,
+          difficulty: controller.progress.selectedDifficulty,
+          encounterIndex: 2,
+          floor: FINAL_FLOOR,
+          wins: 2,
+          specialEncounter: OWL_ENCOUNTER,
+          commonAssets,
+          floorAssets,
+          seed: route.seed,
+          onFinished: finishOwlMatch,
+          onRetrySettingsSave: retrySave,
+          onSettingsChange: updateSettings,
+          platform: services.platform,
+          settings: controller.progress.settings,
+          settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
+        });
+        break;
+      case 'owl-result':
+        content = (
+          <OwlResultScreen
+            commonAssets={commonAssets}
+            floorAssets={floorAssets}
+            onContinue={() => dispatchRoute({ type: 'continue' })}
+            result={route.result}
           />
         );
         break;
@@ -257,6 +347,7 @@ export function AppRoot({
       case 'match':
         content = renderMatch({
           audioPort: services.audioPort,
+          difficulty: controller.progress.selectedDifficulty,
           floor: route.floor,
           encounterIndex: route.encounterIndex,
           wins: route.wins,
@@ -299,8 +390,10 @@ export function AppRoot({
         content = (
           <EndingScreen
             commonAssets={commonAssets}
+            difficulty={controller.progress.selectedDifficulty}
             floorAssets={floorAssets}
             onReturnToTower={() => dispatchRoute({ type: 'return-to-tower' })}
+            unlockedDifficulties={controller.progress.unlockedDifficulties}
           />
         );
         break;
@@ -310,6 +403,7 @@ export function AppRoot({
   return (
     <main
       className="app-shell"
+      data-difficulty={controller?.progress.selectedDifficulty ?? 'easy'}
       data-runtime-mode={services.platform.kind}
       data-testid="app-shell"
       id="app-shell"

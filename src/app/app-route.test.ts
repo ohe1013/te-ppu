@@ -56,6 +56,22 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'retry', seed: 2 },
     { type: 'continue' },
   ]],
+  ['owl reveal', { name: 'owl-reveal' }, [
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'start-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+  ]],
+  ['owl match', { name: 'owl-match', seed: 7 }, [
+    { type: 'boot-ready' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'match-finished', result: 'win' },
+  ]],
+  ['owl result', { name: 'owl-result', result: 'loss' }, [
+    { type: 'boot-ready' },
+    { type: 'start-owl-match', seed: 1 },
+    { type: 'owl-match-finished', result: 'win' },
+  ]],
 ];
 
 describe('reduceRoute', () => {
@@ -94,7 +110,25 @@ describe('reduceRoute', () => {
       result: 'win',
       seriesComplete: true,
     });
-    expect(reduceRoute(result, { type: 'continue' })).toEqual({ name: 'ending' });
+    expect(reduceRoute(result, { type: 'continue' })).toEqual({ name: 'owl-reveal' });
+  });
+
+  it('routes the hidden owl match through reveal, result, and ending', () => {
+    const reveal = reduceRoute(
+      { name: 'result', floor: 5, encounterIndex: 2, wins: 2, result: 'win', seriesComplete: true },
+      { type: 'continue' },
+    );
+    const match = reduceRoute(reveal, { type: 'start-owl-match', seed: 77 });
+    const loss = reduceRoute(match, { type: 'owl-match-finished', result: 'loss' });
+    const retry = reduceRoute(loss, { type: 'continue' });
+    const win = reduceRoute(match, { type: 'owl-match-finished', result: 'win' });
+
+    expect(reveal).toEqual({ name: 'owl-reveal' });
+    expect(match).toEqual({ name: 'owl-match', seed: 77 });
+    expect(loss).toEqual({ name: 'owl-result', result: 'loss' });
+    expect(retry).toEqual({ name: 'owl-reveal' });
+    expect(win).toEqual({ name: 'owl-result', result: 'win' });
+    expect(reduceRoute(win, { type: 'continue' })).toEqual({ name: 'ending' });
   });
 
   it('moves through boot, floor selection, match start, and result', () => {
@@ -147,11 +181,11 @@ describe('reduceRoute', () => {
     )).toEqual({ name: 'tower' });
   });
 
-  it('ends only after continuing from a floor-five victory', () => {
+  it('reveals the owl only after continuing from a floor-five victory', () => {
     expect(reduceRoute(
       { name: 'result', floor: 5, encounterIndex: 2, wins: 2, result: 'win', seriesComplete: true },
       { type: 'continue' },
-    )).toEqual({ name: 'ending' });
+    )).toEqual({ name: 'owl-reveal' });
   });
 
   it('returns to the tower from non-boot routes', () => {

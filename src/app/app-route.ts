@@ -18,6 +18,9 @@ export type AppRoute =
       result: MatchResult;
       seriesComplete: boolean;
     }
+  | { name: 'owl-reveal' }
+  | { name: 'owl-match'; seed: number }
+  | { name: 'owl-result'; result: MatchResult }
   | { name: 'ending' };
 
 export type AppRouteEvent =
@@ -25,6 +28,8 @@ export type AppRouteEvent =
   | { type: 'select-floor'; floor: Floor }
   | { type: 'start-match'; seed: number }
   | { type: 'match-finished'; result: MatchResult }
+  | { type: 'start-owl-match'; seed: number }
+  | { type: 'owl-match-finished'; result: MatchResult }
   | { type: 'retry'; seed: number }
   | { type: 'continue' }
   | { type: 'return-to-tower' };
@@ -82,7 +87,22 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
             wins: (route.wins + 1) as 0 | 1 | 2,
           };
         }
-        return isFinalFloor(route.floor) ? { name: 'ending' } : { name: 'tower' };
+        return isFinalFloor(route.floor) ? { name: 'owl-reveal' } : { name: 'tower' };
+      }
+      return route;
+    case 'owl-reveal':
+      return event.type === 'start-owl-match'
+        ? { name: 'owl-match', seed: event.seed }
+        : route;
+    case 'owl-match':
+      return event.type === 'owl-match-finished'
+        ? { name: 'owl-result', result: event.result }
+        : route;
+    case 'owl-result':
+      if (event.type === 'continue') {
+        return route.result === 'win'
+          ? { name: 'ending' }
+          : { name: 'owl-reveal' };
       }
       return route;
     case 'ending':

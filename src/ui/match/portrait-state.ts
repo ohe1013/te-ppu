@@ -14,7 +14,7 @@ const FOCUS_TICKS = 18;
 const SMUG_TICKS = 21;
 const DANGER_ROWS = 4;
 
-export type PortraitRole = 'hero' | 'lieutenant' | 'demon-king';
+export type PortraitRole = 'hero' | 'lieutenant' | 'demon-king' | 'owl';
 
 export interface PortraitPresentation {
   readonly state: PortraitState;
@@ -76,7 +76,7 @@ function terminalFor(
   if (status === 'player-won') return side === 'player' ? 'win' : 'defeat';
   if (status === 'opponent-won') {
     if (side === 'player') return 'loss';
-    return role === 'demon-king' ? 'idle' : 'smug';
+    return role === 'demon-king' || role === 'owl' ? 'idle' : 'smug';
   }
   if (status === 'draw') return 'idle';
   return null;

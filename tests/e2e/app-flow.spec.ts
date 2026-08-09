@@ -45,7 +45,7 @@ for (const { result, heading } of [
   });
 }
 
-test('loads unlocked floor five and reaches the ending after its victory', async ({ page }) => {
+test('loads unlocked floor five, reveals the owl, and unlocks Normal after its victory', async ({ page }) => {
   await openTower(page);
   await page.evaluate((progress) => {
     window.localStorage.setItem('te-ppu.progress', JSON.stringify(progress));
@@ -87,8 +87,23 @@ test('loads unlocked floor five and reaches the ending after its victory', async
   }
 
   await page.getByRole('button', { name: '탑으로' }).click();
+  await expect(page.getByTestId('owl-reveal-screen')).toBeVisible();
+  await expect(page.getByText('탑의 설계자')).toBeVisible();
+  await page.getByRole('button', { name: '부엉이와 대결' }).click();
+  await expect(page.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+  await expect(page.getByText('탑의 설계자', { exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    await window.__TE_PPU_E2E__.finish('win');
+  });
+  await expect(page.getByTestId('owl-result-screen')).toBeVisible();
+  await page.getByRole('button', { name: '엔딩 보기' }).click();
   await expect(page.getByTestId('ending-screen')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '모든 층을 클리어했습니다' })).toBeVisible();
+  await expect(page.getByText('NORMAL 난이도 해금')).toBeVisible();
+  await page.getByRole('button', { name: 'NORMAL 선택하러 가기' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'NORMAL' })).toBeEnabled();
+  await page.getByRole('button', { name: 'NORMAL' }).click();
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
 });
 
 test('keeps floor two locked until all three floor-one wins are complete', async ({ page }) => {
@@ -105,9 +120,14 @@ test('keeps floor two locked until all three floor-one wins are complete', async
     const progress = await page.evaluate(() => {
       const raw = window.localStorage.getItem('te-ppu.progress.identity.local.local-browser')
         ?? window.localStorage.getItem('te-ppu.progress');
-      return raw === null ? null : JSON.parse(raw) as { highestUnlockedFloor: number };
+      return raw === null ? null : JSON.parse(raw) as {
+        highestUnlockedFloor?: number;
+        difficultyProgress?: { easy?: { highestUnlockedFloor: number } };
+      };
     });
-    expect(progress?.highestUnlockedFloor ?? 1).toBe(encounterIndex === 2 ? 2 : 1);
+    expect(progress?.difficultyProgress?.easy?.highestUnlockedFloor
+      ?? progress?.highestUnlockedFloor
+      ?? 1).toBe(encounterIndex === 2 ? 2 : 1);
 
     if (encounterIndex < 2) {
       await page.getByRole('button', { name: '다음 상대' }).click();
