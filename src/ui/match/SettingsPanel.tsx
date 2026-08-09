@@ -1,7 +1,13 @@
-import { useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import type { ProgressState } from '../../progression/index';
 import type { LoadedImageRef } from '../../assets';
 import { AssetIcon } from './AssetIcon';
+import { ModalOverlay } from './ModalOverlay';
 
 export interface SettingsPanelProps {
   readonly settings: ProgressState['settings'];
@@ -20,6 +26,17 @@ export interface SettingsPanelProps {
   };
 }
 
+const FOCUSABLE = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+const SETTINGS_TITLE_ID = 'settings-panel-title';
+
 export function SettingsPanel({
   onRetrySave,
   onSettingsChange,
@@ -31,6 +48,43 @@ export function SettingsPanel({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localFailure, setLocalFailure] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    first?.focus();
+    return () => previouslyFocused?.focus();
+  }, [open]);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>): void {
+    if (event.key === 'Escape' && !saving) {
+      event.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []),
+    ];
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0]!;
+    const last = focusable.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   async function update(next: Partial<ProgressState['settings']>): Promise<void> {
     setSaving(true);
@@ -67,56 +121,77 @@ export function SettingsPanel({
         설정
       </button>
       {open ? (
-        <section aria-label="게임 설정" className="settings-panel">
-          <h2>게임 설정</h2>
-          <label>
-            <input
-              checked={settings.soundEnabled}
-              disabled={saving}
-              onChange={(event) => {
-                const enabled = event.currentTarget.checked;
-                onSoundEnabled?.(enabled);
-                void update({ soundEnabled: enabled });
-              }}
-              type="checkbox"
-            />
-            <AssetIcon
-              className="asset-icon"
-              fallback={settings.soundEnabled ? '🔊' : '🔇'}
-              image={settings.soundEnabled ? icons?.soundOn : icons?.soundOff}
-            />
-            효과음
-          </label>
-          <label>
-            <input
-              checked={settings.hapticsEnabled}
-              disabled={saving}
-              onChange={(event) => void update({
-                hapticsEnabled: event.currentTarget.checked,
-              })}
-              type="checkbox"
-            />
-            <AssetIcon
-              className="asset-icon"
-              fallback={settings.hapticsEnabled ? '◉' : '○'}
-              image={settings.hapticsEnabled ? icons?.hapticsOn : icons?.hapticsOff}
-            />
-            진동
-          </label>
-          {saving ? <p aria-live="polite" role="status">설정 저장 중</p> : null}
-          {saveFailed || localFailure ? (
-            <div className="settings-panel__save-error">
-              <p aria-live="polite" role="status">설정은 적용됐지만 저장하지 못했습니다.</p>
+        <ModalOverlay onDismiss={() => setOpen(false)} testId="settings-overlay">
+          <section
+            aria-labelledby={SETTINGS_TITLE_ID}
+            aria-modal="true"
+            className="modal-overlay__surface settings-panel"
+            onKeyDown={handleKeyDown}
+            ref={dialogRef}
+            role="dialog"
+            tabIndex={-1}
+          >
+            <div className="settings-panel__header">
+              <h2 id={SETTINGS_TITLE_ID}>게임 설정</h2>
               <button
+                aria-label="설정 닫기"
+                className="settings-panel__close"
                 disabled={saving}
-                onClick={() => void retrySave()}
+                onClick={() => setOpen(false)}
                 type="button"
               >
-                설정 저장 다시 시도
+                ×
               </button>
             </div>
-          ) : null}
-        </section>
+            <label>
+              <input
+                checked={settings.soundEnabled}
+                disabled={saving}
+                onChange={(event) => {
+                  const enabled = event.currentTarget.checked;
+                  onSoundEnabled?.(enabled);
+                  void update({ soundEnabled: enabled });
+                }}
+                type="checkbox"
+              />
+              <AssetIcon
+                className="asset-icon"
+                fallback={settings.soundEnabled ? '🔊' : '🔇'}
+                image={settings.soundEnabled ? icons?.soundOn : icons?.soundOff}
+              />
+              효과음
+            </label>
+            <label>
+              <input
+                checked={settings.hapticsEnabled}
+                disabled={saving}
+                onChange={(event) => void update({
+                  hapticsEnabled: event.currentTarget.checked,
+                })}
+                type="checkbox"
+              />
+              <AssetIcon
+                className="asset-icon"
+                fallback={settings.hapticsEnabled ? '◉' : '○'}
+                image={settings.hapticsEnabled ? icons?.hapticsOn : icons?.hapticsOff}
+              />
+              진동
+            </label>
+            {saving ? <p aria-live="polite" role="status">설정 저장 중</p> : null}
+            {saveFailed || localFailure ? (
+              <div className="settings-panel__save-error">
+                <p aria-live="polite" role="status">설정은 적용됐지만 저장하지 못했습니다.</p>
+                <button
+                  disabled={saving}
+                  onClick={() => void retrySave()}
+                  type="button"
+                >
+                  설정 저장 다시 시도
+                </button>
+              </div>
+            ) : null}
+          </section>
+        </ModalOverlay>
       ) : null}
     </div>
   );

@@ -36,19 +36,55 @@
 }
 
 .settings-panel {
-  position: fixed;
-  z-index: 20;
-  top: max(3.25rem, calc(var(--safe-area-top, 0px) + 2.5rem));
-  right: max(0.75rem, var(--safe-area-right, 0px));
-  width: min(15rem, calc(100vw - 1.5rem));
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100dvh - 2rem));
   padding: 0.8rem;
   border: 2px solid #171239;
   border-radius: 0.8rem;
   display: grid;
   gap: 0.55rem;
+  overflow: auto;
   color: #fff4cf;
   background: #24164e;
   box-shadow: 4px 4px 0 rgb(23 18 57 / 74%);
+}
+
+.modal-overlay {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    max(1rem, var(--safe-area-top, 0px))
+    max(1rem, var(--safe-area-right, 0px))
+    max(1rem, var(--safe-area-bottom, 0px))
+    max(1rem, var(--safe-area-left, 0px));
+  background: rgb(16 12 31 / 78%);
+}
+
+.modal-overlay__surface {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.modal-overlay[role="status"] {
+  pointer-events: none;
+}
+
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.settings-panel__close {
+  flex: 0 0 auto;
+  min-width: 2rem;
+  padding-inline: 0.35rem;
 }
 
 .settings-panel h2,
@@ -82,18 +118,11 @@
   font-size: 0.7rem;
 }
 
-.resume-countdown,
-.exit-confirmation__backdrop {
-  position: fixed;
-  z-index: 30;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgb(16 12 31 / 78%);
-}
-
 .resume-countdown {
-  pointer-events: none;
+  display: grid;
+  width: min(6rem, calc(100vw - 2rem));
+  aspect-ratio: 1;
+  place-items: center;
 }
 
 .resume-countdown span {

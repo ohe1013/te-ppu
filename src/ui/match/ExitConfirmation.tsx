@@ -7,6 +7,7 @@ import {
 import type { LoadedImageRef } from '../../assets';
 import { closeWithTimeout } from '../../platform/close-with-timeout';
 import { AssetIcon } from './AssetIcon';
+import { ModalOverlay } from './ModalOverlay';
 
 export interface ExitConfirmationProps {
   readonly open: boolean;
@@ -105,13 +106,11 @@ export function ExitConfirmation({
   }
 
   return (
-    <div className="exit-confirmation__backdrop" data-close-state={
-      closeSucceeded || confirmPending ? 'closing' : closeFailed ? 'failed' : 'idle'
-    }>
+    <ModalOverlay className="modal-overlay--exit">
       <div
         aria-labelledby="exit-confirmation-title"
         aria-modal="true"
-        className="exit-confirmation"
+        className="modal-overlay__surface exit-confirmation"
         data-close-state={
           closeSucceeded || confirmPending ? 'closing' : closeFailed ? 'failed' : 'idle'
         }
@@ -148,6 +147,6 @@ export function ExitConfirmation({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
