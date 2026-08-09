@@ -1,28 +1,57 @@
-import { getAiFloorProfile } from '../../ai/index';
 import type { Floor } from '../../app/app-route';
-import type { FloorAssetBundle } from '../../assets';
+import type { LoadedImageRef, RivalCharacterAssets } from '../../assets';
+import type { FloorEncounter, FloorSeriesState } from '../../progression';
+import { AssetImage } from '../match/AssetImage';
+import { CharacterPortrait } from '../characters/CharacterPortrait';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface FloorIntroScreenProps {
   readonly floor: Floor;
+  readonly encounter: FloorEncounter;
+  readonly series: FloorSeriesState;
+  readonly rival?: RivalCharacterAssets;
+  readonly background?: LoadedImageRef;
   readonly onBack: () => void;
   readonly onStart: () => void;
-  readonly floorAssets?: FloorAssetBundle | null;
 }
 
-export function FloorIntroScreen({ floor, floorAssets, onBack, onStart }: FloorIntroScreenProps) {
-  const profile = getAiFloorProfile(floor);
-  const reactionMs = Math.round(profile.reactionTicks * (1000 / 60));
-
+export function FloorIntroScreen({
+  background,
+  encounter,
+  floor,
+  onBack,
+  onStart,
+  rival,
+  series,
+}: FloorIntroScreenProps) {
   return (
-    <section className="screen-shell floor-intro-screen" data-testid="floor-intro-screen">
-      <ScreenBackdrop image={floorAssets?.background} />
-      <ScreenBackdrop className="screen-backdrop--art" image={floorAssets?.fullArt} />
+    <section
+      className="screen-shell floor-intro-screen"
+      data-encounter-index={encounter.index}
+      data-testid="floor-intro-screen"
+    >
+      <ScreenBackdrop image={background} />
       <div className="character-intro-panel">
-        <p className="eyebrow">{floor}층 라이벌</p>
-        <h1>{floor}층 대전 준비</h1>
-        <p className="character-intro-panel__speech">"이번엔 내 블록이 먼저야!"</p>
-        <p className="character-intro-panel__telemetry">AI 반응 간격: {reactionMs}ms</p>
+        <div className="character-intro-panel__rival">
+          <div className="character-intro-panel__full-art">
+            <AssetImage
+              alt={`${encounter.displayName} 전신 일러스트`}
+              url={rival?.fullArt?.url}
+            />
+          </div>
+          <CharacterPortrait
+            alt={`${encounter.displayName} 입장 초상`}
+            image={rival?.portraits.idle}
+            state="idle"
+          />
+        </div>
+        <div className="character-intro-panel__copy">
+          <p className="eyebrow">{floor}층 · {series.wins}/3 승리</p>
+          <h1>{encounter.displayName}</h1>
+          <p className="character-intro-panel__title">{encounter.title}</p>
+          <p className="character-intro-panel__speech">{encounter.intro}</p>
+          <p className="character-intro-panel__badge">상대 {encounter.index + 1}/3</p>
+        </div>
       </div>
       <div className="screen-actions">
         <button className="secondary-button" type="button" onClick={onBack}>타워로</button>

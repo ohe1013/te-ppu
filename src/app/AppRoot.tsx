@@ -24,7 +24,7 @@ import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
 import type { ProgressState } from '../progression/index';
-import { FINAL_FLOOR } from '../progression/index';
+import { FINAL_FLOOR, getFloorEncounter } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
 import { TowerController } from './towerController';
@@ -240,10 +240,17 @@ export function AppRoot({
       case 'floor-intro':
         content = (
           <FloorIntroScreen
+            background={floorAssets?.background}
+            encounter={getFloorEncounter(route.floor, route.encounterIndex)}
             floor={route.floor}
-            floorAssets={floorAssets}
             onBack={() => dispatchRoute({ type: 'return-to-tower' })}
             onStart={() => startIntro(route)}
+            rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
+            series={{
+              floor: route.floor,
+              encounterIndex: route.encounterIndex,
+              wins: route.wins,
+            }}
           />
         );
         break;
@@ -267,8 +274,9 @@ export function AppRoot({
       case 'result':
         content = (
           <ResultScreen
+            background={floorAssets?.background}
+            encounter={getFloorEncounter(route.floor, route.encounterIndex)}
             floor={route.floor}
-            floorAssets={floorAssets}
             progress={controller.progress}
             result={route.result}
             saveFailed={controller.saveError === 'SAVE_FAILED'}
@@ -277,6 +285,13 @@ export function AppRoot({
             onContinue={() => dispatchRoute({ type: 'continue' })}
             onRetry={retryFloor}
             onRetrySave={() => void retrySave()}
+            rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
+            series={{
+              floor: route.floor,
+              encounterIndex: route.encounterIndex,
+              wins: route.wins,
+            }}
+            seriesComplete={route.seriesComplete}
           />
         );
         break;

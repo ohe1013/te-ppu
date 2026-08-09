@@ -13,6 +13,7 @@ import type {
   ProgressState,
   Floor,
 } from '../progression/index';
+import { getFloorEncounter } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
@@ -161,9 +162,11 @@ function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
 }
 
 function TestMatch({ floor, encounterIndex, wins, onFinished }: MatchRouteViewProps): ReactNode {
+  const encounter = getFloorEncounter(floor, encounterIndex);
   return (
     <section data-testid="match-screen">
       <h1>{floor}층 대전</h1>
+      <h2>{encounter.displayName}</h2>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
       <button type="button" onClick={() => void onFinished('win')}>finish win</button>
       <button type="button" onClick={() => void onFinished('loss')}>finish loss</button>
@@ -197,12 +200,12 @@ function renderGame(
 async function enterMatch(
   user: ReturnType<typeof userEvent.setup>,
   floor: Floor,
-  reactionMs: number,
+  _reactionMs: number,
 ) {
   await screen.findByTestId('tower-screen');
   await user.click(screen.getByRole('button', { name: `${floor}층 선택` }));
   expect(screen.getByTestId('floor-intro-screen')).toBeInTheDocument();
-  expect(screen.getByText(`AI 반응 간격: ${reactionMs}ms`)).toBeInTheDocument();
+  expect(screen.queryByText(/AI 반응 간격/)).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: '대전 시작' }));
   expect(screen.getByTestId('match-screen')).toBeInTheDocument();
 }
@@ -213,7 +216,7 @@ async function finishWin(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function continueToNextEncounter(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: '계속' }));
+  await user.click(screen.getByRole('button', { name: '다음 상대' }));
   await screen.findByTestId('floor-intro-screen');
   await user.click(screen.getByRole('button', { name: '대전 시작' }));
   await screen.findByTestId('match-screen');
@@ -370,7 +373,7 @@ describe('AppRoot', () => {
     await continueToNextEncounter(user);
     expect(screen.getByTestId('match-encounter')).toHaveTextContent('1:1');
     await finishWin(user);
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '다음 상대' }));
     await screen.findByTestId('floor-intro-screen');
     await user.click(screen.getByRole('button', { name: '타워로' }));
 
@@ -381,7 +384,7 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
     await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
   });
 
@@ -449,7 +452,7 @@ describe('AppRoot', () => {
     [3, floorThreeProgress, 450],
     [4, floorFourProgress, 317],
     [5, floorFiveProgress, 200],
-  ] as const)('shows the exact floor-%i AI reaction timing', async (
+  ] as const)('shows the current floor-%i rival identity', async (
     floor,
     initialProgress,
     reactionMs,
@@ -458,6 +461,7 @@ describe('AppRoot', () => {
     renderGame(new TestProgressRepository(initialProgress));
 
     await enterMatch(user, floor, reactionMs);
+    expect(screen.getByText(getFloorEncounter(floor, 0).displayName)).toBeInTheDocument();
   });
 
   it.each(['loss', 'draw'] as const)('does not unlock floor two after a %s', async (result) => {
@@ -482,7 +486,7 @@ describe('AppRoot', () => {
     await enterMatch(user, 3, 450);
     await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
 
     expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '4층 선택' })).toBeEnabled();
@@ -491,7 +495,7 @@ describe('AppRoot', () => {
     await enterMatch(user, 4, 317);
     await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(2));
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
 
     expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
@@ -505,7 +509,7 @@ describe('AppRoot', () => {
     await enterMatch(user, 5, 200);
     await completeFloor(user, false);
     await waitFor(() => expect(repository.saves).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
 
     expect(screen.getByTestId('ending-screen')).toBeInTheDocument();
   });
@@ -541,7 +545,7 @@ describe('AppRoot', () => {
 
     await enterMatch(user, 1, 800);
     await completeFloor(user, false);
-    expect(screen.getByText('최고 해금 층: 2')).toBeInTheDocument();
+    expect(screen.getByText(/최고 해금/)).toHaveTextContent('최고 해금 2층');
     const retrySave = await screen.findByRole('button', { name: '저장 다시 시도' });
 
     await user.click(retrySave);
@@ -562,8 +566,8 @@ describe('AppRoot', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('진행 상황 저장 중');
     expect(screen.getByRole('button', { name: '다시 대전' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '계속' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: '계속' }));
+    expect(screen.getByRole('button', { name: '다음 층' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
     expect(screen.getByTestId('result-screen')).toBeInTheDocument();
 
     await act(async () => repository.settle({

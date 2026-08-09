@@ -2,8 +2,11 @@ import {
   FLOORS,
   type Floor,
   type ProgressState,
+  getFloorEncounters,
 } from '../../progression/index';
 import type { CommonAssets } from '../../assets';
+import { AssetImage } from '../match/AssetImage';
+import { CharacterStrip } from '../characters/CharacterStrip';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface TowerScreenProps {
@@ -13,22 +16,29 @@ export interface TowerScreenProps {
   readonly commonAssets?: CommonAssets | null;
 }
 
-const FLOOR_OPPONENTS: Readonly<Record<Floor, string>> = {
-  1: '기어 창고장',
-  2: '거품 연금술사',
-  3: '구름 경비대장',
-  4: '뒤틀린 기술자',
-  5: '마왕의 왕좌',
-};
-
 export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: TowerScreenProps) {
   return (
     <section className="screen-shell tower-screen" data-testid="tower-screen">
       <ScreenBackdrop image={commonAssets?.towerBackdrop} />
+      <ScreenBackdrop
+        className="screen-backdrop--demon"
+        image={commonAssets?.rivals['demon-king']?.fullArt}
+      />
       <div className="tower-screen__header">
-        <p className="eyebrow">PvE TOWER RUN</p>
-        <h1>꼭대기까지 올라가자!</h1>
-        <p className="tower-screen__subtitle">층마다 기다리는 라이벌을 넘어 타워의 심장을 수리하세요.</p>
+        <div className="tower-screen__brand">
+          <span className="tower-screen__mascot">
+            <AssetImage
+              alt="태엽 부엉이 안내자"
+              className="tower-screen__mascot-image"
+              url={commonAssets?.owl.fullArt?.url}
+            />
+          </span>
+          <div>
+            <p className="eyebrow">THE GEARLIGHT TOWER</p>
+            <h1>꼭대기까지 올라가자!</h1>
+          </div>
+        </div>
+        <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
       </div>
       {notice !== null && <p className="notice" role="status">{notice}</p>}
       <div aria-label="타워 층 선택" className="floor-list tower-route">
@@ -47,7 +57,16 @@ export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: T
             >
               <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}</span>
               <div className="tower-node__card">
-                <span className="tower-node__opponent">{FLOOR_OPPONENTS[floor]}</span>
+                <div className="tower-node__title">
+                  <span>{floor === 5 ? '마왕의 왕좌' : `${floor}층 관문`}</span>
+                  <small>3연전</small>
+                </div>
+                <CharacterStrip
+                  activeIndex={0}
+                  encounters={getFloorEncounters(floor)}
+                  rivals={commonAssets?.rivals ?? {}}
+                  unlocked={unlocked}
+                />
                 <button
                   aria-describedby={statusId}
                   aria-label={`${floor}층 선택`}
