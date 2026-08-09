@@ -70,13 +70,13 @@ export function dangerForSide(side: PublicSideView): boolean {
 
 function terminalFor(
   status: PublicMatchView['status'],
-  floor: Floor,
+  role: PortraitRole,
   side: SideId,
 ): PortraitState | null {
   if (status === 'player-won') return side === 'player' ? 'win' : 'defeat';
   if (status === 'opponent-won') {
     if (side === 'player') return 'loss';
-    return floor === 5 ? 'idle' : 'smug';
+    return role === 'demon-king' ? 'idle' : 'smug';
   }
   if (status === 'draw') return 'idle';
   return null;
@@ -140,7 +140,6 @@ export function reducePortraitBatches(
   memory: PortraitMemory,
   {
     batches,
-    floor,
     latestView,
     role,
     side,
@@ -158,7 +157,7 @@ export function reducePortraitBatches(
       danger: role !== 'hero' && dangerForSide(batch.view.sides[side]),
     };
     lastBatchTick = batch.tick;
-    const terminal = terminalFor(batch.view.status, floor, side);
+    const terminal = terminalFor(batch.view.status, role, side);
     if (terminal !== null) next = { ...next, terminal };
   }
   if (lastBatchTick === null || latestView.tick > lastBatchTick) {
@@ -168,7 +167,7 @@ export function reducePortraitBatches(
     };
   }
   if (next.terminal !== null) return next;
-  const terminal = terminalFor(latestView.status, floor, side);
+  const terminal = terminalFor(latestView.status, role, side);
   return terminal === null ? next : { ...next, terminal };
 }
 

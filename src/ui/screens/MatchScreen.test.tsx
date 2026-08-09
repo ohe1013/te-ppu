@@ -128,9 +128,9 @@ describe('MatchScreen', () => {
   it('composes two symmetric public HUDs around the single battle canvas', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
-    expect(screen.getByRole('region', { name: 'PLAYER battle status' }))
+    expect(screen.getByRole('region', { name: '견습 마도공학자 battle status' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'RIVAL battle status' }))
+    expect(screen.getByRole('region', { name: '거품 연금술사 battle status' }))
       .toBeInTheDocument();
     expect(screen.getAllByTestId('battle-canvas-proxy')).toHaveLength(1);
     expect(screen.getByTestId('battle-canvas-proxy')).toHaveAttribute(

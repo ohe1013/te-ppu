@@ -305,9 +305,9 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
 
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
-    expect(screen.getByRole('region', { name: 'PLAYER battle status' }))
+    expect(screen.getByRole('region', { name: '견습 마도공학자 battle status' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'RIVAL battle status' }))
+    expect(screen.getByRole('region', { name: '기어 창고장 battle status' }))
       .toBeInTheDocument();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');

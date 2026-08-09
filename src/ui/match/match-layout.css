@@ -166,12 +166,30 @@
   gap: 0.75rem;
 }
 
-.match-header h1 {
-  margin-top: 0.125rem;
+.match-header__series {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.match-header__series-badge,
+.match-header__series-wins {
+  padding: 0.28rem 0.45rem;
+  border: 2px solid #171239;
+  border-radius: 999px;
+  color: #171239;
+  background: #fff4cf;
+  box-shadow: 2px 2px 0 rgb(23 18 57 / 64%);
+  font-size: 0.63rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.match-header__series-wins {
   color: #fff4cf;
-  font-size: clamp(1rem, 4vw, 1.25rem);
-  line-height: 1.1;
-  text-shadow: 2px 2px 0 #633f9e;
+  background: #633f9e;
 }
 
 .match-meta {
@@ -184,6 +202,18 @@
   font-weight: 750;
   line-height: 1.25;
   text-transform: uppercase;
+}
+
+.match-meta--live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .match-meta__telemetry,
@@ -208,7 +238,7 @@
 
 .battle-hud {
   min-width: 0;
-  padding: 0.25rem 0.4rem;
+  padding: 0.35rem 0.4rem;
   overflow: hidden;
   border: 2px solid #171239;
   border-radius: 0.65rem;
@@ -219,7 +249,7 @@
 .battle-hud__header {
   display: grid;
   align-items: center;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   gap: 0.35rem;
 }
 
@@ -232,8 +262,8 @@
 }
 
 .battle-hud__portrait {
-  width: 24px;
-  height: 24px;
+  width: 52px;
+  height: 52px;
   overflow: hidden;
   border: 2px solid #171239;
   border-radius: 50%;
@@ -241,6 +271,16 @@
   place-items: center;
   color: #fff4cf;
   background: #633f9e;
+}
+
+.battle-hud__portrait--plate {
+  border-radius: 0.72rem;
+  box-shadow: 0 0 0 2px #fff4cf, 2px 2px 0 rgb(23 18 57 / 66%);
+}
+
+.battle-hud[data-danger="true"] .battle-hud__portrait--plate {
+  border-color: #ff6fb1;
+  box-shadow: 0 0 0 2px #ffca5c, 0 0 0 4px rgb(255 111 177 / 34%), 2px 2px 0 rgb(23 18 57 / 66%);
 }
 
 .asset-image {
@@ -263,24 +303,49 @@
   line-height: 1;
 }
 
+.battle-hud__character-copy {
+  min-width: 0;
+}
+
 .battle-hud__header h2 {
   margin: 0;
   overflow: hidden;
   color: #171239;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.battle-hud__header > span:last-child {
+.battle-hud__character-copy p {
+  margin: 0.12rem 0 0;
+  overflow: hidden;
+  color: #4b2f91;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-hud__danger {
   color: #4b2f91;
   font-size: 0.56rem;
   font-weight: 800;
   white-space: nowrap;
 }
 
-.battle-hud[data-side="opponent"] .battle-hud__header > span:last-child {
+.battle-hud[data-danger="true"] .battle-hud__danger,
+.battle-hud[data-side="opponent"] .battle-hud__danger {
   color: #d14479;
+}
+
+.battle-hud__next-heading {
+  margin-top: 0.25rem;
+  color: #4b2f91;
+  font-size: 0.52rem;
+  font-weight: 950;
+  letter-spacing: 0.1em;
 }
 
 .battle-hud__next {
@@ -427,12 +492,12 @@
 
 @media (max-height: 700px) {
   .battle-hud__header {
-    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
   }
 
   .battle-hud__portrait {
-    width: 20px;
-    height: 20px;
+    width: 40px;
+    height: 40px;
   }
 
   .battle-hud__next {

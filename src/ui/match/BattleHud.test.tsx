@@ -25,11 +25,19 @@ const model: PublicSideView = {
 
 describe('BattleHud', () => {
   it('shows every public side field without private match data', () => {
-    render(<BattleHud label="PLAYER" model={model} side="player" />);
-    const hud = screen.getByRole('region', { name: 'PLAYER battle status' });
+    render(
+      <BattleHud
+        character={{ id: 'hero-engineer', name: '견습 마도공학자', title: '별빛 수리공' }}
+        model={model}
+        side="player"
+      />,
+    );
+    const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
 
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('T');
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('I');
+    expect(within(hud).getByText('견습 마도공학자')).toBeInTheDocument();
+    expect(within(hud).getByText('별빛 수리공')).toBeInTheDocument();
     expect(within(hud).getByTestId('player-combo')).toHaveTextContent('3');
     expect(within(hud).getByTestId('player-incoming')).toHaveTextContent('4');
     expect(within(hud).getByTestId('player-row-clear')).toHaveTextContent('2');
@@ -37,36 +45,42 @@ describe('BattleHud', () => {
     expect(within(hud).getByTestId('player-queue-swap')).toHaveTextContent('5');
     expect(within(hud).getByTestId('player-freeze-ticks')).toHaveTextContent('90');
     expect(within(hud).getByTestId('player-phase')).toHaveTextContent('active');
-    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('READY');
+    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('DANGER');
   });
 
   it('announces a top-out state on the same symmetric HUD component', () => {
     render(
       <BattleHud
-        label="RIVAL"
+        character={{ id: 'glass-oracle', name: '유리 예언자 프리즘', title: '거울 회랑의 관리자' }}
         model={{ ...model, topOut: true }}
         side="opponent"
       />,
     );
 
-    expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('TOP OUT');
+    expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('DANGER');
   });
 
   it('keeps labels available without portrait sources and exposes deterministic portrait state', () => {
-    const result = render(<BattleHud label="PLAYER" model={model} side="player" />);
-    const hud = screen.getByRole('region', { name: 'PLAYER battle status' });
+    const result = render(
+      <BattleHud
+        character={{ id: 'hero-engineer', name: '견습 마도공학자', title: '별빛 수리공' }}
+        model={model}
+        side="player"
+      />,
+    );
+    const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
 
     expect(hud.querySelector('[data-portrait-state]')).toHaveAttribute(
       'data-portrait-state',
       'idle',
     );
     expect(hud.querySelector('img')).toBeNull();
-    expect(within(hud).getByRole('heading', { name: 'PLAYER' })).toBeVisible();
-    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('READY');
+    expect(within(hud).getByRole('heading', { name: '견습 마도공학자' })).toBeVisible();
+    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('DANGER');
 
     result.rerender(
       <BattleHud
-        label="PLAYER"
+        character={{ id: 'hero-engineer', name: '견습 마도공학자', title: '별빛 수리공' }}
         model={model}
         portrait={{
           alt: 'PLAYER attack portrait',

@@ -16,6 +16,7 @@ import {
   type UseMatchLoopOptions,
 } from '../../app/use-match-loop';
 import type {
+  CharacterId,
   CommonAssets,
   FloorAssetBundle,
   LoadedImageRef,
@@ -31,6 +32,7 @@ import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { ProgressState } from '../../progression/index';
+import { getFloorEncounter, type EncounterIndex, type FloorEncounter } from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
 import { AssetIcon } from '../match/AssetIcon';
@@ -56,6 +58,8 @@ import '../match/match-layout.css';
 export interface MatchScreenProps {
   readonly audioPort: Pick<AudioPort, 'play'>;
   readonly floor: Floor;
+  readonly encounterIndex?: EncounterIndex;
+  readonly wins?: 0 | 1 | 2;
   readonly seed: number;
   readonly onFinished: (result: MatchResult) => void | Promise<void>;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -124,9 +128,9 @@ function ignoreEffect(operation: () => Promise<void>): void {
   }
 }
 
-function portraitRoleFor(side: 'player' | 'opponent', floor: Floor): PortraitRole {
+function portraitRoleFor(side: 'player' | 'opponent', characterId: CharacterId): PortraitRole {
   if (side === 'player') return 'hero';
-  return floor === 5 ? 'demon-king' : 'lieutenant';
+  return characterId === 'demon-king' ? 'demon-king' : 'lieutenant';
 }
 
 function presentationFor(
@@ -159,23 +163,27 @@ function presentationFor(
 
 function usePortraitPresentations(
   floor: Floor,
+  characterId: CharacterId,
   match: Pick<MatchLoopView, 'eventBatches' | 'view'>,
   sources: MatchScreenProps['portraitSources'],
 ): { readonly player: PortraitPresentation; readonly opponent: PortraitPresentation } {
   const memoriesRef = useRef<{
     readonly floor: Floor;
+    readonly characterId: CharacterId;
     readonly player: PortraitMemory;
     readonly opponent: PortraitMemory;
   } | null>(null);
   const previous = memoriesRef.current?.floor === floor
+    && memoriesRef.current.characterId === characterId
     ? memoriesRef.current
     : {
+      characterId,
       floor,
       opponent: createPortraitMemory(),
       player: createPortraitMemory(),
     };
-  const playerRole = portraitRoleFor('player', floor);
-  const opponentRole = portraitRoleFor('opponent', floor);
+  const playerRole = portraitRoleFor('player', 'hero-engineer');
+  const opponentRole = portraitRoleFor('opponent', characterId);
   const player = reducePortraitBatches(previous.player, {
     batches: match.eventBatches,
     floor,
@@ -190,7 +198,7 @@ function usePortraitPresentations(
     role: opponentRole,
     side: 'opponent',
   });
-  memoriesRef.current = { floor, opponent, player };
+  memoriesRef.current = { characterId, floor, opponent, player };
   return {
     player: presentationFor(player, {
       floor,
@@ -212,8 +220,9 @@ function usePortraitPresentations(
 export function MatchScreen({
   audioPort,
   commonAssets,
+  encounterIndex = 0,
   floor,
-  floorAssets,
+  wins = 0,
   onFinished,
   onRetrySettingsSave,
   onSettingsChange,
@@ -224,6 +233,17 @@ export function MatchScreen({
   settingsSaveFailed,
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
+  const encounter: FloorEncounter = getFloorEncounter(floor, encounterIndex);
+  const heroCharacter = {
+    id: 'hero-engineer' as const,
+    name: '견습 마도공학자',
+    title: '별빛 수리공',
+  };
+  const rivalCharacter = {
+    id: encounter.characterId,
+    name: encounter.displayName,
+    title: encounter.title,
+  };
   const resetBus = useMemo(() => new InputResetBus(), []);
   const audio = audioPort;
   const feedbackRef = useRef({ audio, platform, settings });
@@ -268,9 +288,17 @@ export function MatchScreen({
   });
   const resolvedPortraitSources = useMemo(() => ({
     player: { ...portraitUrls(commonAssets?.hero.portraits), ...portraitSources?.player },
-    opponent: { ...portraitUrls(floorAssets?.portraits), ...portraitSources?.opponent },
-  }), [commonAssets?.hero.portraits, floorAssets?.portraits, portraitSources]);
-  const portraits = usePortraitPresentations(floor, match, resolvedPortraitSources);
+    opponent: {
+      ...portraitUrls(commonAssets?.rivals[encounter.characterId]?.portraits),
+      ...portraitSources?.opponent,
+    },
+  }), [commonAssets?.hero.portraits, commonAssets?.rivals, encounter.characterId, portraitSources]);
+  const portraits = usePortraitPresentations(
+    floor,
+    encounter.characterId,
+    match,
+    resolvedPortraitSources,
+  );
   const skin = useMemo(() => {
     if (commonAssets === null || commonAssets === undefined) return undefined;
     const { garbage, ...blocks } = commonAssets.tiles;
@@ -353,12 +381,12 @@ export function MatchScreen({
       data-testid="match-screen"
     >
       <header className="match-header">
-        <div>
-          <p className="eyebrow">{floor}층 대전</p>
-          <h1>대전 진행 중</h1>
+        <div className="match-header__series">
+          <span className="match-header__series-badge">{floor}F · {encounterIndex + 1}/3</span>
+          <span className="match-header__series-wins">승리 {wins ?? 0}/3</span>
         </div>
         <div className="match-header__actions">
-          <div className="match-meta">
+          <div className="match-meta match-meta--live">
             <span aria-live="polite" data-testid="match-status">
               {match.view.status}
             </span>
@@ -390,16 +418,16 @@ export function MatchScreen({
 
       <div className="battle-hud-pair">
         <BattleHud
+          character={heroCharacter}
           items={commonAssets?.items}
-          label="PLAYER"
           model={match.view.sides.player}
           portrait={portraits.player}
           side="player"
           tiles={commonAssets?.tiles}
         />
         <BattleHud
+          character={rivalCharacter}
           items={commonAssets?.items}
-          label="RIVAL"
           model={match.view.sides.opponent}
           portrait={portraits.opponent}
           side="opponent"

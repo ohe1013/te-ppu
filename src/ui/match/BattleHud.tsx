@@ -1,10 +1,14 @@
 import type { ItemType, PieceKind, PublicSideView, SideId } from '../../core/index';
 import type { LoadedImageRef } from '../../assets';
 import { AssetImage } from './AssetImage';
+import {
+  createCharacterPlateModel,
+  type CharacterPlateCharacter,
+} from './character-plate';
 import type { PortraitPresentation } from './portrait-state';
 
 export interface BattleHudProps {
-  readonly label: string;
+  readonly character: CharacterPlateCharacter;
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
   readonly side: SideId;
@@ -18,37 +22,44 @@ const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
   'queue-swap': 'SWAP',
 };
 
-export function BattleHud({ items, label, model, portrait, side, tiles }: BattleHudProps) {
+export function BattleHud({ character, items, model, portrait, side, tiles }: BattleHudProps) {
   const presentation = portrait ?? {
-    alt: `${label} idle portrait`,
+    alt: `${character.name} idle portrait`,
     state: 'idle' as const,
   };
+  const plate = createCharacterPlateModel(character, side, presentation, model);
   return (
     <section
-      aria-label={`${label} battle status`}
+      aria-label={`${character.name} battle status`}
       className="battle-hud"
+      data-character-id={plate.characterId}
+      data-danger={plate.danger ? 'true' : 'false'}
       data-side={side}
       role="region"
     >
       <header className="battle-hud__header">
         <span
-          className="battle-hud__portrait"
+          className="battle-hud__portrait battle-hud__portrait--plate"
           data-portrait-state={presentation.state}
         >
           <AssetImage alt={presentation.alt} url={presentation.url} />
         </span>
-        <h2>{label}</h2>
-        <span data-testid={`${side}-top-out`}>
-          {model.topOut ? 'TOP OUT' : 'READY'}
+        <div className="battle-hud__character-copy">
+          <h2>{plate.name}</h2>
+          <p>{plate.title}</p>
+        </div>
+        <span className="battle-hud__danger" data-testid={`${side}-top-out`}>
+          {plate.danger ? 'DANGER' : 'READY'}
         </span>
       </header>
 
+      <div className="battle-hud__next-heading">NEXT</div>
       <ol
-        aria-label={`${label} next pieces`}
+        aria-label={`${plate.name} next pieces`}
         className="battle-hud__next"
         data-testid={`${side}-next`}
       >
-        {model.next.map((piece, index) => (
+        {model.next.slice(0, 2).map((piece, index) => (
           <li
             data-item={piece.marker?.item ?? 'none'}
             data-kind={piece.kind}
@@ -64,7 +75,7 @@ export function BattleHud({ items, label, model, portrait, side, tiles }: Battle
         ))}
       </ol>
 
-      <div aria-label={`${label} item slots`} className="battle-hud__item-ribbon">
+      <div aria-label={`${plate.name} item slots`} className="battle-hud__item-ribbon">
         {(Object.keys(ITEM_LABELS) as ItemType[]).map((item) => {
           const count = item === 'row-clear'
             ? model.inventory.rowClear
