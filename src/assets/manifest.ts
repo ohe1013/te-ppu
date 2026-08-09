@@ -1,5 +1,5 @@
 import type {
-  AssetManifestV1,
+  AssetManifest,
   FloorOpponentId,
   ManifestRef,
 } from './types';
@@ -19,6 +19,10 @@ const HERO_PORTRAITS = ['idle', 'focus', 'attack', 'hit', 'win', 'loss'] as cons
 const OWL_PORTRAITS = ['idle', 'worry', 'cheer'] as const;
 const LIEUTENANT_PORTRAITS = ['idle', 'smug', 'attack', 'hit', 'panic', 'defeat'] as const;
 const DEMON_KING_PORTRAITS = ['idle', 'attack', 'hit', 'rage', 'defeat'] as const;
+const RIVAL_IDS = [
+  'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+] as const satisfies readonly FloorOpponentId[];
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -86,33 +90,36 @@ function parseCharacter<K extends string>(
   };
 }
 
-function parseFloor(
-  value: unknown,
-  opponent: FloorOpponentId,
-  music: MusicTrack,
-  portraitIds: readonly string[],
-) {
-  const floor = exactObject(value, ['opponent', 'music', 'background', 'character']);
-  exactString(floor.opponent, opponent);
+function parseEncounterIds(value: unknown): readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId] {
+  if (!Array.isArray(value) || value.length !== 3) invalid();
+  const ids = value.map((candidate) => {
+    if (typeof candidate !== 'string' || !RIVAL_IDS.includes(candidate as FloorOpponentId)) invalid();
+    return candidate as FloorOpponentId;
+  });
+  if (new Set(ids).size !== 3) invalid();
+  return ids as [FloorOpponentId, FloorOpponentId, FloorOpponentId];
+}
+
+function parseFloor(value: unknown, music: MusicTrack) {
+  const floor = exactObject(value, ['background', 'music', 'encounters']);
   exactString(floor.music, music);
   return {
-    opponent,
-    music,
     background: parseRef(floor.background),
-    character: parseCharacter(floor.character, portraitIds),
+    music,
+    encounters: parseEncounterIds(floor.encounters),
   };
 }
 
-export function parseAssetManifest(value: unknown): AssetManifestV1 {
+export function parseAssetManifest(value: unknown): AssetManifest {
   if (!isPlainObject(value)) invalid();
   const manifest = value;
 
-  if (manifest.schemaVersion !== 1) invalid();
   if (manifest.mode === 'procedural-fallback') {
     exactObject(value, ['schemaVersion', 'mode']);
+    if (manifest.schemaVersion !== 1) invalid();
     return { schemaVersion: 1, mode: 'procedural-fallback' };
   }
-  if (manifest.mode !== 'assets') invalid();
+  if (manifest.schemaVersion !== 2 || manifest.mode !== 'assets') invalid();
 
   const authored = exactObject(value, ['schemaVersion', 'mode', 'brand', 'common', 'floors']);
   const brand = exactObject(authored.brand, ['logo']);
@@ -120,13 +127,15 @@ export function parseAssetManifest(value: unknown): AssetManifestV1 {
     'backgrounds', 'characters', 'tiles', 'items', 'icons', 'atlas', 'audio',
   ]);
   const backgrounds = exactObject(common.backgrounds, ['tower']);
-  const characters = exactObject(common.characters, ['hero-engineer', 'owl-companion']);
+  const characters = exactObject(common.characters, [
+    'hero-engineer', 'owl-companion', ...RIVAL_IDS,
+  ]);
   const atlas = exactObject(common.atlas, ['image', 'data']);
   const audio = exactObject(common.audio, ['sfx', 'bgm']);
   const floors = exactObject(authored.floors, ['1', '2', '3', '4', '5']);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: 'assets',
     brand: { logo: parseRef(brand.logo) },
     common: {
@@ -134,6 +143,14 @@ export function parseAssetManifest(value: unknown): AssetManifestV1 {
       characters: {
         'hero-engineer': parseCharacter(characters['hero-engineer'], HERO_PORTRAITS),
         'owl-companion': parseCharacter(characters['owl-companion'], OWL_PORTRAITS),
+        quartermaster: parseCharacter(characters.quartermaster, LIEUTENANT_PORTRAITS),
+        alchemist: parseCharacter(characters.alchemist, LIEUTENANT_PORTRAITS),
+        'guard-captain': parseCharacter(characters['guard-captain'], LIEUTENANT_PORTRAITS),
+        'dark-engineer': parseCharacter(characters['dark-engineer'], LIEUTENANT_PORTRAITS),
+        'clock-moth': parseCharacter(characters['clock-moth'], LIEUTENANT_PORTRAITS),
+        'glass-oracle': parseCharacter(characters['glass-oracle'], LIEUTENANT_PORTRAITS),
+        'moss-golem': parseCharacter(characters['moss-golem'], LIEUTENANT_PORTRAITS),
+        'demon-king': parseCharacter(characters['demon-king'], DEMON_KING_PORTRAITS),
       },
       tiles: parseRefs(common.tiles, TILE_IDS),
       items: parseRefs(common.items, ITEM_IDS),
@@ -145,11 +162,11 @@ export function parseAssetManifest(value: unknown): AssetManifestV1 {
       },
     },
     floors: {
-      '1': parseFloor(floors['1'], 'quartermaster', 'early-floors', LIEUTENANT_PORTRAITS),
-      '2': parseFloor(floors['2'], 'alchemist', 'early-floors', LIEUTENANT_PORTRAITS),
-      '3': parseFloor(floors['3'], 'guard-captain', 'late-floors', LIEUTENANT_PORTRAITS),
-      '4': parseFloor(floors['4'], 'dark-engineer', 'late-floors', LIEUTENANT_PORTRAITS),
-      '5': parseFloor(floors['5'], 'demon-king', 'demon-king', DEMON_KING_PORTRAITS),
+      '1': parseFloor(floors['1'], 'early-floors'),
+      '2': parseFloor(floors['2'], 'early-floors'),
+      '3': parseFloor(floors['3'], 'late-floors'),
+      '4': parseFloor(floors['4'], 'late-floors'),
+      '5': parseFloor(floors['5'], 'demon-king'),
     },
-  } as AssetManifestV1;
+  } as AssetManifest;
 }

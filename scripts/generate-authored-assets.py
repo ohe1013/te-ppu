@@ -313,12 +313,18 @@ PORTRAITS = {
     "alchemist": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "guard-captain": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "dark-engineer": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "clock-moth": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "glass-oracle": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "moss-golem": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "demon-king": ["idle", "attack", "hit", "rage", "defeat"],
 }
 
 
-def derive_portraits() -> None:
-    for character, states in PORTRAITS.items():
+def derive_portraits(characters: Iterable[str] | None = None) -> None:
+    selected = PORTRAITS if characters is None else {
+        character: PORTRAITS[character] for character in characters
+    }
+    for character, states in selected.items():
         source_path = CHARACTERS / character / "full.webp"
         if not source_path.exists():
             continue

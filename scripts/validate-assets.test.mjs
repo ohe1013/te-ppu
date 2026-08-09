@@ -133,8 +133,12 @@ function portraits(character, ids) {
 
 function completeManifest() {
   const lieutenant = ['idle', 'smug', 'attack', 'hit', 'panic', 'defeat'];
+  const rival = (character) => ({
+    fullArt: ref('characters/' + character + '/full.webp'),
+    portraits: portraits(character, lieutenant),
+  });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: 'assets',
     brand: { logo: ref('brand/app-logo.png') },
     common: {
@@ -147,6 +151,17 @@ function completeManifest() {
         'owl-companion': {
           fullArt: ref('characters/owl-companion/full.webp'),
           portraits: portraits('owl-companion', ['idle', 'worry', 'cheer']),
+        },
+        quartermaster: rival('quartermaster'),
+        alchemist: rival('alchemist'),
+        'guard-captain': rival('guard-captain'),
+        'dark-engineer': rival('dark-engineer'),
+        'clock-moth': rival('clock-moth'),
+        'glass-oracle': rival('glass-oracle'),
+        'moss-golem': rival('moss-golem'),
+        'demon-king': {
+          fullArt: ref('characters/demon-king/full.webp'),
+          portraits: portraits('demon-king', ['idle', 'attack', 'hit', 'rage', 'defeat']),
         },
       },
       tiles: {
@@ -190,37 +205,29 @@ function completeManifest() {
     },
     floors: {
       1: {
-        opponent: 'quartermaster',
         music: 'early-floors',
         background: ref('backgrounds/floor-01.webp'),
-        character: { fullArt: ref('characters/quartermaster/full.webp'), portraits: portraits('quartermaster', lieutenant) },
+        encounters: ['quartermaster', 'clock-moth', 'moss-golem'],
       },
       2: {
-        opponent: 'alchemist',
         music: 'early-floors',
         background: ref('backgrounds/floor-02.webp'),
-        character: { fullArt: ref('characters/alchemist/full.webp'), portraits: portraits('alchemist', lieutenant) },
+        encounters: ['alchemist', 'glass-oracle', 'clock-moth'],
       },
       3: {
-        opponent: 'guard-captain',
         music: 'late-floors',
         background: ref('backgrounds/floor-03.webp'),
-        character: { fullArt: ref('characters/guard-captain/full.webp'), portraits: portraits('guard-captain', lieutenant) },
+        encounters: ['guard-captain', 'moss-golem', 'glass-oracle'],
       },
       4: {
-        opponent: 'dark-engineer',
         music: 'late-floors',
         background: ref('backgrounds/floor-04.webp'),
-        character: { fullArt: ref('characters/dark-engineer/full.webp'), portraits: portraits('dark-engineer', lieutenant) },
+        encounters: ['dark-engineer', 'quartermaster', 'alchemist'],
       },
       5: {
-        opponent: 'demon-king',
         music: 'demon-king',
         background: ref('backgrounds/floor-05.webp'),
-        character: {
-          fullArt: ref('characters/demon-king/full.webp'),
-          portraits: portraits('demon-king', ['idle', 'attack', 'hit', 'rage', 'defeat']),
-        },
+        encounters: ['clock-moth', 'glass-oracle', 'demon-king'],
       },
     },
   };
@@ -339,6 +346,43 @@ test('accepts a complete authored pack with geometry-only SVGs, VP8/VP8L/VP8X We
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
     await assert.doesNotReject(() => validateAssets(root));
+  });
+});
+
+test('rejects a floor with duplicate encounter ids', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.floors[1].encounters[1] = manifest.floors[1].encounters[0];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects a rival character with a missing portrait', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    delete manifest.common.characters['clock-moth'].portraits.panic;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /manifest|portrait/i);
+  });
+});
+
+test('rejects a duplicate canonical rival character path', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.common.characters['clock-moth'].fullArt.path =
+      manifest.common.characters['glass-oracle'].fullArt.path;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /canonical asset path/i);
+  });
+});
+
+test('rejects the old authored schema 1 shape', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.schemaVersion = 1;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /asset manifest/i);
   });
 });
 

@@ -1,7 +1,36 @@
 import type { AssetManifestV1 } from '../types';
 
+const ref = (path: string) => ({ path });
+
+function lieutenant(character: string) {
+  return {
+    fullArt: ref(`characters/${character}/full.webp`),
+    portraits: {
+      idle: ref(`characters/${character}/portrait-idle.webp`),
+      smug: ref(`characters/${character}/portrait-smug.webp`),
+      attack: ref(`characters/${character}/portrait-attack.webp`),
+      hit: ref(`characters/${character}/portrait-hit.webp`),
+      panic: ref(`characters/${character}/portrait-panic.webp`),
+      defeat: ref(`characters/${character}/portrait-defeat.webp`),
+    },
+  } as const;
+}
+
+function demonKing() {
+  return {
+    fullArt: ref('characters/demon-king/full.webp'),
+    portraits: {
+      idle: ref('characters/demon-king/portrait-idle.webp'),
+      attack: ref('characters/demon-king/portrait-attack.webp'),
+      hit: ref('characters/demon-king/portrait-hit.webp'),
+      rage: ref('characters/demon-king/portrait-rage.webp'),
+      defeat: ref('characters/demon-king/portrait-defeat.webp'),
+    },
+  } as const;
+}
+
 export const COMPLETE_ASSET_MANIFEST = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   mode: 'assets',
   brand: { logo: { path: 'brand/app-logo.png' } },
   common: {
@@ -26,6 +55,14 @@ export const COMPLETE_ASSET_MANIFEST = {
           cheer: { path: 'characters/owl-companion/portrait-cheer.webp' },
         },
       },
+      quartermaster: lieutenant('quartermaster'),
+      alchemist: lieutenant('alchemist'),
+      'guard-captain': lieutenant('guard-captain'),
+      'dark-engineer': lieutenant('dark-engineer'),
+      'clock-moth': lieutenant('clock-moth'),
+      'glass-oracle': lieutenant('glass-oracle'),
+      'moss-golem': lieutenant('moss-golem'),
+      'demon-king': demonKing(),
     },
     tiles: {
       I: { path: 'blocks/tile-i.png' }, J: { path: 'blocks/tile-j.png' },
@@ -73,78 +110,29 @@ export const COMPLETE_ASSET_MANIFEST = {
   },
   floors: {
     '1': {
-      opponent: 'quartermaster', music: 'early-floors',
+      music: 'early-floors',
       background: { path: 'backgrounds/floor-01.webp' },
-      character: {
-        fullArt: { path: 'characters/quartermaster/full.webp' },
-        portraits: {
-          idle: { path: 'characters/quartermaster/portrait-idle.webp' },
-          smug: { path: 'characters/quartermaster/portrait-smug.webp' },
-          attack: { path: 'characters/quartermaster/portrait-attack.webp' },
-          hit: { path: 'characters/quartermaster/portrait-hit.webp' },
-          panic: { path: 'characters/quartermaster/portrait-panic.webp' },
-          defeat: { path: 'characters/quartermaster/portrait-defeat.webp' },
-        },
-      },
+      encounters: ['quartermaster', 'clock-moth', 'moss-golem'],
     },
     '2': {
-      opponent: 'alchemist', music: 'early-floors',
+      music: 'early-floors',
       background: { path: 'backgrounds/floor-02.webp' },
-      character: {
-        fullArt: { path: 'characters/alchemist/full.webp' },
-        portraits: {
-          idle: { path: 'characters/alchemist/portrait-idle.webp' },
-          smug: { path: 'characters/alchemist/portrait-smug.webp' },
-          attack: { path: 'characters/alchemist/portrait-attack.webp' },
-          hit: { path: 'characters/alchemist/portrait-hit.webp' },
-          panic: { path: 'characters/alchemist/portrait-panic.webp' },
-          defeat: { path: 'characters/alchemist/portrait-defeat.webp' },
-        },
-      },
+      encounters: ['alchemist', 'glass-oracle', 'clock-moth'],
     },
     '3': {
-      opponent: 'guard-captain', music: 'late-floors',
+      music: 'late-floors',
       background: { path: 'backgrounds/floor-03.webp' },
-      character: {
-        fullArt: { path: 'characters/guard-captain/full.webp' },
-        portraits: {
-          idle: { path: 'characters/guard-captain/portrait-idle.webp' },
-          smug: { path: 'characters/guard-captain/portrait-smug.webp' },
-          attack: { path: 'characters/guard-captain/portrait-attack.webp' },
-          hit: { path: 'characters/guard-captain/portrait-hit.webp' },
-          panic: { path: 'characters/guard-captain/portrait-panic.webp' },
-          defeat: { path: 'characters/guard-captain/portrait-defeat.webp' },
-        },
-      },
+      encounters: ['guard-captain', 'moss-golem', 'glass-oracle'],
     },
     '4': {
-      opponent: 'dark-engineer', music: 'late-floors',
+      music: 'late-floors',
       background: { path: 'backgrounds/floor-04.webp' },
-      character: {
-        fullArt: { path: 'characters/dark-engineer/full.webp' },
-        portraits: {
-          idle: { path: 'characters/dark-engineer/portrait-idle.webp' },
-          smug: { path: 'characters/dark-engineer/portrait-smug.webp' },
-          attack: { path: 'characters/dark-engineer/portrait-attack.webp' },
-          hit: { path: 'characters/dark-engineer/portrait-hit.webp' },
-          panic: { path: 'characters/dark-engineer/portrait-panic.webp' },
-          defeat: { path: 'characters/dark-engineer/portrait-defeat.webp' },
-        },
-      },
+      encounters: ['dark-engineer', 'quartermaster', 'alchemist'],
     },
     '5': {
-      opponent: 'demon-king', music: 'demon-king',
+      music: 'demon-king',
       background: { path: 'backgrounds/floor-05.webp' },
-      character: {
-        fullArt: { path: 'characters/demon-king/full.webp' },
-        portraits: {
-          idle: { path: 'characters/demon-king/portrait-idle.webp' },
-          attack: { path: 'characters/demon-king/portrait-attack.webp' },
-          hit: { path: 'characters/demon-king/portrait-hit.webp' },
-          rage: { path: 'characters/demon-king/portrait-rage.webp' },
-          defeat: { path: 'characters/demon-king/portrait-defeat.webp' },
-        },
-      },
+      encounters: ['clock-moth', 'glass-oracle', 'demon-king'],
     },
   },
 } as const satisfies AssetManifestV1;

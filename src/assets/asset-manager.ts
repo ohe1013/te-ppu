@@ -27,6 +27,11 @@ type FallbackKind = 'none' | 'procedural' | 'operational';
 type AttemptStatus = 'pending' | 'settled' | 'rejected';
 type LoadableImage = ImageBitmap | HTMLImageElement;
 
+const RIVAL_IDS = [
+  'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+] as const satisfies readonly FloorOpponentId[];
+
 interface Deferred<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
@@ -98,6 +103,7 @@ interface MutableCommonBundle {
     fullArt?: LoadedImageRef;
     portraits: Partial<Record<OwlPortraitState, LoadedImageRef>>;
   };
+  rivals: CommonAssets['rivals'];
   tiles: Partial<Record<PieceKind | 'garbage', LoadedImageRef>>;
   items: Partial<Record<ItemType, LoadedImageRef>>;
   icons: Partial<Record<UiIconId, LoadedImageRef>>;
@@ -108,6 +114,7 @@ interface MutableCommonBundle {
 interface MutableFloorBundle {
   floor: Floor;
   opponent: FloorOpponentId;
+  encounters: FloorAssetBundle['encounters'];
   music: MusicTrack;
   generation: number;
   background?: LoadedImageRef;
@@ -548,6 +555,7 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
       generation: attempt.generation,
       hero: { portraits: {} },
       owl: { portraits: {} },
+      rivals: {},
       tiles: {},
       items: {},
       icons: {},
@@ -573,6 +581,21 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
       tasks.push(loadImage(attempt, ref, (image) => {
         bundle.owl.portraits[state as OwlPortraitState] = image;
       }));
+    }
+    for (const rivalId of RIVAL_IDS) {
+      const rival: {
+        fullArt?: LoadedImageRef;
+        portraits: Partial<Record<PortraitState, LoadedImageRef>>;
+      } = { portraits: {} };
+      bundle.rivals[rivalId] = rival;
+      tasks.push(loadImage(attempt, common.characters[rivalId].fullArt, (image) => {
+        rival.fullArt = image;
+      }));
+      for (const [state, ref] of Object.entries(common.characters[rivalId].portraits)) {
+        tasks.push(loadImage(attempt, ref, (image) => {
+          rival.portraits[state as PortraitState] = image;
+        }));
+      }
     }
     for (const [key, ref] of Object.entries(common.tiles)) {
       tasks.push(loadImage(attempt, ref, (image) => {
@@ -616,7 +639,8 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     const manifestFloor = loadedManifest.floors[floorKey];
     const bundle: MutableFloorBundle = {
       floor: attempt.floor,
-      opponent: manifestFloor.opponent,
+      opponent: manifestFloor.encounters[0],
+      encounters: manifestFloor.encounters,
       music: manifestFloor.music,
       generation: attempt.generation,
       portraits: {},
@@ -624,13 +648,7 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     attempt.bundle = bundle;
     const tasks: Promise<void>[] = [
       loadImage(attempt, manifestFloor.background, (image) => { bundle.background = image; }),
-      loadImage(attempt, manifestFloor.character.fullArt, (image) => { bundle.fullArt = image; }),
     ];
-    for (const [state, ref] of Object.entries(manifestFloor.character.portraits)) {
-      tasks.push(loadImage(attempt, ref, (image) => {
-        bundle.portraits[state as PortraitState] = image;
-      }));
-    }
     await Promise.all(tasks);
     if (!current(attempt)) return;
     if (attempt.hasOperationalLoss) settleFallback(attempt, 'operational');

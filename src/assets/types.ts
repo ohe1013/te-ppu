@@ -4,7 +4,8 @@ import type { Floor } from '../progression';
 
 export type CharacterId =
   | 'hero-engineer' | 'owl-companion' | 'quartermaster' | 'alchemist'
-  | 'guard-captain' | 'dark-engineer' | 'demon-king';
+  | 'guard-captain' | 'dark-engineer' | 'clock-moth'
+  | 'glass-oracle' | 'moss-golem' | 'demon-king';
 
 export type PortraitState =
   | 'idle' | 'focus' | 'attack' | 'hit' | 'win' | 'loss'
@@ -35,8 +36,8 @@ interface CharacterManifest<P extends object> {
   readonly portraits: P;
 }
 
-interface AuthoredAssetManifestV1 {
-  readonly schemaVersion: 1;
+interface AuthoredAssetManifestV2 {
+  readonly schemaVersion: 2;
   readonly mode: 'assets';
   readonly brand: { readonly logo: ManifestRef };
   readonly common: {
@@ -44,6 +45,14 @@ interface AuthoredAssetManifestV1 {
     readonly characters: {
       readonly 'hero-engineer': CharacterManifest<HeroPortraits>;
       readonly 'owl-companion': CharacterManifest<OwlPortraits>;
+      readonly quartermaster: CharacterManifest<LieutenantPortraits>;
+      readonly alchemist: CharacterManifest<LieutenantPortraits>;
+      readonly 'guard-captain': CharacterManifest<LieutenantPortraits>;
+      readonly 'dark-engineer': CharacterManifest<LieutenantPortraits>;
+      readonly 'clock-moth': CharacterManifest<LieutenantPortraits>;
+      readonly 'glass-oracle': CharacterManifest<LieutenantPortraits>;
+      readonly 'moss-golem': CharacterManifest<LieutenantPortraits>;
+      readonly 'demon-king': CharacterManifest<DemonKingPortraits>;
     };
     readonly tiles: Readonly<Record<PieceKind | 'garbage', ManifestRef>>;
     readonly items: Readonly<Record<ItemType, ManifestRef>>;
@@ -56,41 +65,39 @@ interface AuthoredAssetManifestV1 {
   };
   readonly floors: {
     readonly '1': {
-      readonly opponent: 'quartermaster';
       readonly background: ManifestRef;
       readonly music: 'early-floors';
-      readonly character: CharacterManifest<LieutenantPortraits>;
+      readonly encounters: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
     };
     readonly '2': {
-      readonly opponent: 'alchemist';
       readonly background: ManifestRef;
       readonly music: 'early-floors';
-      readonly character: CharacterManifest<LieutenantPortraits>;
+      readonly encounters: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
     };
     readonly '3': {
-      readonly opponent: 'guard-captain';
       readonly background: ManifestRef;
       readonly music: 'late-floors';
-      readonly character: CharacterManifest<LieutenantPortraits>;
+      readonly encounters: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
     };
     readonly '4': {
-      readonly opponent: 'dark-engineer';
       readonly background: ManifestRef;
       readonly music: 'late-floors';
-      readonly character: CharacterManifest<LieutenantPortraits>;
+      readonly encounters: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
     };
     readonly '5': {
-      readonly opponent: 'demon-king';
       readonly background: ManifestRef;
       readonly music: 'demon-king';
-      readonly character: CharacterManifest<DemonKingPortraits>;
+      readonly encounters: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
     };
   };
 }
 
-export type AssetManifestV1 =
+export type AssetManifest =
   | { readonly schemaVersion: 1; readonly mode: 'procedural-fallback' }
-  | AuthoredAssetManifestV1;
+  | AuthoredAssetManifestV2;
+
+/** @deprecated Kept as a source-compatible name while authored manifests use schema 2. */
+export type AssetManifestV1 = AssetManifest;
 
 export interface LoadedImageRef {
   readonly ref: ManifestRef;
@@ -103,6 +110,11 @@ export interface ResolvedAudioRef {
   readonly ref: ManifestRef;
   readonly url: string;
   readonly generation: number;
+}
+
+export interface RivalCharacterAssets {
+  readonly fullArt?: LoadedImageRef;
+  readonly portraits: Partial<Record<PortraitState, LoadedImageRef>>;
 }
 
 export interface TexturePackerFrame {
@@ -141,6 +153,7 @@ export interface CommonAssets {
     readonly fullArt?: LoadedImageRef;
     readonly portraits: Partial<Record<OwlPortraitState, LoadedImageRef>>;
   };
+  readonly rivals: Partial<Record<FloorOpponentId, RivalCharacterAssets>>;
   readonly tiles: Partial<Record<PieceKind | 'garbage', LoadedImageRef>>;
   readonly items: Partial<Record<ItemType, LoadedImageRef>>;
   readonly icons: Partial<Record<UiIconId, LoadedImageRef>>;
@@ -153,11 +166,14 @@ export interface CommonAssets {
 
 export type FloorOpponentId =
   | 'quartermaster' | 'alchemist' | 'guard-captain'
-  | 'dark-engineer' | 'demon-king';
+  | 'dark-engineer' | 'clock-moth' | 'glass-oracle'
+  | 'moss-golem' | 'demon-king';
 
 export interface FloorAssetBundle {
   readonly floor: Floor;
-  readonly opponent: FloorOpponentId;
+  /** @deprecated Selected character assets now live in CommonAssets.rivals. */
+  readonly opponent?: FloorOpponentId;
+  readonly encounters?: readonly [FloorOpponentId, FloorOpponentId, FloorOpponentId];
   readonly music: MusicTrack;
   readonly generation: number;
   readonly background?: LoadedImageRef;

@@ -519,29 +519,19 @@ describe('createAssetManager', () => {
     await expect(common).resolves.toBe('fallback');
   });
 
-  it('retries one settled operational floor prefetch once and closes the old partial sources', async () => {
-    let imageCall = 0;
-    const oldSource = closeableImage();
-    const loadImage = vi.fn(async () => {
-      imageCall += 1;
-      if (imageCall === 1) return oldSource;
-      if (imageCall <= 8) throw new Error('first prefetch image failure');
-      return closeableImage();
-    });
+  it('loads a floor background without duplicating character assets', async () => {
+    const loadImage = vi.fn(async () => closeableImage());
     const manager = createAssetManager(loaders({ loadImage }));
 
-    manager.prefetchFloor(1);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    const before = manager.getFloorAssets(1);
-    expect(before).toMatchObject({ floor: 1, generation: 1 });
-    const entryA = manager.loadFloor(1);
-    const entryB = manager.loadFloor(1);
+    await expect(manager.loadFloor(1)).resolves.toBe('ready');
 
-    expect(entryA).toBe(entryB);
-    await expect(entryA).resolves.toBe('ready');
-    expect(oldSource.close).toHaveBeenCalledTimes(1);
-    expect(manager.getFloorAssets(1)).toMatchObject({ floor: 1, generation: 2 });
-    expect(loadImage).toHaveBeenCalledTimes(16);
+    expect(loadImage).toHaveBeenCalledTimes(1);
+    expect(loadImage).toHaveBeenCalledWith('/assets/backgrounds/floor-01.webp');
+    expect(manager.getFloorAssets(1)).toMatchObject({
+      floor: 1,
+      opponent: 'quartermaster',
+      encounters: ['quartermaster', 'clock-moth', 'moss-golem'],
+    });
   });
 
   it('wraps a pending prefetch for entry callers and reuses a ready prefetch without retry', async () => {

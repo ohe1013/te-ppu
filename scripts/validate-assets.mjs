@@ -41,6 +41,61 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.common.characters.owl-companion.portraits.idle', 'characters/owl-companion/portrait-idle.webp'],
   ['asset manifest.common.characters.owl-companion.portraits.worry', 'characters/owl-companion/portrait-worry.webp'],
   ['asset manifest.common.characters.owl-companion.portraits.cheer', 'characters/owl-companion/portrait-cheer.webp'],
+  ['asset manifest.common.characters.quartermaster.fullArt', 'characters/quartermaster/full.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.idle', 'characters/quartermaster/portrait-idle.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.smug', 'characters/quartermaster/portrait-smug.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.attack', 'characters/quartermaster/portrait-attack.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.hit', 'characters/quartermaster/portrait-hit.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.panic', 'characters/quartermaster/portrait-panic.webp'],
+  ['asset manifest.common.characters.quartermaster.portraits.defeat', 'characters/quartermaster/portrait-defeat.webp'],
+  ['asset manifest.common.characters.alchemist.fullArt', 'characters/alchemist/full.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.idle', 'characters/alchemist/portrait-idle.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.smug', 'characters/alchemist/portrait-smug.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.attack', 'characters/alchemist/portrait-attack.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.hit', 'characters/alchemist/portrait-hit.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.panic', 'characters/alchemist/portrait-panic.webp'],
+  ['asset manifest.common.characters.alchemist.portraits.defeat', 'characters/alchemist/portrait-defeat.webp'],
+  ['asset manifest.common.characters.guard-captain.fullArt', 'characters/guard-captain/full.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.idle', 'characters/guard-captain/portrait-idle.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.smug', 'characters/guard-captain/portrait-smug.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.attack', 'characters/guard-captain/portrait-attack.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.hit', 'characters/guard-captain/portrait-hit.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.panic', 'characters/guard-captain/portrait-panic.webp'],
+  ['asset manifest.common.characters.guard-captain.portraits.defeat', 'characters/guard-captain/portrait-defeat.webp'],
+  ['asset manifest.common.characters.dark-engineer.fullArt', 'characters/dark-engineer/full.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.idle', 'characters/dark-engineer/portrait-idle.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.smug', 'characters/dark-engineer/portrait-smug.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.attack', 'characters/dark-engineer/portrait-attack.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.hit', 'characters/dark-engineer/portrait-hit.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.panic', 'characters/dark-engineer/portrait-panic.webp'],
+  ['asset manifest.common.characters.dark-engineer.portraits.defeat', 'characters/dark-engineer/portrait-defeat.webp'],
+  ['asset manifest.common.characters.clock-moth.fullArt', 'characters/clock-moth/full.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.idle', 'characters/clock-moth/portrait-idle.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.smug', 'characters/clock-moth/portrait-smug.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.attack', 'characters/clock-moth/portrait-attack.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.hit', 'characters/clock-moth/portrait-hit.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.panic', 'characters/clock-moth/portrait-panic.webp'],
+  ['asset manifest.common.characters.clock-moth.portraits.defeat', 'characters/clock-moth/portrait-defeat.webp'],
+  ['asset manifest.common.characters.glass-oracle.fullArt', 'characters/glass-oracle/full.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.idle', 'characters/glass-oracle/portrait-idle.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.smug', 'characters/glass-oracle/portrait-smug.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.attack', 'characters/glass-oracle/portrait-attack.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.hit', 'characters/glass-oracle/portrait-hit.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.panic', 'characters/glass-oracle/portrait-panic.webp'],
+  ['asset manifest.common.characters.glass-oracle.portraits.defeat', 'characters/glass-oracle/portrait-defeat.webp'],
+  ['asset manifest.common.characters.moss-golem.fullArt', 'characters/moss-golem/full.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.idle', 'characters/moss-golem/portrait-idle.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.smug', 'characters/moss-golem/portrait-smug.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.attack', 'characters/moss-golem/portrait-attack.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.hit', 'characters/moss-golem/portrait-hit.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.panic', 'characters/moss-golem/portrait-panic.webp'],
+  ['asset manifest.common.characters.moss-golem.portraits.defeat', 'characters/moss-golem/portrait-defeat.webp'],
+  ['asset manifest.common.characters.demon-king.fullArt', 'characters/demon-king/full.webp'],
+  ['asset manifest.common.characters.demon-king.portraits.idle', 'characters/demon-king/portrait-idle.webp'],
+  ['asset manifest.common.characters.demon-king.portraits.attack', 'characters/demon-king/portrait-attack.webp'],
+  ['asset manifest.common.characters.demon-king.portraits.hit', 'characters/demon-king/portrait-hit.webp'],
+  ['asset manifest.common.characters.demon-king.portraits.rage', 'characters/demon-king/portrait-rage.webp'],
+  ['asset manifest.common.characters.demon-king.portraits.defeat', 'characters/demon-king/portrait-defeat.webp'],
   ['asset manifest.common.tiles.I', 'blocks/tile-i.png'],
   ['asset manifest.common.tiles.J', 'blocks/tile-j.png'],
   ['asset manifest.common.tiles.L', 'blocks/tile-l.png'],
@@ -115,7 +170,7 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.floors.5.character.portraits.defeat', 'characters/demon-king/portrait-defeat.webp'],
 ];
 const CANONICAL_PATH_BY_SLOT = new Map(CANONICAL_ASSET_PATHS);
-const REQUIRED_UNIQUE_ASSET_COUNT = 85;
+const REQUIRED_UNIQUE_ASSET_COUNT = 106;
 
 function fail(message) {
   throw new Error(message);
@@ -178,23 +233,37 @@ function collectCharacter(value, portraitIds, references, context) {
   collectRefs(character.portraits, portraitIds, references, context + '.portraits');
 }
 
-function collectFloor(value, opponent, music, portraits, references, context) {
-  const floor = exactObject(value, ['opponent', 'music', 'background', 'character'], context);
-  requireLiteral(floor.opponent, opponent, context + '.opponent');
+const RIVAL_IDS = [
+  'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+];
+
+function collectEncounters(value, context) {
+  if (!Array.isArray(value) || value.length !== 3) fail('invalid ' + context + '.encounters');
+  for (const [index, encounter] of value.entries()) {
+    if (typeof encounter !== 'string' || !RIVAL_IDS.includes(encounter)) {
+      fail('invalid ' + context + '.encounters[' + index + ']');
+    }
+  }
+  if (new Set(value).size !== 3) fail('invalid ' + context + '.encounters: duplicate encounter');
+}
+
+function collectFloor(value, music, references, context) {
+  const floor = exactObject(value, ['music', 'background', 'encounters'], context);
   requireLiteral(floor.music, music, context + '.music');
   collectRef(floor.background, references, context + '.background');
-  collectCharacter(floor.character, portraits, references, context + '.character');
+  collectEncounters(floor.encounters, context);
 }
 
 function parseManifest(value) {
   if (!isPlainObject(value)) fail('invalid asset manifest');
-  if (value.schemaVersion !== 1) fail('invalid asset manifest');
 
   if (value.mode === 'procedural-fallback') {
     exactObject(value, ['schemaVersion', 'mode'], 'asset manifest');
+    requireLiteral(value.schemaVersion, 1, 'asset manifest.schemaVersion');
     return { mode: 'procedural-fallback', references: [] };
   }
-  if (value.mode !== 'assets') fail('invalid asset manifest');
+  if (value.schemaVersion !== 2 || value.mode !== 'assets') fail('invalid asset manifest');
 
   const manifest = exactObject(value, ['schemaVersion', 'mode', 'brand', 'common', 'floors'], 'asset manifest');
   const references = [];
@@ -210,11 +279,19 @@ function parseManifest(value) {
   collectRef(backgrounds.tower, references, 'asset manifest.common.backgrounds.tower');
   const characters = exactObject(
     common.characters,
-    ['hero-engineer', 'owl-companion'],
+    ['hero-engineer', 'owl-companion', ...RIVAL_IDS],
     'asset manifest.common.characters',
   );
   collectCharacter(characters['hero-engineer'], HERO_PORTRAITS, references, 'asset manifest.common.characters.hero-engineer');
   collectCharacter(characters['owl-companion'], OWL_PORTRAITS, references, 'asset manifest.common.characters.owl-companion');
+  for (const rival of RIVAL_IDS) {
+    collectCharacter(
+      characters[rival],
+      rival === 'demon-king' ? DEMON_PORTRAITS : LIEUTENANT_PORTRAITS,
+      references,
+      'asset manifest.common.characters.' + rival,
+    );
+  }
   collectRefs(common.tiles, TILE_IDS, references, 'asset manifest.common.tiles');
   collectRefs(common.items, ITEM_IDS, references, 'asset manifest.common.items');
   collectRefs(common.icons, ICON_IDS, references, 'asset manifest.common.icons');
@@ -226,11 +303,11 @@ function parseManifest(value) {
   collectRefs(audio.bgm, BGM_IDS, references, 'asset manifest.common.audio.bgm');
 
   const floors = exactObject(manifest.floors, ['1', '2', '3', '4', '5'], 'asset manifest.floors');
-  collectFloor(floors['1'], 'quartermaster', 'early-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.1');
-  collectFloor(floors['2'], 'alchemist', 'early-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.2');
-  collectFloor(floors['3'], 'guard-captain', 'late-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.3');
-  collectFloor(floors['4'], 'dark-engineer', 'late-floors', LIEUTENANT_PORTRAITS, references, 'asset manifest.floors.4');
-  collectFloor(floors['5'], 'demon-king', 'demon-king', DEMON_PORTRAITS, references, 'asset manifest.floors.5');
+  collectFloor(floors['1'], 'early-floors', references, 'asset manifest.floors.1');
+  collectFloor(floors['2'], 'early-floors', references, 'asset manifest.floors.2');
+  collectFloor(floors['3'], 'late-floors', references, 'asset manifest.floors.3');
+  collectFloor(floors['4'], 'late-floors', references, 'asset manifest.floors.4');
+  collectFloor(floors['5'], 'demon-king', references, 'asset manifest.floors.5');
   if (
     references.length !== REQUIRED_UNIQUE_ASSET_COUNT
     || new Set(references).size !== REQUIRED_UNIQUE_ASSET_COUNT
