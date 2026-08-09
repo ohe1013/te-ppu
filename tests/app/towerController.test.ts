@@ -237,12 +237,19 @@ describe('tower controller', () => {
     expect(repository.saved).toHaveLength(1);
     expect(Object.keys(repository.saved[0]!)).toEqual([
       'schemaVersion',
+      'profile',
+      'localBestScores',
+      'pendingLeaderboardSubmissions',
       'selectedDifficulty',
       'unlockedDifficulties',
       'difficultyProgress',
       'settings',
     ]);
-    expect(JSON.stringify(repository.saved[0])).not.toMatch(/matchSeed|sides|board|inventory|combo/);
+    expect(repository.saved[0]).not.toHaveProperty('matchSeed');
+    expect(repository.saved[0]).not.toHaveProperty('sides');
+    expect(repository.saved[0]).not.toHaveProperty('board');
+    expect(repository.saved[0]).not.toHaveProperty('inventory');
+    expect(repository.saved[0]).not.toHaveProperty('combo');
     expect(activeProgress(controller.progress).highestUnlockedFloor)
       .toBe(result === 'WIN' ? 2 : 1);
   });

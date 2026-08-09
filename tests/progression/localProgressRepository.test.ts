@@ -104,7 +104,7 @@ describe('local progress repository', () => {
     const load: ProgressLoadResult = await repository.load();
     const save: ProgressSaveResult = await repository.save(validProgress());
 
-    expect(DEFAULT_PROGRESS.schemaVersion).toBe(3);
+    expect(DEFAULT_PROGRESS.schemaVersion).toBe(4);
     expect(DEFAULT_PROGRESS.selectedDifficulty).toBe('easy');
     expect(load).toEqual({
       ok: true,

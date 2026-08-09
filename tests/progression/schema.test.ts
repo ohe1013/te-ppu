@@ -17,7 +17,7 @@ const legacyV2 = {
   settings: { soundEnabled: false, hapticsEnabled: true },
 };
 
-const currentState = {
+const version3Progress = {
   schemaVersion: 3,
   selectedDifficulty: 'easy',
   unlockedDifficulties: { easy: true, normal: false, hard: false },
@@ -39,7 +39,28 @@ const currentState = {
     },
   },
   settings: { soundEnabled: true, hapticsEnabled: true },
+} as const;
+
+const currentState = {
+  ...version3Progress,
+  schemaVersion: 4,
+  profile: null,
+  localBestScores: { easy: null, normal: null, hard: null },
+  pendingLeaderboardSubmissions: {},
 } satisfies ProgressState;
+
+const scoreRecord = {
+  schemaVersion: 1,
+  initials: 'RVT',
+  characterId: 'hero-engineer',
+  difficulty: 'easy',
+  score: 1200,
+  durationTicks: 345,
+  reachedFloor: 3,
+  encountersWon: 2,
+  owlDefeated: false,
+  achievedAt: '2026-08-09T12:00:00.000Z',
+} as const;
 
 describe('difficulty progress schema', () => {
   it('starts a new save on Easy with only Easy unlocked', () => {
@@ -64,6 +85,20 @@ describe('difficulty progress schema', () => {
     });
   });
 
+  it('migrates schema 3 to schema 4 without changing tower progress or settings', () => {
+    const parsed = parsePersistedProgress(version3Progress);
+
+    expect(parsed?.migrated).toBe(true);
+    expect(parsed?.state).toMatchObject({
+      schemaVersion: 4,
+      profile: null,
+      localBestScores: { easy: null, normal: null, hard: null },
+      pendingLeaderboardSubmissions: {},
+      difficultyProgress: version3Progress.difficultyProgress,
+      settings: version3Progress.settings,
+    });
+  });
+
   it('updates only the selected difficulty run', () => {
     const normal = {
       ...currentState,
@@ -83,5 +118,48 @@ describe('difficulty progress schema', () => {
 
     expect(currentState.difficultyProgress.easy.clearedFloors[1]).toBe(false);
     expect(currentState.settings.soundEnabled).toBe(true);
+  });
+
+  it('accepts exact v4 score keys and rejects extra persisted profile or score keys', () => {
+    const completeState = {
+      ...currentState,
+      profile: { initials: 'RVT', characterId: 'hero-engineer' },
+      localBestScores: { easy: scoreRecord, normal: null, hard: null },
+      pendingLeaderboardSubmissions: { normal: { ...scoreRecord, difficulty: 'normal' } },
+    };
+
+    expect(parsePersistedProgress(completeState)).toMatchObject({
+      migrated: false,
+      state: completeState,
+    });
+    expect(parsePersistedProgress({
+      ...completeState,
+      profile: { ...completeState.profile, nickname: 'Rivet' },
+    })).toBeNull();
+    expect(parsePersistedProgress({
+      ...completeState,
+      localBestScores: {
+        ...completeState.localBestScores,
+        easy: { ...scoreRecord, source: 'local' },
+      },
+    })).toBeNull();
+  });
+
+  it('deep-clones profile, score records, and pending leaderboard submissions', () => {
+    const persisted = {
+      ...currentState,
+      profile: { initials: 'RVT', characterId: 'hero-engineer' },
+      localBestScores: { easy: scoreRecord, normal: null, hard: null },
+      pendingLeaderboardSubmissions: { hard: { ...scoreRecord, difficulty: 'hard' } },
+    };
+    const parsed = parsePersistedProgress(persisted);
+
+    expect(parsed).not.toBeNull();
+    if (parsed === null) return;
+    expect(parsed.state).not.toBe(persisted);
+    expect(parsed.state.profile).not.toBe(persisted.profile);
+    expect(parsed.state.localBestScores.easy).not.toBe(persisted.localBestScores.easy);
+    expect(parsed.state.pendingLeaderboardSubmissions.hard)
+      .not.toBe(persisted.pendingLeaderboardSubmissions.hard);
   });
 });

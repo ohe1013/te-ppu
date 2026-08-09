@@ -4,6 +4,9 @@ export type {
   ProgressLoadResult,
   ProgressSaveResult,
   ProgressRepository,
+  ScoreRecord,
+  LocalBestScores,
+  PendingLeaderboardSubmissions,
 } from './schema';
 export { DEFAULT_PROGRESS, cloneProgressState, parsePersistedProgress, parseProgressState } from './schema';
 export {
