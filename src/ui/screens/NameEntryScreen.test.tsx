@@ -37,6 +37,21 @@ describe('NameEntryScreen', () => {
     expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('AC');
   });
 
+  it('lets a focused Back button consume Enter while arrows still move the arcade key', async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    render(<NameEntryScreen initialValue="" onBack={onBack} onComplete={vi.fn()} />);
+    const backButton = screen.getByRole('button', { name: 'BACK' });
+
+    backButton.focus();
+    await user.keyboard('{ArrowRight}{Enter}');
+
+    expect(backButton).toHaveFocus();
+    expect(screen.getByTestId('name-entry-screen')).toHaveAttribute('data-focused-key', 'B');
+    expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('___');
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it('keeps the draft capped at three uppercase letters and exposes Back explicitly', async () => {
     const user = userEvent.setup();
     const onBack = vi.fn();

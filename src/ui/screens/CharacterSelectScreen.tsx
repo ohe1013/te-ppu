@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { LoadedImageRef } from '../../assets';
 import {
   PLAYER_CHARACTER_IDS,
@@ -31,7 +31,17 @@ export function CharacterSelectScreen({
   players = PLAYER_CHARACTERS,
 }: CharacterSelectScreenProps) {
   const [selectedId, setSelectedId] = useState<PlayerCharacterId>(initialCharacterId);
+  const cardRailRef = useRef<HTMLDivElement>(null);
+  const previousSelectedIdRef = useRef<PlayerCharacterId>(selectedId);
   const selectedIndex = PLAYER_CHARACTER_IDS.indexOf(selectedId);
+
+  useEffect(() => {
+    if (previousSelectedIdRef.current === selectedId) return;
+    previousSelectedIdRef.current = selectedId;
+    cardRailRef.current
+      ?.querySelector<HTMLElement>(`[data-character-id="${selectedId}"]`)
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  }, [selectedId]);
 
   const moveSelection = (direction: ArcadeDirection) => {
     if (direction !== 'left' && direction !== 'right') return;
@@ -48,6 +58,7 @@ export function CharacterSelectScreen({
       return;
     }
     if (event.key === 'Enter') {
+      if (event.target !== event.currentTarget) return;
       event.preventDefault();
       onComplete(selectedId);
       return;
@@ -73,7 +84,12 @@ export function CharacterSelectScreen({
         <h1>캐릭터 선택</h1>
         <p>세 캐릭터의 전투 성능은 모두 같습니다.</p>
       </header>
-      <div aria-label="플레이어 캐릭터" className="character-select-screen__cards" role="group">
+      <div
+        aria-label="플레이어 캐릭터"
+        className="character-select-screen__cards"
+        ref={cardRailRef}
+        role="group"
+      >
         {PLAYER_CHARACTER_IDS.map((characterId) => {
           const player = players[characterId];
           return (

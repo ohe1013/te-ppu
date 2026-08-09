@@ -59,6 +59,7 @@ export function NameEntryScreen({
       return;
     }
     if (event.key === 'Enter') {
+      if (event.target !== event.currentTarget) return;
       event.preventDefault();
       activateKey(focusedKey);
       return;
