@@ -29,3 +29,5 @@ export {
   getFloorEncounter,
   getFloorEncounters,
 } from './encounters';
+export type { SeriesResolution } from './series';
+export { resolveEncounter, startFloorSeries } from './series';
