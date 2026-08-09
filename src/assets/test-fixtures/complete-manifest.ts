@@ -16,6 +16,20 @@ function lieutenant(character: string) {
   } as const;
 }
 
+function player(character: string) {
+  return {
+    fullArt: ref(`characters/${character}/full.webp`),
+    portraits: {
+      idle: ref(`characters/${character}/portrait-idle.webp`),
+      focus: ref(`characters/${character}/portrait-focus.webp`),
+      attack: ref(`characters/${character}/portrait-attack.webp`),
+      hit: ref(`characters/${character}/portrait-hit.webp`),
+      win: ref(`characters/${character}/portrait-win.webp`),
+      loss: ref(`characters/${character}/portrait-loss.webp`),
+    },
+  } as const;
+}
+
 function demonKing() {
   return {
     fullArt: ref('characters/demon-king/full.webp'),
@@ -30,23 +44,15 @@ function demonKing() {
 }
 
 export const COMPLETE_ASSET_MANIFEST = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   mode: 'assets',
   brand: { logo: { path: 'brand/app-logo.png' } },
   common: {
     backgrounds: { tower: { path: 'backgrounds/tower-exterior.webp' } },
     characters: {
-      'hero-engineer': {
-        fullArt: { path: 'characters/hero-engineer/full.webp' },
-        portraits: {
-          idle: { path: 'characters/hero-engineer/portrait-idle.webp' },
-          focus: { path: 'characters/hero-engineer/portrait-focus.webp' },
-          attack: { path: 'characters/hero-engineer/portrait-attack.webp' },
-          hit: { path: 'characters/hero-engineer/portrait-hit.webp' },
-          win: { path: 'characters/hero-engineer/portrait-win.webp' },
-          loss: { path: 'characters/hero-engineer/portrait-loss.webp' },
-        },
-      },
+      'hero-engineer': player('hero-engineer'),
+      'cloud-courier': player('cloud-courier'),
+      'star-alchemist': player('star-alchemist'),
       'owl-companion': {
         fullArt: { path: 'characters/owl-companion/full.webp' },
         portraits: {

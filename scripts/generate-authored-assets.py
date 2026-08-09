@@ -9,6 +9,7 @@ backgrounds and character masters are intentionally preserved when present.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
@@ -308,6 +309,8 @@ def overlay_state(image: Image.Image, state: str, character: str) -> Image.Image
 
 PORTRAITS = {
     "hero-engineer": ["idle", "focus", "attack", "hit", "win", "loss"],
+    "cloud-courier": ["idle", "focus", "attack", "hit", "win", "loss"],
+    "star-alchemist": ["idle", "focus", "attack", "hit", "win", "loss"],
     "owl-companion": ["idle", "worry", "cheer"],
     "quartermaster": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "alchemist": ["idle", "smug", "attack", "hit", "panic", "defeat"],
@@ -320,7 +323,11 @@ PORTRAITS = {
 }
 
 
-def derive_portraits(characters: Iterable[str] | None = None) -> None:
+def derive_portraits(
+    characters: Iterable[str] | None = None,
+    *,
+    force_derived_portraits: bool = False,
+) -> None:
     selected = PORTRAITS if characters is None else {
         character: PORTRAITS[character] for character in characters
     }
@@ -338,10 +345,15 @@ def derive_portraits(characters: Iterable[str] | None = None) -> None:
         left = max(0, cx - size // 2)
         top = max(0, cy - size // 2)
         crop = source.crop((left, top, min(source.width, left + size), min(source.height, top + size)))
-        crop = crop.resize((256, 256), Image.Resampling.LANCZOS)
+        crop = crop.resize((240, 240), Image.Resampling.LANCZOS)
+        portrait_base = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        portrait_base.alpha_composite(crop, (8, 8))
         for state in states:
-            portrait = overlay_state(crop, state, character)
-            write_webp(CHARACTERS / character / f"portrait-{state}.webp", portrait, quality=90)
+            destination = CHARACTERS / character / f"portrait-{state}.webp"
+            if destination.exists() and not force_derived_portraits:
+                continue
+            portrait = overlay_state(portrait_base, state, character)
+            write_webp(destination, portrait, quality=90)
 
 
 FLOOR_PALETTES = {
@@ -418,12 +430,23 @@ def generate_backgrounds() -> None:
         write_webp(destination, image, quality=82)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--force-derived-portraits",
+        action="store_true",
+        help="replace existing portraits with derivatives from full art",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     generate_tiles_and_items()
     generate_atlas()
     generate_icons()
     generate_backgrounds()
-    derive_portraits()
+    derive_portraits(force_derived_portraits=args.force_derived_portraits)
     print("AUTHORED_PIXEL_ASSETS_OK")
 
 

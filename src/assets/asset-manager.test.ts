@@ -67,6 +67,46 @@ afterEach(() => {
 });
 
 describe('parseAssetManifest', () => {
+  it('accepts exact authored schema 3 with all three playable character bundles', () => {
+    const parsed = parseAssetManifest(COMPLETE_ASSET_MANIFEST);
+
+    expect(parsed.schemaVersion).toBe(3);
+    if (parsed.mode !== 'assets') throw new Error('expected authored assets');
+    expect(Object.keys(parsed.common.characters).slice(0, 3)).toEqual([
+      'hero-engineer',
+      'cloud-courier',
+      'star-alchemist',
+    ]);
+    for (const characterId of ['hero-engineer', 'cloud-courier', 'star-alchemist'] as const) {
+      expect(Object.keys(parsed.common.characters[characterId].portraits)).toEqual([
+        'idle', 'focus', 'attack', 'hit', 'win', 'loss',
+      ]);
+    }
+  });
+
+  it('rejects the complete legacy authored schema 2 player shape', () => {
+    const manifest = cloneManifest();
+    manifest.schemaVersion = 2;
+    delete manifest.common.characters['cloud-courier'];
+    delete manifest.common.characters['star-alchemist'];
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
+  it.each([
+    ['missing player entry', (manifest: Record<string, any>) => {
+      delete manifest.common.characters['cloud-courier'];
+    }],
+    ['extra player entry', (manifest: Record<string, any>) => {
+      manifest.common.characters['guest-player'] = manifest.common.characters['hero-engineer'];
+    }],
+  ])('rejects schema 3 with a %s', (_name, mutate) => {
+    const manifest = cloneManifest();
+    mutate(manifest);
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
   it('keeps the complete authored fixture JSON-serializable and inert', () => {
     const restored = JSON.parse(JSON.stringify(COMPLETE_ASSET_MANIFEST));
 
@@ -127,6 +167,18 @@ describe('parseAssetManifest', () => {
 });
 
 describe('createAssetManager', () => {
+  it('publishes playable bundles in canonical player id order', async () => {
+    const manager = createAssetManager(loaders());
+
+    await expect(manager.loadCommon()).resolves.toBe('ready');
+
+    expect(Object.keys(manager.getCommonAssets()?.players ?? {})).toEqual([
+      'hero-engineer',
+      'cloud-courier',
+      'star-alchemist',
+    ]);
+  });
+
   it('coalesces common and per-floor loads and resolves URLs only in the manager', async () => {
     const fetchManifest = vi.fn().mockResolvedValue(COMPLETE_ASSET_MANIFEST);
     const loadImage = vi.fn().mockImplementation(async () => closeableImage());
@@ -162,7 +214,11 @@ describe('createAssetManager', () => {
     await expect(manager.loadCommon()).resolves.toBe('fallback');
     expect(manager.getCommonAssets()).toMatchObject({
       generation: 1,
-      hero: { portraits: {} },
+      players: {
+        'hero-engineer': { portraits: {} },
+        'cloud-courier': { portraits: {} },
+        'star-alchemist': { portraits: {} },
+      },
       owl: { portraits: {} },
       tiles: {},
       items: {},

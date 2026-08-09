@@ -376,7 +376,7 @@ export function AppRoot({
           <>
             <CharacterSelectScreen
               assets={{
-                'hero-engineer': { fullArt: commonAssets?.hero.fullArt },
+                'hero-engineer': { fullArt: commonAssets?.players['hero-engineer'].fullArt },
               }}
               initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
               interactionLocked={profileSaveStatus !== 'idle'}

@@ -300,7 +300,10 @@ export function MatchScreen({
     onFinished,
   });
   const resolvedPortraitSources = useMemo(() => ({
-    player: { ...portraitUrls(commonAssets?.hero.portraits), ...portraitSources?.player },
+    player: {
+      ...portraitUrls(commonAssets?.players['hero-engineer'].portraits),
+      ...portraitSources?.player,
+    },
     opponent: {
       ...portraitUrls(isOwlMatch
         ? commonAssets?.owl.portraits
@@ -308,7 +311,7 @@ export function MatchScreen({
       ...portraitSources?.opponent,
     },
   }), [
-    commonAssets?.hero.portraits,
+    commonAssets?.players,
     commonAssets?.owl.portraits,
     commonAssets?.rivals,
     encounter.characterId,

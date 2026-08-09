@@ -28,7 +28,7 @@ export function EndingScreen({
     >
       <ScreenBackdrop image={floorAssets?.background} />
       <ScreenBackdrop className="screen-backdrop--demon" image={commonAssets?.rivals['demon-king']?.fullArt} />
-      <ScreenBackdrop className="screen-backdrop--hero" image={commonAssets?.hero.fullArt} />
+      <ScreenBackdrop className="screen-backdrop--hero" image={commonAssets?.players['hero-engineer'].fullArt} />
       <ScreenBackdrop className="screen-backdrop--owl" image={commonAssets?.owl.fullArt} />
       <div className="ending-screen__panel">
         <div className="ending-screen__mascot">
