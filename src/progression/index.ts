@@ -18,6 +18,7 @@ export {
   type DifficultyProgressMap,
   type DifficultyRunProgress,
 } from './difficulty';
+export { OWL_ENCOUNTER, type OwlEncounter } from './owl';
 export {
   createLocalProgressRepository,
   type LocalProgressRepositoryOptions,
