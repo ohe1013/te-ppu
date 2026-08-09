@@ -31,7 +31,7 @@ class FakeFirestoreGateway implements FirestoreLeaderboardGateway {
   current: FirestoreLeaderboardDocument | null = null;
   snapshots: readonly FirestoreLeaderboardSnapshot[] = [];
 
-  async authenticate(): Promise<string> {
+  async authenticateAnonymously(): Promise<string> {
     this.authenticationCount += 1;
     if (this.authenticationError !== null) throw this.authenticationError;
     return 'firebase-user';
@@ -75,7 +75,7 @@ function storedDocument(overrides: Partial<FirestoreLeaderboardDocument> = {}): 
 }
 
 describe('createFirestoreLeaderboardRepository', () => {
-  it('authenticates lazily once and writes the exact UID document payload', async () => {
+  it('requests anonymous authentication lazily once and writes the exact UID document payload', async () => {
     const gateway = new FakeFirestoreGateway();
     const repository = createFirestoreLeaderboardRepository(gateway);
 

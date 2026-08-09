@@ -5,6 +5,11 @@ service cloud.firestore {
       return value == 'easy' || value == 'normal' || value == 'hard';
     }
 
+    function isAnonymousUser() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
     function validCharacter(value) {
       return value == 'hero-engineer'
         || value == 'cloud-courier'
@@ -39,12 +44,12 @@ service cloud.firestore {
     }
 
     match /leaderboards/{difficulty}/players/{userId} {
-      allow read: if request.auth != null && validDifficulty(difficulty);
-      allow create: if request.auth != null
+      allow read: if isAnonymousUser() && validDifficulty(difficulty);
+      allow create: if isAnonymousUser()
         && request.auth.uid == userId
         && validDifficulty(difficulty)
         && validScore(request.resource.data);
-      allow update: if request.auth != null
+      allow update: if isAnonymousUser()
         && request.auth.uid == userId
         && validDifficulty(difficulty)
         && validScore(request.resource.data)

@@ -63,7 +63,7 @@ export function createFirestoreLeaderboardRepository(
 ): LeaderboardRepository {
   let currentUserId: Promise<string> | null = null;
   const authenticate = (): Promise<string> => {
-    currentUserId ??= gateway.authenticate().catch((error: unknown) => {
+    currentUserId ??= gateway.authenticateAnonymously().catch((error: unknown) => {
       currentUserId = null;
       throw error;
     });

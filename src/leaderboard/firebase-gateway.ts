@@ -44,7 +44,7 @@ export interface FirestoreLeaderboardQuery {
 }
 
 export interface FirestoreLeaderboardGateway {
-  authenticate(): Promise<string>;
+  authenticateAnonymously(): Promise<string>;
   serverTimestamp(): unknown;
   runPlayerTransaction(
     path: string,
@@ -56,14 +56,25 @@ export interface FirestoreLeaderboardGateway {
 }
 
 export function createFirebaseGateway(config: FirebaseWebConfig): FirestoreLeaderboardGateway {
-  const app = initializeApp(config);
-  const auth = getAuth(app);
-  const firestore = getFirestore(app);
+  let services: {
+    readonly auth: ReturnType<typeof getAuth>;
+    readonly firestore: ReturnType<typeof getFirestore>;
+  } | null = null;
   let authentication: Promise<string> | null = null;
+  const getServices = () => {
+    services ??= (() => {
+      const app = initializeApp(config);
+      return {
+        auth: getAuth(app),
+        firestore: getFirestore(app),
+      };
+    })();
+    return services;
+  };
 
   return {
-    authenticate() {
-      if (auth.currentUser !== null) return Promise.resolve(auth.currentUser.uid);
+    authenticateAnonymously() {
+      const { auth } = getServices();
       authentication ??= signInAnonymously(auth)
         .then(({ user }) => user.uid)
         .catch((error: unknown) => {
@@ -73,9 +84,13 @@ export function createFirebaseGateway(config: FirebaseWebConfig): FirestoreLeade
       return authentication;
     },
 
-    serverTimestamp,
+    serverTimestamp() {
+      getServices();
+      return serverTimestamp();
+    },
 
     async runPlayerTransaction(path, chooseWrite) {
+      const { firestore } = getServices();
       const playerReference = doc(firestore, path);
       await runTransaction(firestore, async (transaction) => {
         const snapshot = await transaction.get(playerReference);
@@ -88,6 +103,7 @@ export function createFirebaseGateway(config: FirebaseWebConfig): FirestoreLeade
     },
 
     async queryPlayers(request) {
+      const { firestore } = getServices();
       const constraints: QueryConstraint[] = request.orderBy.map(({ field, direction }) => (
         orderBy(field, direction)
       ));
