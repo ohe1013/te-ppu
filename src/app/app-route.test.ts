@@ -75,6 +75,57 @@ const invalidEventCases: ReadonlyArray<readonly [
 ];
 
 describe('reduceRoute', () => {
+  it('routes boot to title and a first start through name and character selection', () => {
+    let route: AppRoute = { name: 'boot' };
+    route = reduceRoute(route, { type: 'boot-ready' });
+    expect(route).toEqual({ name: 'title' });
+    route = reduceRoute(route, { type: 'start-run', hasProfile: false });
+    expect(route).toEqual({ name: 'name-entry', intent: 'start-run' });
+    route = reduceRoute(route, { type: 'name-completed', initials: 'RVT' });
+    expect(route).toEqual({
+      name: 'character-select',
+      intent: 'start-run',
+      initials: 'RVT',
+    });
+    route = reduceRoute(route, { type: 'character-selected' });
+    expect(route).toEqual({ name: 'tower' });
+  });
+
+  it('sends a returning start directly to the tower', () => {
+    expect(reduceRoute(
+      { name: 'title' },
+      { type: 'start-run', hasProfile: true },
+    )).toEqual({ name: 'tower' });
+  });
+
+  it('returns PLAYER CHANGE to title after selection', () => {
+    const name = reduceRoute({ name: 'title' }, { type: 'change-player' });
+    const character = reduceRoute(name, { type: 'name-completed', initials: 'LUM' });
+
+    expect(name).toEqual({ name: 'name-entry', intent: 'change-player' });
+    expect(character).toEqual({
+      name: 'character-select',
+      intent: 'change-player',
+      initials: 'LUM',
+    });
+    expect(reduceRoute(character, { type: 'character-selected' })).toEqual({ name: 'title' });
+  });
+
+  it('opens ranking from title and returns title from presentation routes', () => {
+    const ranking = reduceRoute({ name: 'title' }, { type: 'open-ranking' });
+
+    expect(ranking).toEqual({ name: 'ranking' });
+    expect(reduceRoute(ranking, { type: 'return-to-title' })).toEqual({ name: 'title' });
+    expect(reduceRoute(
+      { name: 'name-entry', intent: 'start-run' },
+      { type: 'return-to-title' },
+    )).toEqual({ name: 'title' });
+    expect(reduceRoute(
+      { name: 'character-select', intent: 'change-player', initials: 'LUM' },
+      { type: 'return-to-title' },
+    )).toEqual({ name: 'title' });
+  });
+
   it('carries encounter progress through an intermediate victory', () => {
     const intro = reduceRoute({ name: 'tower' }, { type: 'select-floor', floor: 2 });
     const match = reduceRoute(intro, { type: 'start-match', seed: 73 });
@@ -131,13 +182,11 @@ describe('reduceRoute', () => {
     expect(reduceRoute(win, { type: 'continue' })).toEqual({ name: 'ending' });
   });
 
-  it('moves through boot, floor selection, match start, and result', () => {
-    const tower = reduceRoute({ name: 'boot' }, { type: 'boot-ready' });
-    const intro = reduceRoute(tower, { type: 'select-floor', floor: 2 });
+  it('moves through floor selection, match start, and result', () => {
+    const intro = reduceRoute({ name: 'tower' }, { type: 'select-floor', floor: 2 });
     const match = reduceRoute(intro, { type: 'start-match', seed: 73 });
     const result = reduceRoute(match, { type: 'match-finished', result: 'loss' });
 
-    expect(tower).toEqual({ name: 'tower' });
     expect(intro).toEqual({ name: 'floor-intro', floor: 2, encounterIndex: 0, wins: 0 });
     expect(match).toEqual({
       name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 73,

@@ -45,6 +45,7 @@ function progressFor(
     clearedFloors: { ...clearedFloors },
     owlDefeated: false,
   };
+  progress.profile = { initials: 'RVT', characterId: 'hero-engineer' };
   return progress;
 }
 
@@ -188,12 +189,42 @@ function renderGame(
   );
 }
 
+async function enterTower(user: ReturnType<typeof userEvent.setup>) {
+  if (screen.queryByTestId('tower-screen') === null) {
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+  }
+  await screen.findByTestId('tower-screen');
+}
+
+async function enterInitials(
+  user: ReturnType<typeof userEvent.setup>,
+  initials: string,
+) {
+  for (const initial of initials) {
+    await user.click(screen.getByRole('button', { name: initial }));
+  }
+  await user.click(screen.getByRole('button', { name: 'END' }));
+}
+
+async function chooseCharacter(
+  user: ReturnType<typeof userEvent.setup>,
+  characterId: 'hero-engineer' | 'cloud-courier' | 'star-alchemist',
+) {
+  const card = document.querySelector<HTMLButtonElement>(
+    `[data-character-id="${characterId}"]`,
+  );
+  if (card === null) throw new Error(`missing character card ${characterId}`);
+  await user.click(card);
+  await user.click(screen.getByRole('button', { name: 'SELECT' }));
+}
+
 async function enterMatch(
   user: ReturnType<typeof userEvent.setup>,
   floor: Floor,
   _reactionMs: number,
 ) {
-  await screen.findByTestId('tower-screen');
+  await enterTower(user);
   await user.click(screen.getByRole('button', { name: `${floor}층 선택` }));
   expect(screen.getByTestId('floor-intro-screen')).toBeInTheDocument();
   expect(screen.queryByText(/AI 반응 간격/)).not.toBeInTheDocument();
@@ -229,6 +260,123 @@ async function completeFloor(
 }
 
 describe('AppRoot', () => {
+  it('shows title after boot and saves a first profile before entering the tower', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(DEFAULT_PROGRESS);
+    renderGame(repository);
+
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(await screen.findByTestId('name-entry-screen')).toBeVisible();
+    await enterInitials(user, 'RVT');
+    expect(await screen.findByTestId('character-select-screen')).toBeVisible();
+    await chooseCharacter(user, 'hero-engineer');
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+    expect(repository.saves.at(-1)?.profile).toEqual({
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    });
+  });
+
+  it('sends a returning player from title directly to the tower without another save', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    renderGame(repository);
+
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+    expect(screen.queryByTestId('name-entry-screen')).not.toBeInTheDocument();
+    expect(repository.saves).toEqual([]);
+  });
+
+  it('persists PLAYER CHANGE and returns to title', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    renderGame(repository);
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await enterInitials(user, 'LUM');
+    await chooseCharacter(user, 'cloud-courier');
+
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    expect(screen.getByText('LUM')).toBeInTheDocument();
+    expect(repository.saves.at(-1)?.profile).toEqual({
+      initials: 'LUM',
+      characterId: 'cloud-courier',
+    });
+  });
+
+  it('keeps profile selection visible after save failure and retries before routing', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(DEFAULT_PROGRESS, [
+      {
+        ok: false,
+        error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+      },
+      { ok: true },
+    ]);
+    renderGame(repository);
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await enterInitials(user, 'RVT');
+    await chooseCharacter(user, 'star-alchemist');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('PROFILE SAVE FAILED');
+    expect(screen.getByTestId('character-select-screen')).toBeVisible();
+    expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
+    expect(repository.saves).toHaveLength(1);
+
+    await user.keyboard('{Enter}');
+    expect(screen.getByTestId('character-select-screen')).toBeVisible();
+    expect(repository.saves).toHaveLength(1);
+
+    await user.keyboard('{Backspace}');
+    expect(screen.getByTestId('character-select-screen')).toBeVisible();
+    expect(screen.queryByTestId('title-screen')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'RETRY SAVE' }));
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+    expect(repository.saves).toHaveLength(2);
+    expect(repository.saves[1]).toEqual(repository.saves[0]);
+  });
+
+  it('renders local ranking props without using a leaderboard service', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = {
+      schemaVersion: 1,
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+      difficulty: 'easy',
+      score: 43_210,
+      durationTicks: 2_400,
+      reachedFloor: 4,
+      encountersWon: 9,
+      owlDefeated: false,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    };
+    progress.pendingLeaderboardSubmissions.easy = progress.localBestScores.easy;
+    const repository = new TestProgressRepository(progress);
+    renderGame(repository);
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+
+    expect(await screen.findByTestId('ranking-screen')).toBeVisible();
+    expect(screen.getByText('43,210')).toBeInTheDocument();
+    expect(screen.getByText('LOCAL RESULTS')).toBeInTheDocument();
+    expect(screen.getByText('SCORE SYNC PENDING')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /NORMAL/ })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+  });
+
   it('persists match progress through the exact repository selected during boot', async () => {
     const user = userEvent.setup();
     const repositoryA = new TestProgressRepository(floorOneProgress);
@@ -331,7 +479,7 @@ describe('AppRoot', () => {
       />,
     );
 
-    await screen.findByTestId('tower-screen');
+    await enterTower(user);
     await user.click(screen.getByRole('button', { name: '1층 선택' }));
     await user.click(screen.getByRole('button', { name: '대전 시작' }));
     expect(screen.getByTestId('settings-match')).toBeInTheDocument();
@@ -388,9 +536,10 @@ describe('AppRoot', () => {
     floor,
     description,
   ) => {
+    const user = userEvent.setup();
     renderGame(new TestProgressRepository(initialProgress));
 
-    await screen.findByTestId('tower-screen');
+    await enterTower(user);
     expect(screen.getByRole('button', {
       name: `${floor}층 선택`,
       description,
@@ -407,7 +556,7 @@ describe('AppRoot', () => {
     };
     renderGame(new TestProgressRepository(floorFiveProgress), createTestPlatform(), manager);
 
-    const tower = await screen.findByTestId('tower-screen');
+    await enterTower(user);
     await user.click(screen.getByRole('button', { name: '5층 선택' }));
     await waitFor(() => expect(manager.loadFloor).toHaveBeenCalledWith(5));
     expect(manager.prefetchFloor).not.toHaveBeenCalled();
@@ -430,9 +579,10 @@ describe('AppRoot', () => {
   });
 
   it('renders all five floor choices with floor four available and floor five locked', async () => {
+    const user = userEvent.setup();
     renderGame(new TestProgressRepository(floorFourProgress));
 
-    await screen.findByTestId('tower-screen');
+    await enterTower(user);
     expect(screen.getAllByRole('button', { name: /층 선택/ })).toHaveLength(5);
     expect(screen.getByRole('button', { name: '4층 선택' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
@@ -449,7 +599,7 @@ describe('AppRoot', () => {
     const repository = new TestProgressRepository(unlocked);
     renderGame(repository);
 
-    await screen.findByTestId('tower-screen');
+    await enterTower(user);
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
     await user.click(screen.getByRole('button', { name: 'NORMAL' }));
 
@@ -657,18 +807,18 @@ describe('AppRoot', () => {
     const retry = await screen.findByRole('button', { name: '다시 시도' });
     await user.click(retry);
 
-    await screen.findByTestId('tower-screen');
+    await screen.findByTestId('title-screen');
     expect(attempts).toBe(2);
   });
 
-  it('reaches the tower when non-blocking common asset loading falls back', async () => {
+  it('reaches the title when non-blocking common asset loading falls back', async () => {
     renderGame(
       new TestProgressRepository(floorOneProgress),
       createTestPlatform(),
       createAssetManager(async () => 'fallback'),
     );
 
-    expect(await screen.findByTestId('tower-screen')).toBeInTheDocument();
+    expect(await screen.findByTestId('title-screen')).toBeInTheDocument();
   });
 
   it('owns tower-route music and app foreground audio without mounting MatchScreen', async () => {
@@ -680,6 +830,7 @@ describe('AppRoot', () => {
       () => visibilityState,
     );
     const audioPort = createAudioPort();
+    const user = userEvent.setup();
     const result = renderGame(
       new TestProgressRepository(floorOneProgress),
       createTestPlatform(),
@@ -687,7 +838,7 @@ describe('AppRoot', () => {
       audioPort,
     );
 
-    await screen.findByTestId('tower-screen');
+    await enterTower(user);
     expect(screen.queryByTestId('match-screen')).not.toBeInTheDocument();
     expect(audioPort.setMusic).toHaveBeenCalledWith('tower');
 

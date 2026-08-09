@@ -23,6 +23,7 @@ import {
   type ProgressRepository,
   type ProgressState,
 } from '../progression/index';
+import type { PlayerProfile } from '../player';
 
 export type TowerRoute =
   | 'TOWER'
@@ -356,6 +357,16 @@ export class TowerController {
     this.currentMatch = null;
     this.currentAi = null;
     this.currentRoute = 'TOWER';
+    return this.persistCurrentProgress();
+  }
+
+  async updateProfile(profile: PlayerProfile): Promise<TowerSaveResult> {
+    const next = cloneProgress(this.currentProgress);
+    next.profile = {
+      initials: profile.initials,
+      characterId: profile.characterId,
+    };
+    this.currentProgress = next;
     return this.persistCurrentProgress();
   }
 

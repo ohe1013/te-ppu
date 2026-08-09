@@ -13,6 +13,10 @@ import { ResultScreen } from '../ui/screens/ResultScreen';
 import { TowerScreen } from '../ui/screens/TowerScreen';
 import { OwlRevealScreen } from '../ui/screens/OwlRevealScreen';
 import { OwlResultScreen } from '../ui/screens/OwlResultScreen';
+import { CharacterSelectScreen } from '../ui/screens/CharacterSelectScreen';
+import { NameEntryScreen } from '../ui/screens/NameEntryScreen';
+import { RankingScreen } from '../ui/screens/RankingScreen';
+import { TitleScreen } from '../ui/screens/TitleScreen';
 import '../ui/screens/screens.css';
 import {
   reduceRoute,
@@ -34,6 +38,8 @@ import {
 } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
+import type { PlayerCharacterId } from '../player';
+import type { Difficulty } from '../progression';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
 
@@ -106,9 +112,12 @@ export function AppRoot({
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
   const [resultSavePending, setResultSavePending] = useState(false);
   const [saveRetrying, setSaveRetrying] = useState(false);
+  const [profileSaveStatus, setProfileSaveStatus] = useState<'idle' | 'saving' | 'failed'>('idle');
+  const [rankingDifficulty, setRankingDifficulty] = useState<Difficulty>('easy');
   const controllerRef = useRef<TowerController | null>(null);
   const completionPendingRef = useRef(false);
   const completionTokenRef = useRef(0);
+  const profileSavePendingRef = useRef(false);
   const mountedRef = useRef(false);
 
   if (boot.status === 'ready' && controllerRef.current === null) {
@@ -271,11 +280,142 @@ export function AppRoot({
     return result.ok;
   }
 
+  function returnToTitle(): void {
+    setProfileSaveStatus('idle');
+    dispatchRoute({ type: 'return-to-title' });
+  }
+
+  function openRanking(): void {
+    if (controller === null) return;
+    setRankingDifficulty(controller.progress.selectedDifficulty);
+    dispatchRoute({ type: 'open-ranking' });
+  }
+
+  async function completeProfile(characterId: PlayerCharacterId): Promise<void> {
+    if (
+      controller === null
+      || route.name !== 'character-select'
+      || profileSaveStatus !== 'idle'
+      || profileSavePendingRef.current
+    ) return;
+    const profile = { initials: route.initials, characterId };
+    profileSavePendingRef.current = true;
+    setProfileSaveStatus('saving');
+    const result = await controller.updateProfile(profile);
+    profileSavePendingRef.current = false;
+    if (!mountedRef.current) return;
+    refreshControllerView();
+    if (!result.ok) {
+      setProfileSaveStatus('failed');
+      return;
+    }
+    setProfileSaveStatus('idle');
+    dispatchRoute({ type: 'character-selected' });
+  }
+
+  async function retryProfileSave(): Promise<void> {
+    if (
+      controller === null
+      || route.name !== 'character-select'
+      || profileSavePendingRef.current
+    ) return;
+    profileSavePendingRef.current = true;
+    setProfileSaveStatus('saving');
+    const result = await controller.retrySave();
+    profileSavePendingRef.current = false;
+    if (!mountedRef.current) return;
+    refreshControllerView();
+    if (!result.ok) {
+      setProfileSaveStatus('failed');
+      return;
+    }
+    setProfileSaveStatus('idle');
+    dispatchRoute({ type: 'character-selected' });
+  }
+
   let content: ReactNode;
   if (boot.status !== 'ready' || controller === null || route.name === 'boot') {
     content = <BootScreen state={boot} />;
   } else {
     switch (route.name) {
+      case 'title':
+        content = (
+          <TitleScreen
+            commonAssets={commonAssets}
+            notice={boot.notice}
+            onChangePlayer={() => {
+              setProfileSaveStatus('idle');
+              dispatchRoute({ type: 'change-player' });
+            }}
+            onOpenRanking={openRanking}
+            onStartRun={() => dispatchRoute({
+              type: 'start-run',
+              hasProfile: controller.progress.profile !== null,
+            })}
+            progress={controller.progress}
+          />
+        );
+        break;
+      case 'name-entry':
+        content = (
+          <NameEntryScreen
+            backdrop={commonAssets?.towerBackdrop}
+            initialValue=""
+            onBack={returnToTitle}
+            onComplete={(initials) => dispatchRoute({ type: 'name-completed', initials })}
+          />
+        );
+        break;
+      case 'character-select':
+        content = (
+          <>
+            <CharacterSelectScreen
+              assets={{
+                'hero-engineer': { fullArt: commonAssets?.hero.fullArt },
+              }}
+              initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
+              onBack={() => {
+                if (profileSaveStatus === 'idle') returnToTitle();
+              }}
+              onComplete={(characterId) => { void completeProfile(characterId); }}
+            />
+            {profileSaveStatus !== 'idle' && (
+              <aside
+                aria-live="polite"
+                className={`profile-save-panel profile-save-panel--${profileSaveStatus}`}
+                data-testid="profile-save-panel"
+              >
+                {profileSaveStatus === 'saving' ? (
+                  <p role="status">SAVING PLAYER PROFILE</p>
+                ) : (
+                  <>
+                    <p role="alert">PROFILE SAVE FAILED</p>
+                    <button onClick={() => { void retryProfileSave(); }} type="button">
+                      RETRY SAVE
+                    </button>
+                  </>
+                )}
+              </aside>
+            )}
+          </>
+        );
+        break;
+      case 'ranking': {
+        const localBest = controller.progress.localBestScores[rankingDifficulty];
+        content = (
+          <RankingScreen
+            difficulty={rankingDifficulty}
+            entries={localBest === null ? [] : [localBest]}
+            onBack={returnToTitle}
+            onSelectDifficulty={setRankingDifficulty}
+            status="local"
+            syncPending={controller.progress.pendingLeaderboardSubmissions[rankingDifficulty]
+              !== undefined}
+            unlockedDifficulties={controller.progress.unlockedDifficulties}
+          />
+        );
+        break;
+      }
       case 'tower':
         content = (
           <TowerScreen

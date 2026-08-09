@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TowerController } from '../../src/app/towerController';
 import { createAiObservation, createMatch } from '../../src/core/index';
+import type { PlayerProfile } from '../../src/player';
 import {
   cloneProgressState,
   DEFAULT_PROGRESS,
@@ -85,6 +86,71 @@ function activeProgress(progress: ProgressState) {
 }
 
 describe('tower controller', () => {
+  it('updates a profile through a cloned persisted snapshot', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    const profile: PlayerProfile = {
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    };
+
+    const save = controller.updateProfile(profile);
+    (profile as { initials: string }).initials = 'BAD';
+
+    expect(await save).toEqual({ ok: true, route: 'TOWER' });
+    expect(controller.progress.profile).toEqual({
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    });
+    expect(repository.saved[0]?.profile).toEqual({
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    });
+
+    const detached = controller.progress;
+    if (detached.profile === null) throw new Error('profile should be present');
+    (detached.profile as { initials: string }).initials = 'LUM';
+    expect(controller.progress.profile?.initials).toBe('RVT');
+  });
+
+  it('serializes overlapping profile updates and retains the latest failed snapshot for retry', async () => {
+    const repository = new DeferredRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+
+    const first = controller.updateProfile({
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    });
+    const second = controller.updateProfile({
+      initials: 'LUM',
+      characterId: 'cloud-courier',
+    });
+    await flushSaveQueue();
+
+    expect(repository.saved).toHaveLength(1);
+    expect(repository.saved[0]?.profile?.initials).toBe('RVT');
+    repository.resolveSave(0, { ok: true });
+    expect(await first).toEqual({ ok: true, route: 'TOWER' });
+    await flushSaveQueue();
+
+    expect(repository.saved).toHaveLength(2);
+    expect(repository.saved[1]?.profile).toEqual({
+      initials: 'LUM',
+      characterId: 'cloud-courier',
+    });
+    repository.resolveSave(1, {
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    });
+    expect(await second).toEqual({ ok: false, reason: 'SAVE_FAILED', route: 'TOWER' });
+
+    const retry = controller.retrySave();
+    await flushSaveQueue();
+    expect(repository.saved[2]).toEqual(repository.saved[1]);
+    repository.resolveSave(2, { ok: true });
+    expect(await retry).toEqual({ ok: true, route: 'TOWER' });
+  });
+
   it('requires three encounter wins and preserves the in-memory series between matches', async () => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);

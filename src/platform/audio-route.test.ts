@@ -4,6 +4,14 @@ import { musicForRoute } from './audio-route';
 describe('musicForRoute', () => {
   it('selects the fixed route music map', () => {
     expect(musicForRoute({ name: 'boot' })).toBeNull();
+    expect(musicForRoute({ name: 'title' })).toBe('tower');
+    expect(musicForRoute({ name: 'name-entry', intent: 'start-run' })).toBe('tower');
+    expect(musicForRoute({
+      name: 'character-select',
+      intent: 'change-player',
+      initials: 'LUM',
+    })).toBe('tower');
+    expect(musicForRoute({ name: 'ranking' })).toBe('tower');
     expect(musicForRoute({ name: 'tower' })).toBe('tower');
     expect(musicForRoute({ name: 'floor-intro', floor: 4, encounterIndex: 0, wins: 0 })).toBe('tower');
     expect(musicForRoute({ name: 'match', floor: 1, encounterIndex: 0, wins: 0, seed: 1 })).toBe('early-floors');

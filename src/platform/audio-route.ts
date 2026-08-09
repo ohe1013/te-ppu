@@ -5,6 +5,10 @@ export function musicForRoute(route: AppRoute): MusicTrack | null {
   switch (route.name) {
     case 'boot':
       return null;
+    case 'title':
+    case 'name-entry':
+    case 'character-select':
+    case 'ranking':
     case 'tower':
     case 'floor-intro':
       return 'tower';
