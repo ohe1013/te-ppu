@@ -22,6 +22,7 @@ import {
   reduceRoute,
   type AppRoute,
   type Floor,
+  type MatchOutcome,
   type MatchResult,
 } from './app-route';
 import type { AppServices } from './app-services';
@@ -47,6 +48,7 @@ import {
 import type { Difficulty } from '../progression';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
+import type { GameEvent } from '../core';
 
 export interface MatchRouteViewProps {
   readonly audioPort: AudioPort;
@@ -56,7 +58,8 @@ export interface MatchRouteViewProps {
   readonly difficulty: ProgressState['selectedDifficulty'];
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
-  readonly onFinished: (result: MatchResult) => Promise<void>;
+  readonly onFinished: (outcome: MatchOutcome) => Promise<void>;
+  readonly onScoreEvents: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
   readonly onSettingsChange: (
     settings: Partial<ProgressState['settings']>,
@@ -66,6 +69,7 @@ export interface MatchRouteViewProps {
   readonly playerAssets?: PlayerCharacterAssets;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
+  readonly runScore: number;
   readonly commonAssets?: ReturnType<AssetManager['getCommonAssets']>;
   readonly floorAssets?: ReturnType<AssetManager['getFloorAssets']>;
 }
@@ -96,6 +100,8 @@ function toControllerResult(result: MatchResult): 'WIN' | 'LOSS' | 'DRAW' {
   if (result === 'loss') return 'LOSS';
   return 'DRAW';
 }
+
+function ignoreScoreEvents(_events: readonly GameEvent[]): void {}
 
 export function AppRoot({
   createMatchSeed = createDefaultMatchSeed,
@@ -225,7 +231,7 @@ export function AppRoot({
     if (started.ok) dispatchRoute({ type: 'retry', seed });
   }
 
-  async function finishMatch(result: MatchResult): Promise<void> {
+  async function finishMatch({ result }: MatchOutcome): Promise<void> {
     if (controller === null || completionPendingRef.current) return;
     completionPendingRef.current = true;
     const completionToken = completionTokenRef.current + 1;
@@ -250,7 +256,7 @@ export function AppRoot({
     if (started.ok) dispatchRoute({ type: 'start-owl-match', seed: started.match.matchSeed });
   }
 
-  async function finishOwlMatch(result: MatchResult): Promise<void> {
+  async function finishOwlMatch({ result }: MatchOutcome): Promise<void> {
     if (controller === null || completionPendingRef.current) return;
     completionPendingRef.current = true;
     const completionToken = completionTokenRef.current + 1;
@@ -483,9 +489,11 @@ export function AppRoot({
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
           onFinished: finishOwlMatch,
+          onScoreEvents: ignoreScoreEvents,
           onRetrySettingsSave: retrySave,
           onSettingsChange: updateSettings,
           platform: services.platform,
+          runScore: 0,
           settings: controller.progress.settings,
           settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
         });
@@ -534,9 +542,11 @@ export function AppRoot({
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
           onFinished: finishMatch,
+          onScoreEvents: ignoreScoreEvents,
           onRetrySettingsSave: retrySave,
           onSettingsChange: updateSettings,
           platform: services.platform,
+          runScore: 0,
           settings: controller.progress.settings,
           settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
         });

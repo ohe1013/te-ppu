@@ -9,7 +9,7 @@ import {
   createAiController,
   getAiFloorProfile,
 } from '../../ai/index';
-import type { Floor, MatchResult } from '../../app/app-route';
+import type { Floor, MatchOutcome } from '../../app/app-route';
 import {
   useMatchLoop,
   type MatchLoopView,
@@ -71,7 +71,8 @@ export interface MatchScreenProps {
   readonly difficulty?: Difficulty;
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
-  readonly onFinished: (result: MatchResult) => void | Promise<void>;
+  readonly onFinished: (outcome: MatchOutcome) => void | Promise<void>;
+  readonly onScoreEvents?: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
   readonly onSettingsChange: (
     settings: Partial<ProgressState['settings']>,
@@ -88,6 +89,7 @@ export interface MatchScreenProps {
   /** Resolved by AppRoot; this screen never starts asset work. */
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
+  readonly runScore?: number;
   readonly useMatchLoopImpl?: MatchLoopHook;
 }
 
@@ -248,12 +250,14 @@ export function MatchScreen({
   floor,
   wins = 0,
   onFinished,
+  onScoreEvents,
   onRetrySettingsSave,
   onSettingsChange,
   platform,
   player: playerCharacter,
   playerAssets,
   portraitSources,
+  runScore = 0,
   seed,
   settings,
   settingsSaveFailed,
@@ -270,8 +274,8 @@ export function MatchScreen({
   };
   const resetBus = useMemo(() => new InputResetBus(), []);
   const audio = audioPort;
-  const feedbackRef = useRef({ audio, platform, settings });
-  feedbackRef.current = { audio, platform, settings };
+  const feedbackRef = useRef({ audio, onScoreEvents, platform, settings });
+  feedbackRef.current = { audio, onScoreEvents, platform, settings };
   const handleMatchEvents = useCallback((
     events: readonly GameEvent[],
     view: PublicMatchView,
@@ -299,6 +303,7 @@ export function MatchScreen({
         }
       }
     }
+    feedback.onScoreEvents?.(events);
   }, []);
   const ai = useMemo(
     () => createAiController(getAiFloorProfile(floor, difficulty), seed),
@@ -427,6 +432,9 @@ export function MatchScreen({
           </span>
           <span className="match-header__series-wins">
             {isOwlMatch ? 'OWL' : `승리 ${wins ?? 0}/3`}
+            <span className="match-header__run-score" data-testid="run-score">
+              SCORE {String(runScore).padStart(6, '0')}
+            </span>
           </span>
         </div>
         <div className="match-header__actions">

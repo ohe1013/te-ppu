@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MatchResult } from '../app/app-route';
+import type { MatchOutcome } from '../app/app-route';
 import { E2EDriverController } from './e2e-driver';
 import { createE2EPlatform } from './e2e-platform';
 
@@ -15,10 +15,10 @@ describe('E2E driver', () => {
   it('installs a typed global and binds only the active match finisher', async () => {
     const controller = new E2EDriverController();
     cleanups.push(controller.install());
-    const first = vi.fn<(result: MatchResult) => Promise<void>>(
+    const first = vi.fn<(outcome: MatchOutcome) => Promise<void>>(
       async () => undefined,
     );
-    const second = vi.fn<(result: MatchResult) => Promise<void>>(
+    const second = vi.fn<(outcome: MatchOutcome) => Promise<void>>(
       async () => undefined,
     );
     const unbindFirst = controller.bindFinish(first);
@@ -35,10 +35,12 @@ describe('E2E driver', () => {
       wins: 1,
     });
     await window.__TE_PPU_E2E__.finish('draw');
+    await window.__TE_PPU_E2E__.finish('win', 321);
 
     expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledOnce();
-    expect(second).toHaveBeenCalledWith('draw');
+    expect(second).toHaveBeenCalledTimes(2);
+    expect(second).toHaveBeenNthCalledWith(1, { result: 'draw', durationTicks: 600 });
+    expect(second).toHaveBeenNthCalledWith(2, { result: 'win', durationTicks: 321 });
     unbindSecond();
     expect(window.__TE_PPU_E2E__.currentMatch).toBeNull();
     await expect(window.__TE_PPU_E2E__.finish('win')).rejects.toThrow(

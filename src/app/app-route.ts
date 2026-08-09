@@ -4,6 +4,10 @@ import type { EncounterIndex } from '../progression';
 export type { Floor } from '../progression';
 
 export type MatchResult = 'win' | 'loss' | 'draw';
+export interface MatchOutcome {
+  readonly result: MatchResult;
+  readonly durationTicks: number;
+}
 export type OnboardingIntent = 'start-run' | 'change-player';
 
 export type AppRoute =

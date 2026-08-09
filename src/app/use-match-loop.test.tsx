@@ -13,6 +13,7 @@ import {
   createMatch,
   type GameCommand,
   type GameEvent,
+  type MatchConfig,
   type MatchState,
   type TimedCommand,
 } from '../core/index';
@@ -27,6 +28,7 @@ import {
   type CommandFeedback,
   useMatchLoop,
 } from './use-match-loop';
+import type { MatchOutcome } from './app-route';
 
 const coreSpies = vi.hoisted(() => ({
   createAiObservation: vi.fn(),
@@ -123,22 +125,24 @@ function fakeAi(commands: readonly TimedCommand[] = []): AiController & {
 
 function renderLoop({
   ai = fakeAi(),
+  config = { matchSeed: 17, countdownTicks: 0 },
   onEventBatches,
   onCommandFeedback,
   onEvents,
   onFinished = vi.fn(),
 }: {
   readonly ai?: AiController;
+  readonly config?: MatchConfig;
   readonly onEventBatches?: (batches: readonly unknown[]) => void;
   readonly onCommandFeedback?: (feedback: CommandFeedback) => void;
   readonly onEvents?: Parameters<typeof useMatchLoop>[0]['onEvents'];
-  readonly onFinished?: (result: 'win' | 'loss' | 'draw') => void | Promise<void>;
+  readonly onFinished?: (outcome: MatchOutcome) => void | Promise<void>;
 } = {}) {
   const clock = new FrameClock();
   clock.install();
   const hook = renderHook(() => useMatchLoop({
     ai,
-    config: { matchSeed: 17, countdownTicks: 0 },
+    config,
     onEventBatches,
     onCommandFeedback,
     onEvents,
@@ -346,6 +350,57 @@ describe('useMatchLoop', () => {
     expect(result.current.view.tick).toBe(1);
   });
 
+  it('reports terminal duration without the core countdown or paused frames', () => {
+    const onFinished = vi.fn();
+    coreSpies.stepMatch.mockImplementation((state: MatchState) => {
+      const tick = state.tick + 1;
+      return {
+        events: tick === 4
+          ? [{ type: 'match-ended' as const, side: 'player' as const }]
+          : [],
+        state: {
+          ...state,
+          countdownTicks: Math.max(0, 3 - tick),
+          status: tick === 4 ? 'player-won' : tick < 3 ? 'countdown' : 'playing',
+          tick,
+        },
+      };
+    });
+    const { clock, result } = renderLoop({
+      config: { matchSeed: 17, countdownTicks: 3 },
+      onFinished,
+    });
+
+    clock.advanceBy(STEP_MS);
+    clock.advanceBy(STEP_MS);
+    act(() => result.current.setPaused('background', true));
+    clock.advanceBy(5_000);
+    act(() => result.current.setPaused('background', false));
+    clock.advanceBy(STEP_MS);
+    clock.advanceBy(STEP_MS);
+    clock.advanceBy(STEP_MS);
+
+    expect(onFinished).toHaveBeenCalledOnce();
+    expect(onFinished).toHaveBeenCalledWith({ result: 'win', durationTicks: 1 });
+  });
+
+  it('clamps an immediate terminal duration below the countdown to zero', () => {
+    const onFinished = vi.fn();
+    coreSpies.stepMatch.mockImplementationOnce((state: MatchState) => ({
+      events: [{ type: 'match-ended', side: 'opponent' }],
+      state: { ...state, status: 'opponent-won', tick: state.tick + 1 },
+    }));
+    const { clock } = renderLoop({
+      config: { matchSeed: 17, countdownTicks: 5 },
+      onFinished,
+    });
+
+    clock.advanceBy(STEP_MS);
+
+    expect(onFinished).toHaveBeenCalledOnce();
+    expect(onFinished).toHaveBeenCalledWith({ result: 'loss', durationTicks: 0 });
+  });
+
   it.each([
     ['player-won', 'win'],
     ['opponent-won', 'loss'],
@@ -369,7 +424,7 @@ describe('useMatchLoop', () => {
     expect(result.current.events).toEqual([terminalEvent]);
     expect(onEvents).toHaveBeenCalledWith([terminalEvent], result.current.view);
     expect(onFinished).toHaveBeenCalledTimes(1);
-    expect(onFinished).toHaveBeenCalledWith(resultName);
+    expect(onFinished).toHaveBeenCalledWith({ result: resultName, durationTicks: 1 });
     expect(onEvents.mock.invocationCallOrder[0])
       .toBeLessThan(onFinished.mock.invocationCallOrder[0]!);
     expect(clock.pendingFrames).toBe(0);
@@ -378,6 +433,20 @@ describe('useMatchLoop', () => {
     clock.advanceBy(STEP_MS * 20);
     expect(coreSpies.stepMatch).toHaveBeenCalledTimes(1);
     expect(onFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it('still completes a terminal match when presentation event feedback throws', () => {
+    const onEvents = vi.fn(() => { throw new Error('score presentation failed'); });
+    const onFinished = vi.fn();
+    coreSpies.stepMatch.mockImplementationOnce((state: MatchState) => ({
+      events: [{ type: 'match-ended', side: 'player' }],
+      state: { ...state, status: 'player-won', tick: state.tick + 1 },
+    }));
+    const { clock } = renderLoop({ onEvents, onFinished });
+
+    expect(() => clock.advanceBy(STEP_MS)).not.toThrow();
+    expect(onEvents).toHaveBeenCalledOnce();
+    expect(onFinished).toHaveBeenCalledWith({ result: 'win', durationTicks: 1 });
   });
 
   it('cancels animation work and ignores retained dispatchers after unmount', () => {
@@ -453,6 +522,7 @@ describe('MatchScreen', () => {
         audioPort={borrowedAudioPort}
         floor={2}
         onFinished={vi.fn()}
+        onScoreEvents={vi.fn()}
         onRetrySettingsSave={async () => true}
         onSettingsChange={async () => true}
         platform={{
@@ -472,6 +542,7 @@ describe('MatchScreen', () => {
           story: '고장 난 별빛 동력핵을 수리한다.',
           palette: ['#35c8c2', '#fff4cf', '#b86f3c'],
         }}
+        runScore={0}
         seed={73}
         settings={{ hapticsEnabled: true, soundEnabled: true }}
         settingsSaveFailed={false}

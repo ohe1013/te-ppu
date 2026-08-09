@@ -224,9 +224,24 @@ function TestMatch({
       <h3>{player?.name}</h3>
       <p>{player?.title}</p>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
-      <button type="button" onClick={() => void onFinished('win')}>finish win</button>
-      <button type="button" onClick={() => void onFinished('loss')}>finish loss</button>
-      <button type="button" onClick={() => void onFinished('draw')}>finish draw</button>
+      <button
+        type="button"
+        onClick={() => void onFinished({ result: 'win', durationTicks: 600 })}
+      >
+        finish win
+      </button>
+      <button
+        type="button"
+        onClick={() => void onFinished({ result: 'loss', durationTicks: 300 })}
+      >
+        finish loss
+      </button>
+      <button
+        type="button"
+        onClick={() => void onFinished({ result: 'draw', durationTicks: 300 })}
+      >
+        finish draw
+      </button>
     </section>
   );
 }

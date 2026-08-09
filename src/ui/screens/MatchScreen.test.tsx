@@ -18,15 +18,18 @@ const lifecycleProps: Pick<
   MatchScreenProps,
   | 'audioPort'
   | 'onRetrySettingsSave'
+  | 'onScoreEvents'
   | 'onSettingsChange'
   | 'platform'
   | 'player'
   | 'playerAssets'
   | 'settings'
   | 'settingsSaveFailed'
+  | 'runScore'
 > = {
   audioPort: createAudioPort(),
   onRetrySettingsSave: async () => true,
+  onScoreEvents: vi.fn(),
   onSettingsChange: async () => true,
   platform: {
     close: async () => undefined,
@@ -48,6 +51,7 @@ const lifecycleProps: Pick<
   playerAssets: undefined,
   settings: { hapticsEnabled: true, soundEnabled: true },
   settingsSaveFailed: false,
+  runScore: 0,
 };
 
 function createAudioPort(): AudioPort {
@@ -377,6 +381,69 @@ describe('MatchScreen', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
     expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.commandFeedback).toBe(feedback);
+  });
+
+  it('forwards each exact frame event list once after audiovisual feedback without replaying on rerender', () => {
+    const loop = activeLoop();
+    const play = vi.fn();
+    const audioPort = { ...createAudioPort(), play };
+    const onScoreEvents = vi.fn();
+    useMatchLoopMock.mockReturnValue(loop);
+    const rendered = render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        onFinished={vi.fn()}
+        onScoreEvents={onScoreEvents}
+        runScore={12_450}
+        seed={17}
+      />,
+    );
+    const options = useMatchLoopMock.mock.calls.at(-1)?.[0];
+    const events = [
+      { type: 'lines-cleared' as const, side: 'player' as const, amount: 2, rows: [18, 19] },
+    ] as const;
+
+    act(() => options.onEvents(events, loop.view));
+
+    expect(onScoreEvents).toHaveBeenCalledOnce();
+    expect(onScoreEvents.mock.calls[0]?.[0]).toBe(events);
+    expect(play).toHaveBeenCalledWith('clear');
+    expect(play.mock.invocationCallOrder[0])
+      .toBeLessThan(onScoreEvents.mock.invocationCallOrder[0]!);
+
+    rendered.rerender(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        onFinished={vi.fn()}
+        onScoreEvents={onScoreEvents}
+        runScore={12_450}
+        seed={17}
+      />,
+    );
+    expect(onScoreEvents).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [0, 'SCORE 000000'],
+    [12_450, 'SCORE 012450'],
+    [1_234_567, 'SCORE 1234567'],
+  ] as const)('renders score %i in one compact fixed-width header', (runScore, label) => {
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        floor={2}
+        onFinished={vi.fn()}
+        runScore={runScore}
+        seed={17}
+      />,
+    );
+
+    expect(screen.getAllByTestId('run-score')).toHaveLength(1);
+    expect(screen.getByTestId('run-score')).toHaveTextContent(label);
   });
 
   it('keeps borrowed audio cue-only while match lifecycle still pauses and counts down', async () => {
