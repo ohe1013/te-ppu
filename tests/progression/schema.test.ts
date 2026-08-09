@@ -145,6 +145,35 @@ describe('difficulty progress schema', () => {
     })).toBeNull();
   });
 
+  it('rejects a score record whose initials do not satisfy the player profile contract', () => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      localBestScores: {
+        easy: { ...scoreRecord, initials: 'rvT' },
+        normal: null,
+        hard: null,
+      },
+    })).toBeNull();
+  });
+
+  it('rejects a local best score whose difficulty differs from its key', () => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      localBestScores: {
+        easy: { ...scoreRecord, difficulty: 'hard' },
+        normal: null,
+        hard: null,
+      },
+    })).toBeNull();
+  });
+
+  it('rejects a pending leaderboard score whose difficulty differs from its key', () => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      pendingLeaderboardSubmissions: { normal: scoreRecord },
+    })).toBeNull();
+  });
+
   it('deep-clones profile, score records, and pending leaderboard submissions', () => {
     const persisted = {
       ...currentState,

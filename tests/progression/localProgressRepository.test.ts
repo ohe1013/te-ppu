@@ -394,6 +394,25 @@ describe('local progress repository', () => {
       ...validProgress(),
       settings: { soundEnabled: 'yes', hapticsEnabled: true },
     }) },
+    { label: 'invalid score initials', raw: JSON.stringify({
+      ...validProgress(),
+      localBestScores: {
+        easy: {
+          schemaVersion: 1,
+          initials: 'rvT',
+          characterId: 'hero-engineer',
+          difficulty: 'easy',
+          score: 1200,
+          durationTicks: 345,
+          reachedFloor: 3,
+          encountersWon: 2,
+          owlDefeated: false,
+          achievedAt: '2026-08-09T12:00:00.000Z',
+        },
+        normal: null,
+        hard: null,
+      },
+    }) },
   ])('backs up exact $label input before replacing it with defaults', async ({ raw }) => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     const storage = new TestStorage();

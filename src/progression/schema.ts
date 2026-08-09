@@ -1,4 +1,5 @@
 import {
+  PLAYER_INITIALS_PATTERN,
   isPlayerCharacterId,
   isPlayerProfile,
   type PlayerCharacterId,
@@ -263,7 +264,11 @@ function parseScoreRecord(value: unknown): ScoreRecord | null {
     'achievedAt',
   ])) return null;
   if (value.schemaVersion !== 1) return null;
-  if (typeof value.initials !== 'string' || !isPlayerCharacterId(value.characterId)) return null;
+  if (
+    typeof value.initials !== 'string'
+    || !PLAYER_INITIALS_PATTERN.test(value.initials)
+    || !isPlayerCharacterId(value.characterId)
+  ) return null;
   if (!isDifficulty(value.difficulty) || !isFloor(value.reachedFloor)) return null;
   if (
     typeof value.score !== 'number'
@@ -293,7 +298,9 @@ function parseLocalBestScores(value: unknown): LocalBestScores | null {
     const score = value[difficulty] === null ? null : parseScoreRecord(value[difficulty]);
     return [difficulty, score] as const;
   });
-  if (parsed.some(([difficulty, score]) => score === null && value[difficulty] !== null)) return null;
+  if (parsed.some(([difficulty, score]) => (
+    score === null ? value[difficulty] !== null : score.difficulty !== difficulty
+  ))) return null;
   return Object.fromEntries(parsed) as LocalBestScores;
 }
 
@@ -302,7 +309,9 @@ function parsePendingLeaderboardSubmissions(value: unknown): PendingLeaderboardS
   const entries = Object.entries(value);
   if (entries.some(([difficulty]) => !isDifficulty(difficulty))) return null;
   const parsed = entries.map(([difficulty, score]) => [difficulty, parseScoreRecord(score)] as const);
-  if (parsed.some(([, score]) => score === null)) return null;
+  if (parsed.some(([difficulty, score]) => score === null || score.difficulty !== difficulty)) {
+    return null;
+  }
   return Object.fromEntries(parsed) as PendingLeaderboardSubmissions;
 }
 
