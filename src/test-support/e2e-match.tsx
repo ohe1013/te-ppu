@@ -80,8 +80,12 @@ function E2EMatchRoute({
   ...props
 }: E2EMatchRouteProps) {
   useEffect(
-    () => controller.bindFinish(props.onFinished),
-    [controller, props.onFinished],
+    () => controller.bindFinish(props.onFinished, {
+      floor: props.floor,
+      encounterIndex: props.encounterIndex,
+      wins: props.wins,
+    }),
+    [controller, props.encounterIndex, props.floor, props.onFinished, props.wins],
   );
   return <MatchScreen {...props} useMatchLoopImpl={useMatchLoopImpl} />;
 }

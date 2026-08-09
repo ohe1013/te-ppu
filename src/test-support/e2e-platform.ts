@@ -25,7 +25,7 @@ export function createE2EPlatform(
     async lockPortrait() {},
     async haptic() {},
     async close() {
-      controller.recordClose();
+      await controller.close();
     },
   };
 }

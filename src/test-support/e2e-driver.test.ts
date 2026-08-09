@@ -22,15 +22,25 @@ describe('E2E driver', () => {
       async () => undefined,
     );
     const unbindFirst = controller.bindFinish(first);
-    const unbindSecond = controller.bindFinish(second);
+    const unbindSecond = controller.bindFinish(second, {
+      floor: 2,
+      encounterIndex: 1,
+      wins: 1,
+    });
 
     unbindFirst();
+    expect(window.__TE_PPU_E2E__.currentMatch).toEqual({
+      floor: 2,
+      encounterIndex: 1,
+      wins: 1,
+    });
     await window.__TE_PPU_E2E__.finish('draw');
 
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledOnce();
     expect(second).toHaveBeenCalledWith('draw');
     unbindSecond();
+    expect(window.__TE_PPU_E2E__.currentMatch).toBeNull();
     await expect(window.__TE_PPU_E2E__.finish('win')).rejects.toThrow(
       'No E2E match is currently active.',
     );
@@ -53,6 +63,21 @@ describe('E2E driver', () => {
     expect(window.__TE_PPU_E2E__.dispatchedCommands).toEqual([
       { type: 'move', dx: -1 },
     ]);
+    expect(window.__TE_PPU_E2E__.closeCount).toBe(2);
+  });
+
+  it('lets browser tests choose a resolving or hanging close implementation', async () => {
+    const controller = new E2EDriverController();
+    cleanups.push(controller.install());
+    const platform = createE2EPlatform(controller);
+
+    window.__TE_PPU_E2E__.setCloseMode('hang');
+    const pendingClose = platform.close();
+    expect(window.__TE_PPU_E2E__.closeCount).toBe(1);
+    expect(pendingClose).toBeInstanceOf(Promise);
+
+    window.__TE_PPU_E2E__.setCloseMode('resolve');
+    await platform.close();
     expect(window.__TE_PPU_E2E__.closeCount).toBe(2);
   });
 

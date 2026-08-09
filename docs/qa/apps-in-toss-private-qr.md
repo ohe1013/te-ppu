@@ -58,6 +58,11 @@ The passing automated config/package proof does not prove URL reachability, cons
 | D7 | The first usable screen appears within 10 seconds and no bottom sheet opens automatically. | `PENDING_EXTERNAL` | `ATTACH_COLD_LAUNCH_TIMING` |
 | D8 | Console visibility remains private and the build is not submitted for public review. | `PENDING_EXTERNAL` | `ATTACH_CONSOLE_VISIBILITY` |
 | D9 | The retained Node 24 dependency-audit output and final `.ait` entry/content scan are attached together; the accepted toolchain risk is still recorded as `PENDING_UPSTREAM`, not zero vulnerabilities. | `PENDING_EXTERNAL` | `ATTACH_SECURITY_OUTPUTS` |
+| D10 | The tower shows the original mascot, three ordered rivals per floor, and the active rival's name/portrait remains visible in the battle HUD and result screen. | `PENDING_EXTERNAL` | `ATTACH_TOWER_AND_RIVAL_VIDEO` |
+| D11 | A real match shows the attacker reaction, target hit/panic reaction, and the central attack ribbon or fallback impact signal without hiding either board. | `PENDING_EXTERNAL` | `ATTACH_REACTION_AND_ATTACK_VIDEO` |
+| D12 | Each floor requires three different wins; a loss or draw resets the series, intermediate wins move to the next rival, and the next floor unlocks only after the third win. | `PENDING_EXTERNAL` | `ATTACH_THREE_FIGHT_PROGRESSION_VIDEO` |
+| D13 | A non-resolving native close reports failure after 1,200ms, blocks duplicate confirmation while closing, permits one retry, and a resolving native close completes successfully. | `PENDING_EXTERNAL` | `ATTACH_CLOSE_TIMEOUT_VIDEO_AND_LOG` |
+| D14 | The compact tower and battle layouts remain readable at 360×640 and 430×932 on both Sandbox and real Toss WebViews, including safe areas and the native game X. | `PENDING_EXTERNAL` | `ATTACH_TWO_VIEWPORT_DEVICE_EVIDENCE` |
 
 ## Same-origin account-isolation protocol
 

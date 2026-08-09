@@ -102,3 +102,22 @@ test('pauses for exit, cancels safely, and closes only after confirmation', asyn
     () => page.evaluate(() => window.__TE_PPU_E2E__.closeCount),
   ).toBe(1);
 });
+
+test('shows a close timeout and allows one retry after failure', async ({ page }) => {
+  await openMatch(page);
+
+  await page.evaluate(() => window.__TE_PPU_E2E__.setCloseMode('hang'));
+  await page.getByRole('button', { name: '게임 나가기' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '게임 나가기 확인' }).click();
+  await expect(dialog).toHaveAttribute('data-close-state', 'closing');
+  await page.waitForTimeout(1_201);
+  await expect(dialog).toHaveAttribute('data-close-state', 'failed');
+  await expect(dialog.getByRole('status')).toHaveText('게임을 닫지 못했습니다. 다시 시도해 주세요.');
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(1);
+
+  await page.evaluate(() => window.__TE_PPU_E2E__.setCloseMode('resolve'));
+  await dialog.getByRole('button', { name: '게임 나가기 확인' }).click();
+  await expect(dialog).toHaveAttribute('data-close-state', 'closing');
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(2);
+});

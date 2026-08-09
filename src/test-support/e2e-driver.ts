@@ -1,12 +1,23 @@
 import type { MatchResult } from '../app/app-route';
 import type { GameCommand } from '../core/index';
+import type { EncounterIndex } from '../progression/index';
+import type { Floor } from '../progression/index';
 
 export type E2ELifecycleState = 'hidden' | 'visible';
+export type E2ECloseMode = 'resolve' | 'hang';
+
+export interface E2EMatchMetadata {
+  readonly floor: Floor;
+  readonly encounterIndex: EncounterIndex;
+  readonly wins: 0 | 1 | 2;
+}
 
 export interface TePpuE2EDriver {
   readonly dispatchedCommands: readonly GameCommand[];
   readonly closeCount: number;
+  readonly currentMatch: E2EMatchMetadata | null;
   finish(result: MatchResult): Promise<void>;
+  setCloseMode(mode: E2ECloseMode): void;
   setLifecycle(state: E2ELifecycleState): void;
 }
 
@@ -18,10 +29,16 @@ declare global {
 
 type FinishHandler = (result: MatchResult) => void | Promise<void>;
 
+interface FinishBinding {
+  readonly handler: FinishHandler;
+  readonly metadata: E2EMatchMetadata | null;
+}
+
 export class E2EDriverController {
   readonly #commands: GameCommand[] = [];
   #closeCount = 0;
-  #finishHandler: FinishHandler | null = null;
+  #closeMode: E2ECloseMode = 'resolve';
+  #finishBinding: FinishBinding | null = null;
   #visibilityState: E2ELifecycleState = 'visible';
   #installedWindow: Window | null = null;
   #previousVisibilityDescriptor: PropertyDescriptor | undefined;
@@ -34,15 +51,21 @@ export class E2EDriverController {
       get closeCount() {
         return controller.#closeCount;
       },
+      get currentMatch() {
+        return controller.#finishBinding?.metadata ?? null;
+      },
       get dispatchedCommands() {
         return controller.#commands.map((command) => ({ ...command }));
       },
       async finish(result) {
-        const handler = controller.#finishHandler;
-        if (handler === null) {
+        const binding = controller.#finishBinding;
+        if (binding === null) {
           throw new Error('No E2E match is currently active.');
         }
-        await handler(result);
+        await binding.handler(result);
+      },
+      setCloseMode(mode) {
+        controller.#setCloseMode(mode);
       },
       setLifecycle(state) {
         controller.#setLifecycle(state);
@@ -77,16 +100,19 @@ export class E2EDriverController {
           this.#previousVisibilityDescriptor,
         );
       }
-      this.#finishHandler = null;
+      this.#finishBinding = null;
       this.#installedWindow = null;
       this.#previousVisibilityDescriptor = undefined;
     };
   }
 
-  bindFinish(handler: FinishHandler): () => void {
-    this.#finishHandler = handler;
+  bindFinish(
+    handler: FinishHandler,
+    metadata: E2EMatchMetadata | null = null,
+  ): () => void {
+    this.#finishBinding = { handler, metadata };
     return () => {
-      if (this.#finishHandler === handler) this.#finishHandler = null;
+      if (this.#finishBinding?.handler === handler) this.#finishBinding = null;
     };
   }
 
@@ -96,6 +122,19 @@ export class E2EDriverController {
 
   recordClose(): void {
     this.#closeCount += 1;
+  }
+
+  close(): Promise<void> {
+    this.recordClose();
+    if (this.#closeMode === 'hang') return new Promise<void>(() => undefined);
+    return Promise.resolve();
+  }
+
+  #setCloseMode(mode: E2ECloseMode): void {
+    if (mode !== 'resolve' && mode !== 'hang') {
+      throw new RangeError(`Unsupported E2E close mode: ${String(mode)}`);
+    }
+    this.#closeMode = mode;
   }
 
   #setLifecycle(state: E2ELifecycleState): void {
