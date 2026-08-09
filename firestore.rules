@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function validDifficulty(value) {
+      return value == 'easy' || value == 'normal' || value == 'hard';
+    }
+
+    function validCharacter(value) {
+      return value == 'hero-engineer'
+        || value == 'cloud-courier'
+        || value == 'star-alchemist';
+    }
+
+    function validScore(data) {
+      return data.keys().hasOnly([
+        'schemaVersion', 'initials', 'characterId', 'score', 'durationTicks',
+        'reachedFloor', 'encountersWon', 'owlDefeated', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'schemaVersion', 'initials', 'characterId', 'score', 'durationTicks',
+        'reachedFloor', 'encountersWon', 'owlDefeated', 'updatedAt'
+      ])
+      && data.schemaVersion == 1
+      && data.initials is string
+      && data.initials.matches('^[A-Z]{3}$')
+      && validCharacter(data.characterId)
+      && data.score is int && data.score >= 0 && data.score <= 10000000
+      && data.durationTicks is int && data.durationTicks >= 0 && data.durationTicks <= 100000000
+      && data.reachedFloor is int && data.reachedFloor >= 1 && data.reachedFloor <= 5
+      && data.encountersWon is int && data.encountersWon >= 0 && data.encountersWon <= 16
+      && data.owlDefeated is bool
+      && (!data.owlDefeated || (data.reachedFloor == 5 && data.encountersWon == 16))
+      && data.updatedAt == request.time;
+    }
+
+    function improvesScore(next, current) {
+      return next.score > current.score
+        || (next.score == current.score && next.durationTicks < current.durationTicks);
+    }
+
+    match /leaderboards/{difficulty}/players/{userId} {
+      allow read: if request.auth != null && validDifficulty(difficulty);
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && validDifficulty(difficulty)
+        && validScore(request.resource.data);
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && validDifficulty(difficulty)
+        && validScore(request.resource.data)
+        && improvesScore(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+  }
+}
