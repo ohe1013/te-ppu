@@ -15,15 +15,16 @@ Run every command separately under the repository's supported Node 24 runtime. R
 
 | ID | Command | Required result | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| A1 | `npm run typecheck` | Exit 0. | `PASS` | `e033c20; 2026-08-08; Windows/Node 24.15.0; tsc --noEmit exit 0` |
-| A2 | `npm test` | Exit 0 with no failed unit/integration tests. | `PASS` | `e033c20; 2026-08-08; Windows/Node 24.15.0; direct Vitest maxWorkers=1, 59 files/601 tests passed` |
-| A3 | `npm run test:delivery-gates` | Asset validation, QR-config, isolated AIT staging, explicit-archive, dependency-policy, source-policy, and checklist contract tests all pass. | `PASS` | `e033c20; 2026-08-08; Windows/Node 24.15.0; 122/122 delivery-gate tests passed` |
-| A4 | `npm run test:e2e` | Both required portrait projects pass, including routing, controls, lifecycle, and equal-board layout. | `PASS` | `e033c20; 2026-08-08; Windows/Node 24.15.0; guarded Playwright 24/24 passed, exit 0` |
+| A1 | `npm run typecheck` | Exit 0. | `PASS` | `e899525; 2026-08-09; Windows/Node 22.18.0; tsc --noEmit exit 0` |
+| A2 | `npm test` | Exit 0 with no failed unit/integration tests. | `PASS` | `e899525; 2026-08-09; Windows/Node 22.18.0; Vitest 69 files/633 tests passed` |
+| A3 | `npm run test:delivery-gates` | Asset validation, QR-config, isolated AIT staging, explicit-archive, dependency-policy, source-policy, and checklist contract tests all pass. | `PASS` | `e899525; 2026-08-09; Windows/Node 22.18.0; 126/126 delivery-gate tests passed` |
+| A4 | `npm run test:e2e` | Both required portrait projects pass, including routing, controls, lifecycle, and equal-board layout. | `PASS` | `e899525; 2026-08-09; Windows/Node 22.18.0; guarded Playwright 30/30 passed, exit 0` |
 | A5 | `npm run check:dependency-audit` | Exit 0 only for the reviewed records; final line reports `status=PENDING_UPSTREAM` and never claims a clean audit. | `PENDING_AUTOMATED` | `2026-08-08 rerun: audit review required; 9 unreviewed-new and 14 unreviewed-changed findings; no baseline update accepted` |
 | A6 | `QR_EVIDENCE=1 AIT_APP_NAME=ATTACH_CONSOLE_ID AIT_DISPLAY_NAME=ATTACH_DISPLAY_NAME AIT_ICON_URL=ATTACH_PUBLIC_HTTPS_ICON_URL AIT_ARTIFACT_PATH=artifacts/ait/game.ait npm run build:ait` | `QR_EVIDENCE=1` requires all supplied nonblank console metadata and stages only the exact build at the explicit `AIT_ARTIFACT_PATH`. This is automated config/package proof only. | `PENDING_AUTOMATED` | `ATTACH_OUTPUT` |
-| A7 | `npm run check:ait -- artifacts/ait/game.ait` | The explicit `.ait` path is inspected; every entry is listed; uncompressed size is at most 104857600 bytes; vulnerable package markers are zero. | `PASS` | `e033c20; 2026-08-08; local fallback artifact; AIT_OK, 23,866,623 uncompressed bytes, 25 entries, vulnerable markers 0` |
-| A8 | `npm run check:source-policy` | No authored runtime/config finding for forbidden dynamic code, WebGPU, server rendering, or iframe usage. | `PASS` | `e033c20; 2026-08-08; Windows/Node 24.15.0; SOURCE_POLICY_OK files=97 findings=0` |
+| A7 | `npm run check:ait -- artifacts/ait/game.ait` | The explicit `.ait` path is inspected; every entry is listed; uncompressed size is at most 104857600 bytes; vulnerable package markers are zero. | `PASS` | `e899525; 2026-08-09; local fallback artifact; AIT_OK, 33,921,071 uncompressed bytes, 130 entries, vulnerable markers 0` |
+| A8 | `npm run check:source-policy` | No authored runtime/config finding for forbidden dynamic code, WebGPU, server rendering, or iframe usage. | `PASS` | `e899525; 2026-08-09; Windows/Node 22.18.0; SOURCE_POLICY_OK files=112 findings=0` |
 
+- The recorded rerun used Node `v22.18.0`, while `package.json` requires Node `>=24.15.0 <25`; treat this as local evidence only and rerun the automated rows on the supported Node 24 runtime before release claims.
 - `npm run check:assets` is the local authored-asset/header gate. It permits the checked-in procedural fallback, while `ASSETS_REQUIRED=1 npm run check:assets` requires a full approved pack.
 - `npm run build:ait` runs the config gate before the local Apps-in-Toss CLI; use the A6 environment values for QR-evidence config/package proof.
 - `npm run check:ait-config` reports local config when `QR_EVIDENCE` is absent. With `QR_EVIDENCE=1`, it checks only the supplied `AIT_APP_NAME`, `AIT_DISPLAY_NAME`, and public HTTPS-shaped `AIT_ICON_URL`; it does not fetch the URL.
@@ -32,16 +33,16 @@ Run every command separately under the repository's supported Node 24 runtime. R
 
 | Field | Recorded value |
 | --- | --- |
-| Git commit | `e033c20` |
+| Git commit | `e899525` |
 | QR evidence mode | `QR_EVIDENCE` absent; local fallback package only |
 | Console app ID | Not supplied; local fallback package only |
 | Console display name | Not supplied; local fallback package only |
 | Hosted icon URL | Not supplied; no URL reachability or upload evidence |
 | Explicit `.ait` relative path | `artifacts/ait/game.ait` |
-| Exact `.ait` SHA-256 | `25296AFCB76411E3843BC16DDAE85D5D00050D28CA847540E25CFA7562F50269` |
-| Uncompressed bytes / entry count | `23,866,623 / 25`; `vulnerablePackageMarkers=0` |
+| Exact `.ait` SHA-256 | `03E3B77823337DDA10FD36EA5385D818B9F52372D995FE909684EF12E060DD88` |
+| Uncompressed bytes / entry count | `33,921,071 / 130`; `vulnerablePackageMarkers=0` |
 | `AIT_ICON_URL` and uploaded icon evidence | Checked-in procedural fallback logo only; hosted/uploaded icon evidence remains external |
-| Node version and execution time | `Node v24.15.0; 2026-08-08 local verification` |
+| Node version and execution time | `Node v22.18.0; 2026-08-09 local verification; package engine requires Node 24` |
 
 ## Device and console evidence
 
