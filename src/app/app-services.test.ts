@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import { COMPLETE_ASSET_MANIFEST } from '../assets/test-fixtures/complete-manifest';
-import type { ProgressRepository, ProgressRepositoryFactory } from '../progression';
+import { DEFAULT_PROGRESS, type ProgressRepository, type ProgressRepositoryFactory } from '../progression';
 import type { PlatformPort } from '../platform/platform-port';
 import { createAppServices } from './app-services';
 
@@ -35,12 +35,7 @@ function repository(): ProgressRepository {
   return {
     load: async () => ({
       ok: true,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 1,
-        clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-        settings: { soundEnabled: true, hapticsEnabled: true },
-      },
+      state: structuredClone(DEFAULT_PROGRESS),
       recoveredFromCorruption: false,
     }),
     save: async () => ({ ok: true }),

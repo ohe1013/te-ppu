@@ -7,9 +7,12 @@ import {
 } from '../core/index';
 import {
   applyFloorResult,
+  canSelectDifficulty,
   canSelectFloor,
+  cloneProgressState,
   getFloorEncounter,
   isFinalFloor,
+  isDifficulty,
   resolveEncounter,
   startFloorSeries,
   type Floor,
@@ -59,17 +62,13 @@ export type TowerSaveResult =
         | 'NO_PENDING_SAVE'
         | 'NO_SELECTED_FLOOR'
         | 'NO_ACTIVE_MATCH'
+        | 'LOCKED_DIFFICULTY'
         | 'INVALID_SETTINGS';
       readonly route: TowerRoute;
     };
 
 function cloneProgress(state: ProgressState): ProgressState {
-  return {
-    schemaVersion: state.schemaVersion,
-    highestUnlockedFloor: state.highestUnlockedFloor,
-    clearedFloors: { ...state.clearedFloors },
-    settings: { ...state.settings },
-  };
+  return cloneProgressState(state);
 }
 
 export type CompleteEncounterResult =
@@ -292,6 +291,22 @@ export class TowerController {
     this.currentRoute = 'FLOOR_INTRO';
   }
 
+  async selectDifficulty(difficulty: ProgressState['selectedDifficulty']): Promise<TowerSaveResult> {
+    if (!isDifficulty(difficulty) || !canSelectDifficulty(this.currentProgress, difficulty)) {
+      return { ok: false, reason: 'LOCKED_DIFFICULTY', route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    next.selectedDifficulty = difficulty;
+    this.currentProgress = next;
+    this.currentSelectedFloor = null;
+    this.currentSeriesState = null;
+    this.currentMatch = null;
+    this.currentAi = null;
+    this.currentRoute = 'TOWER';
+    return this.persistCurrentProgress();
+  }
+
   async updateSettings(
     settings: Partial<ProgressState['settings']>,
   ): Promise<TowerSaveResult> {
@@ -299,11 +314,9 @@ export class TowerController {
       return { ok: false, reason: 'INVALID_SETTINGS', route: this.currentRoute };
     }
 
-    this.currentProgress = {
-      ...this.currentProgress,
-      clearedFloors: { ...this.currentProgress.clearedFloors },
-      settings: { ...this.currentProgress.settings, ...settings },
-    };
+    const next = cloneProgress(this.currentProgress);
+    next.settings = { ...next.settings, ...settings };
+    this.currentProgress = next;
     return this.persistCurrentProgress();
   }
 

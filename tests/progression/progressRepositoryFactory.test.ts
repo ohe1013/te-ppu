@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  cloneProgressState,
   DEFAULT_PROGRESS,
   createLocalProgressRepositoryFactory,
   progressStorageKeyForIdentity,
   type ProgressState,
+  type ClearedFloors,
+  type Floor,
 } from '../../src/progression';
 
 const LEGACY_PROGRESS_KEY = 'te-ppu.progress';
@@ -27,14 +30,24 @@ class TestStorage {
   }
 }
 
-function validProgress(patch: Partial<ProgressState> = {}): ProgressState {
-  return {
-    schemaVersion: 2,
-    highestUnlockedFloor: 2,
-    clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
-    settings: { soundEnabled: false, hapticsEnabled: true },
-    ...patch,
+interface ProgressPatch {
+  readonly highestUnlockedFloor?: Floor;
+  readonly clearedFloors?: ClearedFloors;
+  readonly settings?: ProgressState['settings'];
+}
+
+function validProgress(patch: ProgressPatch = {}): ProgressState {
+  const state = cloneProgressState(DEFAULT_PROGRESS);
+  state.difficultyProgress.easy = {
+    highestUnlockedFloor: patch.highestUnlockedFloor ?? 2,
+    clearedFloors: {
+      1: true, 2: false, 3: false, 4: false, 5: false,
+      ...patch.clearedFloors,
+    },
+    owlDefeated: false,
   };
+  state.settings = patch.settings ?? { soundEnabled: false, hapticsEnabled: true };
+  return state;
 }
 
 afterEach(() => {

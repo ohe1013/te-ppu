@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CommonAssets, LoadedImageRef } from '../../assets';
+import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
 import { TowerScreen } from './TowerScreen';
 
 afterEach(cleanup);
@@ -23,12 +24,7 @@ const commonAssets = {
   },
 } as unknown as CommonAssets;
 
-const progress = {
-  schemaVersion: 2 as const,
-  highestUnlockedFloor: 1 as const,
-  clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-};
+const progress = cloneProgressState(DEFAULT_PROGRESS);
 
 describe('TowerScreen', () => {
   it('makes the mascot, demon silhouette, and all three floor-one rivals visible', () => {

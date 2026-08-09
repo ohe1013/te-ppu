@@ -5,15 +5,17 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
-import type {
-  ProgressLoadResult,
-  ProgressRepository,
-  ProgressRepositoryFactory,
-  ProgressSaveResult,
-  ProgressState,
-  Floor,
+import {
+  DEFAULT_PROGRESS,
+  cloneProgressState,
+  type ProgressLoadResult,
+  type ProgressRepository,
+  type ProgressRepositoryFactory,
+  type ProgressSaveResult,
+  type ProgressState,
+  type Floor,
+  getFloorEncounter,
 } from '../progression/index';
-import { getFloorEncounter } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
@@ -33,40 +35,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const floorOneProgress: ProgressState = {
-  schemaVersion: 2,
-  highestUnlockedFloor: 1,
-  clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-};
+function progressFor(
+  highestUnlockedFloor: 1 | 2 | 3 | 4 | 5,
+  clearedFloors: ProgressState['difficultyProgress']['easy']['clearedFloors'],
+): ProgressState {
+  const progress = cloneProgressState(DEFAULT_PROGRESS);
+  progress.difficultyProgress.easy = {
+    highestUnlockedFloor,
+    clearedFloors: { ...clearedFloors },
+    owlDefeated: false,
+  };
+  return progress;
+}
 
-const floorThreeProgress: ProgressState = {
-  schemaVersion: 2,
-  highestUnlockedFloor: 3,
-  clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-};
-
-const floorFourProgress: ProgressState = {
-  schemaVersion: 2,
-  highestUnlockedFloor: 4,
-  clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-};
-
-const floorFiveProgress: ProgressState = {
-  schemaVersion: 2,
-  highestUnlockedFloor: 5,
-  clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-};
+const floorOneProgress = progressFor(1, { 1: false, 2: false, 3: false, 4: false, 5: false });
+const floorThreeProgress = progressFor(3, { 1: true, 2: true, 3: false, 4: false, 5: false });
+const floorFourProgress = progressFor(4, { 1: true, 2: true, 3: true, 4: false, 5: false });
+const floorFiveProgress = progressFor(5, { 1: true, 2: true, 3: true, 4: true, 5: false });
 
 function cloneProgress(state: ProgressState): ProgressState {
-  return {
-    ...state,
-    clearedFloors: { ...state.clearedFloors },
-    settings: { ...state.settings },
-  };
+  return cloneProgressState(state);
 }
 
 class TestProgressRepository implements ProgressRepository {
@@ -357,10 +345,9 @@ describe('AppRoot', () => {
 
   it('routes tower to intro, match, result, retry, and back to tower', async () => {
     const user = userEvent.setup();
-    const repository = new TestProgressRepository({
-      ...floorOneProgress,
-      clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
-    });
+    const repository = new TestProgressRepository(
+      progressFor(1, { 1: true, 2: false, 3: false, 4: false, 5: false }),
+    );
     renderGame(repository);
 
     await enterMatch(user, 1, 800);

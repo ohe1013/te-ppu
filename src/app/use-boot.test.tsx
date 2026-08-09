@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import type { AudioPort } from '../platform/audio-port';
 import {
+  DEFAULT_PROGRESS,
+  cloneProgressState,
   createLocalProgressRepositoryFactory,
   type ProgressLoadResult,
   ProgressRepository,
@@ -21,11 +23,11 @@ import type { PlatformPort, UserIdentity } from '../platform/platform-port';
 import type { AppServices } from './app-services';
 import { useBoot } from './use-boot';
 
-const progress: ProgressState = {
-  schemaVersion: 2,
+const progress: ProgressState = cloneProgressState(DEFAULT_PROGRESS);
+progress.difficultyProgress.easy = {
   highestUnlockedFloor: 2,
   clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
+  owlDefeated: false,
 };
 
 function createPlatform(

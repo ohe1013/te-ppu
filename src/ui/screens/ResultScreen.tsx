@@ -1,6 +1,11 @@
 import type { Floor, MatchResult } from '../../app/app-route';
 import type { LoadedImageRef, PortraitState, RivalCharacterAssets } from '../../assets';
-import type { FloorEncounter, FloorSeriesState, ProgressState } from '../../progression/index';
+import {
+  getDifficultyProgress,
+  type FloorEncounter,
+  type FloorSeriesState,
+  type ProgressState,
+} from '../../progression/index';
 import { CharacterPortrait } from '../characters/CharacterPortrait';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
@@ -43,6 +48,7 @@ export function ResultScreen({
   seriesComplete,
   rival,
 }: ResultScreenProps) {
+  const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
   const completedWins = result === 'win' ? series.wins + 1 : series.wins;
   const portraitState: PortraitState = result === 'win'
     ? 'defeat'
@@ -75,7 +81,7 @@ export function ResultScreen({
           {result === 'win' ? encounter.winLine : encounter.lossLine}
         </p>
         <p className="result-screen__progress">
-          층 승리 {completedWins}/3 · 최고 해금 {progress.highestUnlockedFloor}층
+          층 승리 {completedWins}/3 · 최고 해금 {activeProgress.highestUnlockedFloor}층
         </p>
       </div>
       {savePending && <p className="notice" role="status">진행 상황 저장 중…</p>}

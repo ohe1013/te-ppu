@@ -1,5 +1,6 @@
 import {
   FLOORS,
+  getDifficultyProgress,
   type Floor,
   type ProgressState,
   getFloorEncounters,
@@ -17,6 +18,7 @@ export interface TowerScreenProps {
 }
 
 export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: TowerScreenProps) {
+  const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
   return (
     <section className="screen-shell tower-screen" data-testid="tower-screen">
       <ScreenBackdrop image={commonAssets?.towerBackdrop} />
@@ -44,8 +46,8 @@ export function TowerScreen({ commonAssets, notice, onSelectFloor, progress }: T
       <div aria-label="타워 층 선택" className="floor-list tower-route">
         <span aria-hidden="true" className="tower-route__rope" />
         {FLOORS.map((floor, index) => {
-          const unlocked = floor <= progress.highestUnlockedFloor;
-          const cleared = progress.clearedFloors[floor];
+          const unlocked = floor <= activeProgress.highestUnlockedFloor;
+          const cleared = activeProgress.clearedFloors[floor];
           const status = cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
           const statusId = `floor-${floor}-status`;
           return (

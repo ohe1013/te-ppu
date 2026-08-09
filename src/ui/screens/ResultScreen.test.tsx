@@ -3,16 +3,16 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RivalCharacterAssets } from '../../assets';
-import { getFloorEncounter } from '../../progression';
+import { cloneProgressState, DEFAULT_PROGRESS, getFloorEncounter } from '../../progression';
 import { ResultScreen } from './ResultScreen';
 
 afterEach(cleanup);
 
-const progress = {
-  schemaVersion: 2 as const,
-  highestUnlockedFloor: 5 as const,
+const progress = cloneProgressState(DEFAULT_PROGRESS);
+progress.difficultyProgress.easy = {
+  highestUnlockedFloor: 5,
   clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
-  settings: { soundEnabled: true, hapticsEnabled: true },
+  owlDefeated: false,
 };
 
 const rival = {

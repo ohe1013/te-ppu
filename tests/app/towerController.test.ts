@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { TowerController } from '../../src/app/towerController';
 import { createAiObservation, createMatch } from '../../src/core/index';
 import {
+  cloneProgressState,
   DEFAULT_PROGRESS,
+  getDifficultyProgress,
   type ProgressLoadResult,
   type ProgressRepository,
   type ProgressSaveResult,
@@ -62,9 +64,9 @@ async function flushSaveQueue(): Promise<void> {
   await Promise.resolve();
 }
 
-function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): ProgressState {
-  return {
-    ...DEFAULT_PROGRESS,
+function progressUnlockedThrough(floor: 1 | 2 | 3 | 4 | 5): ProgressState {
+  const progress = cloneProgressState(DEFAULT_PROGRESS);
+  progress.difficultyProgress.easy = {
     highestUnlockedFloor: floor,
     clearedFloors: {
       1: floor > 1,
@@ -73,7 +75,13 @@ function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): 
       4: floor > 4,
       5: false,
     },
+    owlDefeated: false,
   };
+  return progress;
+}
+
+function activeProgress(progress: ProgressState) {
+  return getDifficultyProgress(progress, 'easy');
 }
 
 describe('tower controller', () => {
@@ -121,7 +129,28 @@ describe('tower controller', () => {
     expect(controller.currentSeries).toBeNull();
     expect(controller.match).toBeNull();
     expect(controller.ai).toBeNull();
-    expect(controller.progress.highestUnlockedFloor).toBe(2);
+    expect(activeProgress(controller.progress).highestUnlockedFloor).toBe(2);
+  });
+
+  it('persists a selected unlocked difficulty and rejects locked choices', async () => {
+    const locked = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    expect(await locked.selectDifficulty('normal')).toEqual({
+      ok: false,
+      reason: 'LOCKED_DIFFICULTY',
+      route: 'TOWER',
+    });
+
+    const progress = cloneProgressState(DEFAULT_PROGRESS);
+    progress.unlockedDifficulties.normal = true;
+    const repository = new RecordingRepository();
+    const controller = new TowerController(progress, repository);
+
+    expect(await controller.selectDifficulty('normal')).toEqual({
+      ok: true,
+      route: 'TOWER',
+    });
+    expect(controller.progress.selectedDifficulty).toBe('normal');
+    expect(repository.saved[0]?.selectedDifficulty).toBe('normal');
   });
 
   it('clears an intermediate series on loss without persisting unchanged progress', async () => {
@@ -208,12 +237,14 @@ describe('tower controller', () => {
     expect(repository.saved).toHaveLength(1);
     expect(Object.keys(repository.saved[0]!)).toEqual([
       'schemaVersion',
-      'highestUnlockedFloor',
-      'clearedFloors',
+      'selectedDifficulty',
+      'unlockedDifficulties',
+      'difficultyProgress',
       'settings',
     ]);
     expect(JSON.stringify(repository.saved[0])).not.toMatch(/matchSeed|sides|board|inventory|combo/);
-    expect(controller.progress.highestUnlockedFloor).toBe(result === 'WIN' ? 2 : 1);
+    expect(activeProgress(controller.progress).highestUnlockedFloor)
+      .toBe(result === 'WIN' ? 2 : 1);
   });
 
   it.each([3, 4] as const)('routes a floor %i win to the result and unlocks its successor', async (floor) => {
@@ -222,8 +253,8 @@ describe('tower controller', () => {
     if (!started.ok) throw new Error(`floor ${floor} should start`);
 
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'RESULT_WIN' });
-    expect(controller.progress.highestUnlockedFloor).toBe(floor + 1);
-    expect(controller.progress.clearedFloors[floor]).toBe(true);
+    expect(activeProgress(controller.progress).highestUnlockedFloor).toBe(floor + 1);
+    expect(activeProgress(controller.progress).clearedFloors[floor]).toBe(true);
   });
 
   it.each([
@@ -257,11 +288,9 @@ describe('tower controller', () => {
     if (!started.ok) throw new Error('floor 5 should start');
 
     expect(await controller.completeFloor('WIN')).toEqual({ ok: true, route: 'ENDING' });
-    expect(controller.progress).toEqual({
-      schemaVersion: 2,
+    expect(activeProgress(controller.progress)).toMatchObject({
       highestUnlockedFloor: 5,
       clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: true },
-      settings: { soundEnabled: true, hapticsEnabled: true },
     });
     expect(repository.saved).toEqual([controller.progress]);
   });
@@ -281,8 +310,8 @@ describe('tower controller', () => {
 
     expect(await controller.completeFloor(result)).toEqual({ ok: true, route });
 
-    expect(controller.progress.highestUnlockedFloor).toBe(floor);
-    expect(controller.progress.clearedFloors[floor]).toBe(false);
+    expect(activeProgress(controller.progress).highestUnlockedFloor).toBe(floor);
+    expect(activeProgress(controller.progress).clearedFloors[floor]).toBe(false);
     expect(repository.saved).toEqual([controller.progress]);
   });
 
@@ -290,8 +319,8 @@ describe('tower controller', () => {
     const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
     const snapshot = controller.progress;
 
-    snapshot.highestUnlockedFloor = 3;
-    snapshot.clearedFloors[1] = true;
+    snapshot.difficultyProgress.easy.highestUnlockedFloor = 3;
+    snapshot.difficultyProgress.easy.clearedFloors[1] = true;
     snapshot.settings.soundEnabled = false;
 
     expect(controller.progress).toEqual(DEFAULT_PROGRESS);
@@ -352,7 +381,7 @@ describe('tower controller', () => {
       reason: 'SAVE_FAILED',
       route: 'RESULT_WIN',
     });
-    expect(controller.progress.highestUnlockedFloor).toBe(2);
+    expect(activeProgress(controller.progress).highestUnlockedFloor).toBe(2);
     expect(controller.saveError).toBe('SAVE_FAILED');
     expect(controller.route).toBe('RESULT_WIN');
     expect(controller.startFloor(2, 20).ok).toBe(true);

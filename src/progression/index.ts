@@ -5,7 +5,19 @@ export type {
   ProgressSaveResult,
   ProgressRepository,
 } from './schema';
-export { DEFAULT_PROGRESS } from './schema';
+export { DEFAULT_PROGRESS, cloneProgressState, parsePersistedProgress, parseProgressState } from './schema';
+export {
+  canSelectDifficulty,
+  createDifficultyProgressMap,
+  createDifficultyRunProgress,
+  DIFFICULTIES,
+  getDifficultyProgress,
+  isDifficulty,
+  nextDifficulty,
+  type Difficulty,
+  type DifficultyProgressMap,
+  type DifficultyRunProgress,
+} from './difficulty';
 export {
   createLocalProgressRepository,
   type LocalProgressRepositoryOptions,

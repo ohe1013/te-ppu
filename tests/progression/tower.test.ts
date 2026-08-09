@@ -1,27 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cloneProgressState,
   DEFAULT_PROGRESS,
   FINAL_FLOOR,
   FLOORS,
   applyFloorResult,
   canSelectFloor,
+  getDifficultyProgress,
   isFinalFloor,
   isFloor,
   type ProgressState,
 } from '../../src/progression/index';
 
-function unlockedProgress(): ProgressState {
-  return {
-    ...DEFAULT_PROGRESS,
-    highestUnlockedFloor: 3,
-    clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
-    settings: { soundEnabled: false, hapticsEnabled: true },
-  };
-}
-
-function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): ProgressState {
-  return {
-    ...DEFAULT_PROGRESS,
+function progressUnlockedThrough(floor: 1 | 2 | 3 | 4 | 5): ProgressState {
+  const progress = cloneProgressState(DEFAULT_PROGRESS);
+  progress.difficultyProgress.easy = {
     highestUnlockedFloor: floor,
     clearedFloors: {
       1: floor > 1,
@@ -30,7 +23,19 @@ function progressUnlockedThrough(floor: ProgressState['highestUnlockedFloor']): 
       4: floor > 4,
       5: false,
     },
+    owlDefeated: false,
   };
+  return progress;
+}
+
+function unlockedProgress(): ProgressState {
+  const progress = progressUnlockedThrough(3);
+  progress.settings = { soundEnabled: false, hapticsEnabled: true };
+  return progress;
+}
+
+function active(progress: ProgressState) {
+  return getDifficultyProgress(progress, 'easy');
 }
 
 describe('tower progression transitions', () => {
@@ -47,15 +52,15 @@ describe('tower progression transitions', () => {
     const afterFloor2 = applyFloorResult(afterFloor1, 2, 'WIN');
     const replayedFloor1 = applyFloorResult(afterFloor2, 1, 'WIN');
 
-    expect(afterFloor1).toEqual({
-      ...DEFAULT_PROGRESS,
+    expect(active(afterFloor1)).toEqual({
       highestUnlockedFloor: 2,
       clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
+      owlDefeated: false,
     });
-    expect(afterFloor2).toEqual({
-      ...DEFAULT_PROGRESS,
+    expect(active(afterFloor2)).toEqual({
       highestUnlockedFloor: 3,
       clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
+      owlDefeated: false,
     });
     expect(replayedFloor1).toEqual(afterFloor2);
     expect(canSelectFloor(afterFloor2, 1)).toBe(true);
@@ -75,29 +80,25 @@ describe('tower progression transitions', () => {
   ] as const)('winning floor %i unlocks through %i', (floor, unlocked) => {
     const next = applyFloorResult(progressUnlockedThrough(floor), floor, 'WIN');
 
-    expect(next.highestUnlockedFloor).toBe(unlocked);
-    expect(next.clearedFloors[floor]).toBe(true);
+    expect(active(next).highestUnlockedFloor).toBe(unlocked);
+    expect(active(next).clearedFloors[floor]).toBe(true);
   });
 
   it('unlocks floor 5 from floor 4 while preserving every prior clear and setting', () => {
-    const beforeFloorFour = {
-      schemaVersion: 2,
-      highestUnlockedFloor: 4,
-      clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-      settings: { soundEnabled: false, hapticsEnabled: true },
-    } satisfies ProgressState;
+    const beforeFloorFour = progressUnlockedThrough(4);
+    beforeFloorFour.settings = { soundEnabled: false, hapticsEnabled: true };
 
     expect(canSelectFloor(beforeFloorFour, 4)).toBe(true);
     expect(canSelectFloor(beforeFloorFour, 5)).toBe(false);
 
     const afterFloorFour = applyFloorResult(beforeFloorFour, 4, 'WIN');
 
-    expect(afterFloorFour).toEqual({
-      schemaVersion: 2,
+    expect(active(afterFloorFour)).toEqual({
       highestUnlockedFloor: 5,
       clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
-      settings: { soundEnabled: false, hapticsEnabled: true },
+      owlDefeated: false,
     });
+    expect(afterFloorFour.settings).toEqual({ soundEnabled: false, hapticsEnabled: true });
     expect(canSelectFloor(afterFloorFour, 4)).toBe(true);
     expect(canSelectFloor(afterFloorFour, 5)).toBe(true);
   });
@@ -113,23 +114,20 @@ describe('tower progression transitions', () => {
     const next = applyFloorResult(progress, floor, result);
 
     expect(next).toBe(progress);
-    expect(next.highestUnlockedFloor).toBe(floor);
-    expect(next.clearedFloors[floor]).toBe(false);
+    expect(active(next).highestUnlockedFloor).toBe(floor);
+    expect(active(next).clearedFloors[floor]).toBe(false);
   });
 
   it('clears floor 5 without advancing beyond the tower cap', () => {
-    const beforeFloorFive = {
-      schemaVersion: 2,
-      highestUnlockedFloor: 5,
-      clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
-      settings: { soundEnabled: true, hapticsEnabled: false },
-    } satisfies ProgressState;
+    const beforeFloorFive = progressUnlockedThrough(5);
+    beforeFloorFive.settings = { soundEnabled: true, hapticsEnabled: false };
 
-    expect(applyFloorResult(beforeFloorFive, 5, 'WIN')).toEqual({
-      schemaVersion: 2,
+    const next = applyFloorResult(beforeFloorFive, 5, 'WIN');
+
+    expect(active(next)).toEqual({
       highestUnlockedFloor: 5,
       clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: true },
-      settings: { soundEnabled: true, hapticsEnabled: false },
+      owlDefeated: false,
     });
   });
 
