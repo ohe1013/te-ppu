@@ -120,6 +120,14 @@
   box-shadow: 4px 4px 0 rgb(23 18 57 / 72%);
 }
 
+.exit-confirmation[data-close-state="closing"] {
+  border-color: #65d8ff;
+}
+
+.exit-confirmation[data-close-state="failed"] {
+  border-color: #ff6fb1;
+}
+
 .exit-confirmation h2,
 .exit-confirmation p {
   margin: 0;

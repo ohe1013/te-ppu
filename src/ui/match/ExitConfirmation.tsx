@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { LoadedImageRef } from '../../assets';
+import { closeWithTimeout } from '../../platform/close-with-timeout';
 import { AssetIcon } from './AssetIcon';
 
 export interface ExitConfirmationProps {
@@ -92,7 +93,7 @@ export function ExitConfirmation({
     setConfirmPending(true);
     setCloseFailed(false);
     try {
-      await onConfirm();
+      await closeWithTimeout(onConfirm);
       closeSucceededRef.current = true;
       setCloseSucceeded(true);
     } catch {
@@ -104,11 +105,16 @@ export function ExitConfirmation({
   }
 
   return (
-    <div className="exit-confirmation__backdrop">
+    <div className="exit-confirmation__backdrop" data-close-state={
+      closeSucceeded || confirmPending ? 'closing' : closeFailed ? 'failed' : 'idle'
+    }>
       <div
         aria-labelledby="exit-confirmation-title"
         aria-modal="true"
         className="exit-confirmation"
+        data-close-state={
+          closeSucceeded || confirmPending ? 'closing' : closeFailed ? 'failed' : 'idle'
+        }
         onKeyDown={handleKeyDown}
         ref={dialogRef}
         role="dialog"

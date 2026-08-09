@@ -137,7 +137,9 @@ describe('lifecycle UI', () => {
 
     fireEvent.click(confirm);
     fireEvent.click(confirm);
+    await act(async () => undefined);
     expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
     await act(async () => finishClose?.());
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -150,6 +152,31 @@ describe('lifecycle UI', () => {
     );
     expect(opener).toHaveFocus();
     opener.remove();
+  });
+
+  it('turns a hanging platform close into a retryable bounded failure', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const onConfirm = vi.fn(() => {
+      attempts += 1;
+      return attempts === 1
+        ? new Promise<void>(() => undefined)
+        : Promise.resolve();
+    });
+    render(<ExitConfirmation open onCancel={vi.fn()} onConfirm={onConfirm} />);
+
+    const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
+    fireEvent.click(confirm);
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
+    await act(async () => vi.advanceTimersByTimeAsync(1_200));
+
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'failed');
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫지 못했습니다');
+    expect(confirm).toBeEnabled();
+
+    await act(async () => fireEvent.click(confirm));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
   });
 
   it('keeps settings closed on entry and persists explicit sound and haptic changes', async () => {
