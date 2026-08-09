@@ -1,5 +1,12 @@
 import type { Floor, MatchResult } from '../../app/app-route';
-import type { LoadedImageRef, PortraitState, RivalCharacterAssets } from '../../assets';
+import type {
+  HeroPortraitState,
+  LoadedImageRef,
+  PlayerCharacterAssets,
+  PortraitState,
+  RivalCharacterAssets,
+} from '../../assets';
+import type { PlayerCharacterDefinition } from '../../player';
 import {
   getDifficultyProgress,
   type FloorEncounter,
@@ -7,6 +14,7 @@ import {
   type ProgressState,
 } from '../../progression/index';
 import { CharacterPortrait } from '../characters/CharacterPortrait';
+import { SelectedPlayerIdentity } from '../characters/SelectedPlayerIdentity';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 const RESULT_LABELS: Record<MatchResult, string> = {
@@ -30,6 +38,8 @@ export interface ResultScreenProps {
   readonly onContinue: () => void;
   readonly onRetry: () => void;
   readonly onRetrySave: () => void;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
 }
 
 export function ResultScreen({
@@ -39,6 +49,8 @@ export function ResultScreen({
   onContinue,
   onRetry,
   onRetrySave,
+  player,
+  playerAssets,
   progress,
   result,
   saveFailed,
@@ -53,6 +65,9 @@ export function ResultScreen({
   const portraitState: PortraitState = result === 'win'
     ? 'defeat'
     : result === 'loss' ? 'smug' : 'idle';
+  const playerPortraitState: HeroPortraitState = result === 'win'
+    ? 'win'
+    : result === 'loss' ? 'loss' : 'idle';
   const continueLabel = result !== 'win'
     ? '계속'
     : seriesComplete ? (floor === 5 ? '탑으로' : '다음 층') : '다음 상대';
@@ -77,6 +92,12 @@ export function ResultScreen({
             <p className="result-screen__rival-name">{encounter.displayName}</p>
           </div>
         </div>
+        <SelectedPlayerIdentity
+          assets={playerAssets}
+          context="result"
+          player={player}
+          portraitState={playerPortraitState}
+        />
         <p className="result-screen__line">
           {result === 'win' ? encounter.winLine : encounter.lossLine}
         </p>

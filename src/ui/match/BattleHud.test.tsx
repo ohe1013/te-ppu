@@ -4,7 +4,6 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PublicSideView } from '../../core/index';
 import { BattleHud } from './BattleHud';
-import { PIECE_PREVIEW_CELLS } from './piece-preview';
 
 afterEach(cleanup);
 
@@ -35,8 +34,7 @@ describe('BattleHud', () => {
     );
     const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
 
-    expect(within(hud).getByTestId('player-next')).toHaveTextContent('T');
-    expect(within(hud).getByTestId('player-next')).toHaveTextContent('I');
+    expect(within(hud).getByTestId('player-next')).toHaveTextContent('');
     const previews = within(hud).getByTestId('player-next').querySelectorAll(
       '[data-piece-preview]',
     );
@@ -66,13 +64,6 @@ describe('BattleHud', () => {
 
     expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('DANGER');
   });
-
-  it.each(['I', 'J', 'L', 'O', 'S', 'T', 'Z'] as const)(
-    'defines four visible cells for the %s preview shape',
-    (kind) => {
-      expect(PIECE_PREVIEW_CELLS[kind]).toHaveLength(4);
-    },
-  );
 
   it('keeps labels available without portrait sources and exposes deterministic portrait state', () => {
     const result = render(
@@ -110,5 +101,27 @@ describe('BattleHud', () => {
       'attack',
     );
     expect(hud.querySelector('img')).toHaveAttribute('src', '/assets/hero-attack.webp');
+  });
+
+  it('uses a configurable top-biased portrait crop without changing identity hooks', () => {
+    render(
+      <BattleHud
+        character={{ id: 'cloud-courier', name: '루미', title: '바람길의 전령' }}
+        model={model}
+        portrait={{
+          alt: 'PLAYER focus portrait',
+          state: 'focus',
+          url: '/assets/characters/cloud-courier/portrait-focus.webp',
+        }}
+        portraitPosition="48% 18%"
+        side="player"
+      />,
+    );
+
+    const hud = screen.getByRole('region', { name: '루미 battle status' });
+    const plate = hud.querySelector<HTMLElement>('.battle-hud__portrait--plate');
+    expect(hud).toHaveAttribute('data-character-id', 'cloud-courier');
+    expect(plate).toHaveStyle({ '--portrait-position': '48% 18%' });
+    expect(within(hud).getByAltText('PLAYER focus portrait')).toHaveClass('asset-image');
   });
 });

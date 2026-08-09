@@ -20,6 +20,7 @@ import type {
   CommonAssets,
   FloorAssetBundle,
   LoadedImageRef,
+  PlayerCharacterAssets,
   PortraitState,
 } from '../../assets/index';
 import type {
@@ -31,6 +32,7 @@ import type {
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
+import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import {
   getFloorEncounter,
@@ -75,6 +77,8 @@ export interface MatchScreenProps {
     settings: Partial<ProgressState['settings']>,
   ) => Promise<boolean>;
   readonly platform: PlatformPort;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
   readonly portraitSources?: {
@@ -172,27 +176,31 @@ function presentationFor(
 
 function usePortraitPresentations(
   floor: Floor,
-  characterId: CharacterId,
+  opponentCharacterId: CharacterId,
+  playerCharacterId: CharacterId,
   match: Pick<MatchLoopView, 'eventBatches' | 'view'>,
   sources: MatchScreenProps['portraitSources'],
 ): { readonly player: PortraitPresentation; readonly opponent: PortraitPresentation } {
   const memoriesRef = useRef<{
     readonly floor: Floor;
-    readonly characterId: CharacterId;
+    readonly opponentCharacterId: CharacterId;
+    readonly playerCharacterId: CharacterId;
     readonly player: PortraitMemory;
     readonly opponent: PortraitMemory;
   } | null>(null);
   const previous = memoriesRef.current?.floor === floor
-    && memoriesRef.current.characterId === characterId
+    && memoriesRef.current.opponentCharacterId === opponentCharacterId
+    && memoriesRef.current.playerCharacterId === playerCharacterId
     ? memoriesRef.current
     : {
-      characterId,
       floor,
       opponent: createPortraitMemory(),
+      opponentCharacterId,
       player: createPortraitMemory(),
+      playerCharacterId,
     };
-  const playerRole = portraitRoleFor('player', 'hero-engineer');
-  const opponentRole = portraitRoleFor('opponent', characterId);
+  const playerRole = portraitRoleFor('player', playerCharacterId);
+  const opponentRole = portraitRoleFor('opponent', opponentCharacterId);
   const player = reducePortraitBatches(previous.player, {
     batches: match.eventBatches,
     floor,
@@ -207,7 +215,13 @@ function usePortraitPresentations(
     role: opponentRole,
     side: 'opponent',
   });
-  memoriesRef.current = { characterId, floor, opponent, player };
+  memoriesRef.current = {
+    floor,
+    opponent,
+    opponentCharacterId,
+    player,
+    playerCharacterId,
+  };
   return {
     player: presentationFor(player, {
       floor,
@@ -237,6 +251,8 @@ export function MatchScreen({
   onRetrySettingsSave,
   onSettingsChange,
   platform,
+  player: playerCharacter,
+  playerAssets,
   portraitSources,
   seed,
   settings,
@@ -247,11 +263,6 @@ export function MatchScreen({
   const encounter: FloorEncounter | OwlEncounter = specialEncounter
     ?? getFloorEncounter(floor, encounterIndex);
   const isOwlMatch = specialEncounter !== undefined;
-  const heroCharacter = {
-    id: 'hero-engineer' as const,
-    name: '견습 마도공학자',
-    title: '별빛 수리공',
-  };
   const rivalCharacter = {
     id: encounter.characterId,
     name: encounter.displayName,
@@ -301,7 +312,7 @@ export function MatchScreen({
   });
   const resolvedPortraitSources = useMemo(() => ({
     player: {
-      ...portraitUrls(commonAssets?.players['hero-engineer'].portraits),
+      ...portraitUrls(playerAssets?.portraits),
       ...portraitSources?.player,
     },
     opponent: {
@@ -311,18 +322,19 @@ export function MatchScreen({
       ...portraitSources?.opponent,
     },
   }), [
-    commonAssets?.players,
     commonAssets?.owl.portraits,
     commonAssets?.rivals,
     encounter.characterId,
     encounterIndex,
     floor,
     isOwlMatch,
+    playerAssets?.portraits,
     portraitSources,
   ]);
   const portraits = usePortraitPresentations(
     floor,
     encounter.characterId,
+    playerCharacter.id,
     match,
     resolvedPortraitSources,
   );
@@ -450,7 +462,7 @@ export function MatchScreen({
 
       <div className="battle-hud-pair">
         <BattleHud
-          character={heroCharacter}
+          character={playerCharacter}
           items={commonAssets?.items}
           model={match.view.sides.player}
           portrait={portraits.player}

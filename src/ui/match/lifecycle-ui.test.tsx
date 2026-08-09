@@ -11,6 +11,7 @@ import type {
 import { createMatch, createPublicMatchView } from '../../core/index';
 import type { AudioPort } from '../../platform/audio-port';
 import type { PlatformPort } from '../../platform/platform-port';
+import { PLAYER_CHARACTERS } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import { MatchScreen } from '../screens/MatchScreen';
 import { ExitConfirmation } from './ExitConfirmation';
@@ -44,6 +45,8 @@ const enabledSettings: ProgressState['settings'] = {
   hapticsEnabled: true,
   soundEnabled: true,
 };
+
+const defaultPlayer = PLAYER_CHARACTERS['hero-engineer'];
 
 function createAudio(): AudioPort {
   return {
@@ -253,6 +256,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -309,6 +313,7 @@ describe('lifecycle UI', () => {
           onRetrySettingsSave={vi.fn(async () => true)}
           onSettingsChange={vi.fn(async () => true)}
           platform={createPlatform()}
+          player={defaultPlayer}
           seed={91}
           settings={enabledSettings}
           settingsSaveFailed={false}
@@ -359,6 +364,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={createPlatform()}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -397,6 +403,7 @@ describe('lifecycle UI', () => {
       onRetrySettingsSave: vi.fn(async () => true),
       onSettingsChange: vi.fn(async () => true),
       platform,
+      player: defaultPlayer,
       seed: 91,
       settingsSaveFailed: false,
     };
@@ -477,6 +484,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -515,6 +523,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}

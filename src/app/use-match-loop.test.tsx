@@ -464,6 +464,14 @@ describe('MatchScreen', () => {
           lockPortrait: async () => undefined,
           subscribeSafeArea: () => () => undefined,
         }}
+        player={{
+          id: 'hero-engineer',
+          name: '리벳',
+          role: '견습 마도공학자',
+          title: '별빛 수리공',
+          story: '고장 난 별빛 동력핵을 수리한다.',
+          palette: ['#35c8c2', '#fff4cf', '#b86f3c'],
+        }}
         seed={73}
         settings={{ hapticsEnabled: true, soundEnabled: true }}
         settingsSaveFailed={false}

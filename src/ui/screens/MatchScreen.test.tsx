@@ -3,9 +3,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMatch, createPublicMatchView } from '../../core/index';
+import type { PlayerCharacterAssets } from '../../assets';
+import { createMatch, createPublicMatchView, type GameEvent } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
 import type { AudioPort } from '../../platform/audio-port';
+import type { PlayerCharacterDefinition } from '../../player';
 import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
@@ -18,6 +20,8 @@ const lifecycleProps: Pick<
   | 'onRetrySettingsSave'
   | 'onSettingsChange'
   | 'platform'
+  | 'player'
+  | 'playerAssets'
   | 'settings'
   | 'settingsSaveFailed'
 > = {
@@ -33,6 +37,15 @@ const lifecycleProps: Pick<
     lockPortrait: async () => undefined,
     subscribeSafeArea: () => () => undefined,
   },
+  player: {
+    id: 'hero-engineer',
+    name: '리벳',
+    role: '견습 마도공학자',
+    title: '별빛 수리공',
+    story: '고장 난 별빛 동력핵을 수리한다.',
+    palette: ['#35c8c2', '#fff4cf', '#b86f3c'],
+  },
+  playerAssets: undefined,
   settings: { hapticsEnabled: true, soundEnabled: true },
   settingsSaveFailed: false,
 };
@@ -106,6 +119,53 @@ function activeLoop(): MatchLoopView {
   };
 }
 
+const cloudCourier = {
+  id: 'cloud-courier',
+  name: '루미',
+  role: '구름 우편기사',
+  title: '바람길의 전령',
+  story: '멈춘 바람길을 되찾는다.',
+  palette: ['#4d8fff', '#ffd84d', '#f8fbff'],
+} satisfies PlayerCharacterDefinition;
+
+const cloudCourierAssets = {
+  fullArt: { url: '/cloud-courier/full.webp' },
+  portraits: {
+    idle: { url: '/cloud-courier/portrait-idle.webp' },
+    focus: { url: '/cloud-courier/portrait-focus.webp' },
+    attack: { url: '/cloud-courier/portrait-attack.webp' },
+    hit: { url: '/cloud-courier/portrait-hit.webp' },
+    win: { url: '/cloud-courier/portrait-win.webp' },
+    loss: { url: '/cloud-courier/portrait-loss.webp' },
+  },
+} as PlayerCharacterAssets;
+
+function portraitLoop(
+  event: GameEvent | null,
+  status: MatchLoopView['view']['status'] = 'playing',
+): MatchLoopView {
+  const loop = activeLoop();
+  const view = {
+    ...loop.view,
+    status,
+    tick: 10,
+    sides: {
+      ...loop.view.sides,
+      player: {
+        ...loop.view.sides.player,
+        combo: event?.type === 'lines-cleared' ? 2 : loop.view.sides.player.combo,
+      },
+    },
+  };
+  const eventBatches = event === null ? [] : [{ events: [event], tick: 10, view }];
+  return {
+    ...loop,
+    eventBatches,
+    events: event === null ? [] : [event],
+    view,
+  };
+}
+
 beforeEach(() => {
   const loop: MatchLoopView = {
     dispatch: vi.fn(),
@@ -128,7 +188,7 @@ describe('MatchScreen', () => {
   it('composes two symmetric public HUDs around the single battle canvas', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
-    expect(screen.getByRole('region', { name: '견습 마도공학자 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 battle status' }))
       .toBeInTheDocument();
     expect(screen.getByRole('region', { name: '거품 연금술사 battle status' }))
       .toBeInTheDocument();
@@ -169,6 +229,45 @@ describe('MatchScreen', () => {
       .toHaveAttribute('data-character-id', 'owl-companion');
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
     expect(screen.getByText('HIDDEN BOSS')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['idle', null, 'playing', '/cloud-courier/portrait-idle.webp'],
+    ['focus', { type: 'lines-cleared', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-focus.webp'],
+    ['attack', { type: 'attack-sent', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-attack.webp'],
+    ['hit', { type: 'garbage-landed', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-hit.webp'],
+    ['win', null, 'player-won', '/cloud-courier/portrait-win.webp'],
+    ['loss', null, 'opponent-won', '/cloud-courier/portrait-loss.webp'],
+  ] as const)('uses the selected player %s portrait source and identity', (
+    portraitState,
+    event,
+    status,
+    expectedUrl,
+  ) => {
+    useMatchLoopMock.mockReturnValue(portraitLoop(event, status));
+
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        floor={2}
+        onFinished={vi.fn()}
+        player={cloudCourier}
+        playerAssets={cloudCourierAssets}
+        seed={17}
+      />,
+    );
+
+    const playerHud = screen.getByRole('region', { name: '루미 battle status' });
+    expect(playerHud).toHaveAttribute('data-character-id', 'cloud-courier');
+    expect(playerHud).toHaveTextContent('바람길의 전령');
+    expect(playerHud.querySelector('[data-portrait-state]')).toHaveAttribute(
+      'data-portrait-state',
+      portraitState,
+    );
+    expect(screen.getByAltText(`PLAYER ${portraitState} portrait`)).toHaveAttribute(
+      'src',
+      expectedUrl,
+    );
   });
 
   it('connects item actions, row highlighting, joystick, and rotation to the match loop', () => {

@@ -25,7 +25,7 @@ import {
   type MatchResult,
 } from './app-route';
 import type { AppServices } from './app-services';
-import type { AssetManager } from '../assets';
+import type { AssetManager, PlayerCharacterAssets } from '../assets';
 import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
@@ -38,7 +38,12 @@ import {
 } from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
-import type { PlayerCharacterId } from '../player';
+import {
+  PLAYER_CHARACTERS,
+  isPlayerCharacterId,
+  type PlayerCharacterDefinition,
+  type PlayerCharacterId,
+} from '../player';
 import type { Difficulty } from '../progression';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
@@ -57,6 +62,8 @@ export interface MatchRouteViewProps {
     settings: Partial<ProgressState['settings']>,
   ) => Promise<boolean>;
   readonly platform: PlatformPort;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
   readonly commonAssets?: ReturnType<AssetManager['getCommonAssets']>;
@@ -125,6 +132,12 @@ export function AppRoot({
     controllerRef.current = new TowerController(boot.progress, boot.progressRepository);
   }
   const controller = controllerRef.current;
+  const profileCharacterId = controller?.progress.profile?.characterId;
+  const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
+    ? profileCharacterId
+    : 'hero-engineer';
+  const selectedPlayer = PLAYER_CHARACTERS[selectedPlayerId];
+  const selectedPlayerAssets = commonAssets?.players[selectedPlayerId];
 
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
@@ -466,6 +479,8 @@ export function AppRoot({
           specialEncounter: OWL_ENCOUNTER,
           commonAssets,
           floorAssets,
+          player: selectedPlayer,
+          playerAssets: selectedPlayerAssets,
           seed: route.seed,
           onFinished: finishOwlMatch,
           onRetrySettingsSave: retrySave,
@@ -481,6 +496,8 @@ export function AppRoot({
             commonAssets={commonAssets}
             floorAssets={floorAssets}
             onContinue={() => dispatchRoute({ type: 'continue' })}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             result={route.result}
           />
         );
@@ -493,6 +510,8 @@ export function AppRoot({
             floor={route.floor}
             onBack={() => dispatchRoute({ type: 'return-to-tower' })}
             onStart={() => startIntro(route)}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
             series={{
               floor: route.floor,
@@ -511,6 +530,8 @@ export function AppRoot({
           wins: route.wins,
           commonAssets,
           floorAssets,
+          player: selectedPlayer,
+          playerAssets: selectedPlayerAssets,
           seed: route.seed,
           onFinished: finishMatch,
           onRetrySettingsSave: retrySave,
@@ -534,6 +555,8 @@ export function AppRoot({
             onContinue={() => dispatchRoute({ type: 'continue' })}
             onRetry={retryFloor}
             onRetrySave={() => void retrySave()}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
             series={{
               floor: route.floor,
@@ -551,6 +574,8 @@ export function AppRoot({
             difficulty={controller.progress.selectedDifficulty}
             floorAssets={floorAssets}
             onReturnToTower={() => dispatchRoute({ type: 'return-to-tower' })}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             unlockedDifficulties={controller.progress.unlockedDifficulties}
           />
         );

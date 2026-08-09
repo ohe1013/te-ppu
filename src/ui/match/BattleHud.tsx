@@ -1,5 +1,6 @@
 import type { ItemType, PieceKind, PublicSideView, SideId } from '../../core/index';
 import type { LoadedImageRef } from '../../assets';
+import type { CSSProperties } from 'react';
 import { AssetImage } from './AssetImage';
 import {
   createCharacterPlateModel,
@@ -12,6 +13,7 @@ export interface BattleHudProps {
   readonly character: CharacterPlateCharacter;
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
+  readonly portraitPosition?: string;
   readonly side: SideId;
   readonly tiles?: Partial<Record<PieceKind, LoadedImageRef>>;
   readonly items?: Partial<Record<ItemType, LoadedImageRef>>;
@@ -23,7 +25,15 @@ const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
   'queue-swap': 'SWAP',
 };
 
-export function BattleHud({ character, items, model, portrait, side, tiles }: BattleHudProps) {
+export function BattleHud({
+  character,
+  items,
+  model,
+  portrait,
+  portraitPosition = '50% 18%',
+  side,
+  tiles,
+}: BattleHudProps) {
   const presentation = portrait ?? {
     alt: `${character.name} idle portrait`,
     state: 'idle' as const,
@@ -42,6 +52,7 @@ export function BattleHud({ character, items, model, portrait, side, tiles }: Ba
         <span
           className="battle-hud__portrait battle-hud__portrait--plate"
           data-portrait-state={presentation.state}
+          style={{ '--portrait-position': portraitPosition } as CSSProperties}
         >
           <AssetImage alt={presentation.alt} url={presentation.url} />
         </span>

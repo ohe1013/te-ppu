@@ -1,5 +1,7 @@
-import type { CommonAssets, FloorAssetBundle } from '../../assets';
+import type { CommonAssets, FloorAssetBundle, PlayerCharacterAssets } from '../../assets';
+import type { PlayerCharacterDefinition } from '../../player';
 import { nextDifficulty, type Difficulty, type ProgressState } from '../../progression';
+import { SelectedPlayerIdentity } from '../characters/SelectedPlayerIdentity';
 import { AssetImage } from '../match/AssetImage';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
@@ -9,6 +11,8 @@ export interface EndingScreenProps {
   readonly unlockedDifficulties: ProgressState['unlockedDifficulties'];
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
 }
 
 export function EndingScreen({
@@ -16,6 +20,8 @@ export function EndingScreen({
   difficulty = 'easy',
   floorAssets,
   onReturnToTower,
+  player,
+  playerAssets,
   unlockedDifficulties,
 }: EndingScreenProps) {
   const next = nextDifficulty(difficulty);
@@ -28,7 +34,7 @@ export function EndingScreen({
     >
       <ScreenBackdrop image={floorAssets?.background} />
       <ScreenBackdrop className="screen-backdrop--demon" image={commonAssets?.rivals['demon-king']?.fullArt} />
-      <ScreenBackdrop className="screen-backdrop--hero" image={commonAssets?.players['hero-engineer'].fullArt} />
+      <ScreenBackdrop className="screen-backdrop--hero" image={playerAssets?.fullArt} />
       <ScreenBackdrop className="screen-backdrop--owl" image={commonAssets?.owl.fullArt} />
       <div className="ending-screen__panel">
         <div className="ending-screen__mascot">
@@ -41,6 +47,12 @@ export function EndingScreen({
         <p className="eyebrow">타워 정복</p>
         <h1>모든 층을 클리어했습니다</h1>
         <p>태엽 부엉이와 함께 별빛 동력핵을 되찾았습니다.</p>
+        <SelectedPlayerIdentity
+          assets={playerAssets}
+          context="ending"
+          player={player}
+          portraitState="win"
+        />
         <p data-testid="ending-unlock">
           {unlockedNext === null
             ? 'HARD 최종 난이도 정복 완료'

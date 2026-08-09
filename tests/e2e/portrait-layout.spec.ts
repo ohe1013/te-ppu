@@ -1,12 +1,34 @@
 import { type Locator, type Page } from '@playwright/test';
-import { expect, openTower, test } from './helpers';
+import { expect, test } from './helpers';
 
 const FLOOR_FIVE_PROGRESS = {
-  schemaVersion: 2,
-  highestUnlockedFloor: 5,
-  clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
+  schemaVersion: 4,
+  profile: { initials: 'RVT', characterId: 'hero-engineer' },
+  localBestScores: { easy: null, normal: null, hard: null },
+  pendingLeaderboardSubmissions: {},
+  selectedDifficulty: 'easy',
+  unlockedDifficulties: { easy: true, normal: false, hard: false },
+  difficultyProgress: {
+    easy: {
+      highestUnlockedFloor: 5,
+      clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
+      owlDefeated: false,
+    },
+    normal: {
+      highestUnlockedFloor: 1,
+      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
+      owlDefeated: false,
+    },
+    hard: {
+      highestUnlockedFloor: 1,
+      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
+      owlDefeated: false,
+    },
+  },
   settings: { soundEnabled: true, hapticsEnabled: true },
 } as const;
+
+const LOCAL_PROGRESS_KEY = 'te-ppu.progress.identity.local.local-browser';
 
 const PORTRAITS = [
   { viewport: { width: 360, height: 640 } },
@@ -57,13 +79,19 @@ function expectNoBlockingOverlap(
   expect(overlapWidth * overlapHeight, `${label} should not overlap`).toBeLessThanOrEqual(0.5);
 }
 
+async function openTower(page: Page): Promise<void> {
+  await page.goto('/');
+  await page.evaluate(({ key, progress }) => {
+    window.localStorage.setItem(key, JSON.stringify(progress));
+  }, { key: LOCAL_PROGRESS_KEY, progress: FLOOR_FIVE_PROGRESS });
+  await page.reload();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: 'START RUN' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+}
+
 async function openFloorFiveMatch(page: Page): Promise<void> {
   await openTower(page);
-  await page.evaluate((progress) => {
-    window.localStorage.setItem('te-ppu.progress', JSON.stringify(progress));
-  }, FLOOR_FIVE_PROGRESS);
-  await page.reload();
-  await expect(page.getByTestId('tower-screen')).toBeVisible();
 
   const floorCards = page.getByRole('button', { name: /층 선택/ });
   await expect(floorCards).toHaveCount(5);
@@ -129,7 +157,7 @@ for (const { viewport } of PORTRAITS) {
 
     await openFloorFiveMatch(page);
 
-    const portraitSize = viewport.height <= 700 ? 40 : 52;
+    const minimumPortraitSize = viewport.height <= 700 ? 60 : 68;
     const portraits = page.locator('.battle-hud__portrait');
     await expect(portraits).toHaveCount(2);
     const portraitMetrics = await portraits.evaluateAll((nodes) => nodes.map((node) => {
@@ -140,10 +168,18 @@ for (const { viewport } of PORTRAITS) {
         width: Number.parseFloat(style.width),
       };
     }));
-    expect(portraitMetrics).toEqual([
-      { height: portraitSize, state: expect.any(String), width: portraitSize },
-      { height: portraitSize, state: expect.any(String), width: portraitSize },
-    ]);
+    const portraitImages = portraits.locator('img');
+    await expect(portraitImages).toHaveCount(2);
+    const portraitImageMetrics = await portraitImages.evaluateAll((nodes) => nodes.map((node) => {
+      const style = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      return {
+        height: box.height,
+        objectFit: style.objectFit,
+        objectPosition: style.objectPosition,
+        width: box.width,
+      };
+    }));
 
     const matchHeader = await expectInsideViewport(
       page.locator('.match-header'),
@@ -221,6 +257,30 @@ for (const { viewport } of PORTRAITS) {
     expect(metrics.overflow.rootWidth).toBeLessThanOrEqual(metrics.overflow.viewportWidth);
     expect(metrics.overflow.bodyHeight).toBeLessThanOrEqual(metrics.overflow.viewportHeight);
     expect(metrics.overflow.rootHeight).toBeLessThanOrEqual(metrics.overflow.viewportHeight);
+    if (viewport.width === 360 && viewport.height === 640) {
+      expect(battleCanvasBox.width).toBeCloseTo(328, 1);
+      expect(battleCanvasBox.height).toBeCloseTo(298.25, 1);
+      expect(metrics.player).toEqual({ width: 149, height: 298 });
+    }
+
+    const layoutEvidence = JSON.stringify({
+      battleCanvas: battleCanvasBox,
+      boards: metrics.player,
+      images: portraitImageMetrics,
+      portraits: portraitMetrics,
+      viewport,
+    });
+    for (const portrait of portraitMetrics) {
+      expect(portrait.width, layoutEvidence).toBeGreaterThanOrEqual(minimumPortraitSize);
+      expect(portrait.height, layoutEvidence).toBeGreaterThanOrEqual(minimumPortraitSize);
+      expect(portrait.state, layoutEvidence).toEqual(expect.any(String));
+    }
+    for (const image of portraitImageMetrics) {
+      expect(image.width, 'portrait image should have visible width').toBeGreaterThan(0);
+      expect(image.height, 'portrait image should have visible height').toBeGreaterThan(0);
+      expect(image.objectFit).toBe('cover');
+      expect(image.objectPosition).toBe('50% 18%');
+    }
   });
 }
 

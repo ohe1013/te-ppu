@@ -1,8 +1,10 @@
 import type { Floor } from '../../app/app-route';
-import type { LoadedImageRef, RivalCharacterAssets } from '../../assets';
+import type { LoadedImageRef, PlayerCharacterAssets, RivalCharacterAssets } from '../../assets';
+import type { PlayerCharacterDefinition } from '../../player';
 import type { FloorEncounter, FloorSeriesState } from '../../progression';
 import { AssetImage } from '../match/AssetImage';
 import { CharacterPortrait } from '../characters/CharacterPortrait';
+import { SelectedPlayerIdentity } from '../characters/SelectedPlayerIdentity';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface FloorIntroScreenProps {
@@ -13,6 +15,8 @@ export interface FloorIntroScreenProps {
   readonly background?: LoadedImageRef;
   readonly onBack: () => void;
   readonly onStart: () => void;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
 }
 
 export function FloorIntroScreen({
@@ -21,6 +25,8 @@ export function FloorIntroScreen({
   floor,
   onBack,
   onStart,
+  player,
+  playerAssets,
   rival,
   series,
 }: FloorIntroScreenProps) {
@@ -52,6 +58,12 @@ export function FloorIntroScreen({
           <p className="character-intro-panel__speech">{encounter.intro}</p>
           <p className="character-intro-panel__badge">상대 {encounter.index + 1}/3</p>
         </div>
+        <SelectedPlayerIdentity
+          assets={playerAssets}
+          context="player"
+          player={player}
+          portraitState="idle"
+        />
       </div>
       <div className="screen-actions">
         <button className="secondary-button" type="button" onClick={onBack}>타워로</button>

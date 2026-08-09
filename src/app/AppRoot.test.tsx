@@ -4,7 +4,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AssetManager } from '../assets';
+import type {
+  AssetManager,
+  CommonAssets,
+  LoadedImageRef,
+  PlayerCharacterAssets,
+} from '../assets';
 import {
   DEFAULT_PROGRESS,
   cloneProgressState,
@@ -19,6 +24,7 @@ import {
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
+import type { PlayerCharacterId } from '../player';
 import {
   AppRoot,
   type MatchRouteViewProps,
@@ -128,6 +134,52 @@ function createAssetManager(
   };
 }
 
+function image(url: string): LoadedImageRef {
+  return { url } as LoadedImageRef;
+}
+
+function playerAssets(characterId: PlayerCharacterId): PlayerCharacterAssets {
+  const root = `/assets/characters/${characterId}`;
+  return {
+    fullArt: image(`${root}/full.webp`),
+    portraits: {
+      idle: image(`${root}/portrait-idle.webp`),
+      focus: image(`${root}/portrait-focus.webp`),
+      attack: image(`${root}/portrait-attack.webp`),
+      hit: image(`${root}/portrait-hit.webp`),
+      win: image(`${root}/portrait-win.webp`),
+      loss: image(`${root}/portrait-loss.webp`),
+    },
+  };
+}
+
+function selectedPlayerCommonAssets(): CommonAssets {
+  return {
+    generation: 1,
+    players: {
+      'hero-engineer': playerAssets('hero-engineer'),
+      'cloud-courier': playerAssets('cloud-courier'),
+      'star-alchemist': playerAssets('star-alchemist'),
+    },
+    owl: {
+      fullArt: image('/assets/characters/owl-companion/full.webp'),
+      portraits: { idle: image('/assets/characters/owl-companion/portrait-idle.webp') },
+    },
+    rivals: {},
+    tiles: {},
+    items: {},
+    icons: {},
+    audio: { sfx: {}, bgm: {} },
+  } as unknown as CommonAssets;
+}
+
+function createLoadedAssetManager(commonAssets = selectedPlayerCommonAssets()): AssetManager {
+  return {
+    ...createAssetManager(async () => 'ready'),
+    getCommonAssets: () => commonAssets,
+  };
+}
+
 function createAudioPort(): AudioPort {
   return {
     destroy: vi.fn(async () => undefined),
@@ -144,15 +196,33 @@ function factoryFor(repository: ProgressRepository): ProgressRepositoryFactory {
   return { forIdentity: () => repository };
 }
 
-function TestMatch({ floor, encounterIndex, wins, onFinished, specialEncounter }: MatchRouteViewProps): ReactNode {
+function TestMatch({
+  floor,
+  encounterIndex,
+  wins,
+  onFinished,
+  player,
+  playerAssets: selectedAssets,
+  specialEncounter,
+}: MatchRouteViewProps): ReactNode {
   const encounter = specialEncounter ?? getFloorEncounter(floor, encounterIndex);
   return (
     <section
       data-encounter-kind={specialEncounter === undefined ? 'floor' : 'owl'}
+      data-player-attack={selectedAssets?.portraits.attack?.url ?? 'missing'}
+      data-player-focus={selectedAssets?.portraits.focus?.url ?? 'missing'}
+      data-player-full-art={selectedAssets?.fullArt?.url ?? 'missing'}
+      data-player-hit={selectedAssets?.portraits.hit?.url ?? 'missing'}
+      data-player-id={player?.id ?? 'missing'}
+      data-player-idle={selectedAssets?.portraits.idle?.url ?? 'missing'}
+      data-player-loss={selectedAssets?.portraits.loss?.url ?? 'missing'}
+      data-player-win={selectedAssets?.portraits.win?.url ?? 'missing'}
       data-testid="match-screen"
     >
       <h1>{floor}층 대전</h1>
       <h2>{encounter.displayName}</h2>
+      <h3>{player?.name}</h3>
+      <p>{player?.title}</p>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
       <button type="button" onClick={() => void onFinished('win')}>finish win</button>
       <button type="button" onClick={() => void onFinished('loss')}>finish loss</button>
@@ -251,6 +321,22 @@ async function completeFloor(
   if (continueAfterFinal) {
     await user.click(screen.getByRole('button', { name: '탑으로' }));
   }
+}
+
+function expectSelectedMatchPlayer(
+  characterId: PlayerCharacterId,
+  name: string,
+  title: string,
+): void {
+  const match = screen.getByTestId('match-screen');
+  const root = `/assets/characters/${characterId}`;
+  expect(match).toHaveAttribute('data-player-id', characterId);
+  expect(match).toHaveAttribute('data-player-full-art', `${root}/full.webp`);
+  for (const state of ['idle', 'focus', 'attack', 'hit', 'win', 'loss'] as const) {
+    expect(match).toHaveAttribute(`data-player-${state}`, `${root}/portrait-${state}.webp`);
+  }
+  expect(within(match).getByText(name)).toBeInTheDocument();
+  expect(within(match).getByText(title)).toBeInTheDocument();
 }
 
 describe('AppRoot', () => {
@@ -480,12 +566,130 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
 
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
-    expect(screen.getByRole('region', { name: '견습 마도공학자 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 battle status' }))
       .toBeInTheDocument();
     expect(screen.getByRole('region', { name: '기어 창고장 battle status' }))
       .toBeInTheDocument();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
+  });
+
+  it.each([
+    ['cloud-courier', '루미', '바람길의 전령'],
+    ['star-alchemist', '세라', '빛의 추적자'],
+  ] as const)(
+    'propagates %s from AppRoot through every player-visible story and battle route',
+    async (characterId, name, title) => {
+      const user = userEvent.setup();
+      const selectedProgress = cloneProgressState(floorFiveProgress);
+      selectedProgress.profile = { initials: 'ACE', characterId };
+      renderGame(
+        new TestProgressRepository(selectedProgress),
+        createTestPlatform(),
+        createLoadedAssetManager(),
+      );
+
+      await enterTower(user);
+      await user.click(screen.getByRole('button', { name: '5층 선택' }));
+
+      const introIdentity = await screen.findByRole('group', {
+        name: `${name} player identity`,
+      });
+      expect(introIdentity).toHaveAttribute('data-character-id', characterId);
+      expect(introIdentity).toHaveTextContent(title);
+      expect(screen.getByAltText(`${name} full illustration`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/full.webp`,
+      );
+      expect(screen.getByAltText(`${name} idle portrait`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/portrait-idle.webp`,
+      );
+
+      await user.click(screen.getByRole('button', { name: '대전 시작' }));
+      expectSelectedMatchPlayer(characterId, name, title);
+
+      for (let encounterIndex = 0; encounterIndex < 3; encounterIndex += 1) {
+        await user.click(screen.getByRole('button', { name: 'finish win' }));
+        const resultIdentity = await screen.findByRole('group', {
+          name: `${name} result identity`,
+        });
+        expect(resultIdentity).toHaveAttribute('data-character-id', characterId);
+        expect(resultIdentity).toHaveTextContent(title);
+        expect(screen.getByAltText(`${name} result full illustration`)).toHaveAttribute(
+          'src',
+          `/assets/characters/${characterId}/full.webp`,
+        );
+        expect(screen.getByAltText(`${name} win portrait`)).toHaveAttribute(
+          'src',
+          `/assets/characters/${characterId}/portrait-win.webp`,
+        );
+        if (encounterIndex < 2) {
+          await user.click(screen.getByRole('button', { name: '다음 상대' }));
+          await user.click(screen.getByRole('button', { name: '대전 시작' }));
+          expectSelectedMatchPlayer(characterId, name, title);
+        }
+      }
+
+      await user.click(screen.getByRole('button', { name: '탑으로' }));
+      await screen.findByTestId('owl-reveal-screen');
+      await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+      expectSelectedMatchPlayer(characterId, name, title);
+      await user.click(screen.getByRole('button', { name: 'finish win' }));
+
+      const owlIdentity = await screen.findByRole('group', {
+        name: `${name} owl result identity`,
+      });
+      expect(owlIdentity).toHaveAttribute('data-character-id', characterId);
+      expect(owlIdentity).toHaveTextContent(title);
+      expect(screen.getByAltText(`${name} owl result full illustration`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/full.webp`,
+      );
+      expect(screen.getByAltText(`${name} win portrait`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/portrait-win.webp`,
+      );
+
+      await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
+      const endingIdentity = await screen.findByRole('group', {
+        name: `${name} ending identity`,
+      });
+      expect(endingIdentity).toHaveAttribute('data-character-id', characterId);
+      expect(endingIdentity).toHaveTextContent(title);
+      expect(screen.getByAltText(`${name} ending full illustration`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/full.webp`,
+      );
+      expect(screen.getByAltText(`${name} win portrait`)).toHaveAttribute(
+        'src',
+        `/assets/characters/${characterId}/portrait-win.webp`,
+      );
+    },
+  );
+
+  it('uses hero-engineer only as the display fallback for corrupted in-memory profiles', async () => {
+    const user = userEvent.setup();
+    const corrupted = cloneProgressState(floorOneProgress);
+    corrupted.profile = {
+      initials: 'BAD',
+      characterId: 'corrupted-character-id',
+    } as unknown as ProgressState['profile'];
+    renderGame(
+      new TestProgressRepository(corrupted),
+      createTestPlatform(),
+      createLoadedAssetManager(),
+    );
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '1층 선택' }));
+
+    const fallback = await screen.findByRole('group', { name: '리벳 player identity' });
+    expect(fallback).toHaveAttribute('data-character-id', 'hero-engineer');
+    expect(screen.getByAltText('리벳 full illustration')).toHaveAttribute(
+      'src',
+      '/assets/characters/hero-engineer/full.webp',
+    );
   });
 
   it('passes live settings to a match and persists match settings through TowerController', async () => {
