@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PublicSideView } from '../../core/index';
 import { BattleHud } from './BattleHud';
+import { PIECE_PREVIEW_CELLS } from './piece-preview';
 
 afterEach(cleanup);
 
@@ -36,6 +37,12 @@ describe('BattleHud', () => {
 
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('T');
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('I');
+    const previews = within(hud).getByTestId('player-next').querySelectorAll(
+      '[data-piece-preview]',
+    );
+    expect(previews).toHaveLength(2);
+    expect(previews[0]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
+    expect(previews[1]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
     expect(within(hud).getByText('견습 마도공학자')).toBeInTheDocument();
     expect(within(hud).getByText('별빛 수리공')).toBeInTheDocument();
     expect(within(hud).getByTestId('player-combo')).toHaveTextContent('3');
@@ -59,6 +66,13 @@ describe('BattleHud', () => {
 
     expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('DANGER');
   });
+
+  it.each(['I', 'J', 'L', 'O', 'S', 'T', 'Z'] as const)(
+    'defines four visible cells for the %s preview shape',
+    (kind) => {
+      expect(PIECE_PREVIEW_CELLS[kind]).toHaveLength(4);
+    },
+  );
 
   it('keeps labels available without portrait sources and exposes deterministic portrait state', () => {
     const result = render(

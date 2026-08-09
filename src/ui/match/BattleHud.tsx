@@ -5,6 +5,7 @@ import {
   createCharacterPlateModel,
   type CharacterPlateCharacter,
 } from './character-plate';
+import { PiecePreview } from './piece-preview';
 import type { PortraitPresentation } from './portrait-state';
 
 export interface BattleHudProps {
@@ -61,16 +62,12 @@ export function BattleHud({ character, items, model, portrait, side, tiles }: Ba
       >
         {model.next.slice(0, 2).map((piece, index) => (
           <li
+            aria-label={`${piece.kind} 블록`}
             data-item={piece.marker?.item ?? 'none'}
             data-kind={piece.kind}
             key={`${piece.kind}-${index}`}
           >
-            <AssetImage
-              alt={`${piece.kind} block`}
-              className="battle-hud__next-image"
-              url={tiles?.[piece.kind]?.url}
-            />
-            <span className="battle-hud__next-label">{piece.kind}</span>
+            <PiecePreview image={tiles?.[piece.kind]} kind={piece.kind} />
           </li>
         ))}
       </ol>
