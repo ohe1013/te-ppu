@@ -1,4 +1,11 @@
-import { expect, openMatch, test } from './helpers';
+import { expect, openMatch, seedReturningProfile, test } from './helpers';
+
+test.beforeEach(async ({ page }) => {
+  await seedReturningProfile(page, {
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+  });
+});
 
 test('dispatches joystick commands in order and rotates exactly once per tap', async ({ page }) => {
   await openMatch(page);

@@ -4,6 +4,118 @@ import {
   type ConsoleMessage,
   type Page,
 } from '@playwright/test';
+import type { PlayerCharacterId, PlayerProfile } from '../../src/player';
+import type {
+  Difficulty,
+  DifficultyRunProgress,
+  ProgressState,
+} from '../../src/progression';
+
+export const LOCAL_PROGRESS_KEY = 'te-ppu.progress.identity.local.local-browser';
+
+export type SeedProfile = PlayerProfile;
+
+type DifficultyRunOverrides = Omit<Partial<DifficultyRunProgress>, 'clearedFloors'> & {
+  readonly clearedFloors?: Partial<DifficultyRunProgress['clearedFloors']>;
+};
+
+export interface SeedProgressOverrides {
+  readonly difficultyProgress?: Partial<Record<Difficulty, DifficultyRunOverrides>>;
+  readonly localBestScores?: ProgressState['localBestScores'];
+  readonly pendingLeaderboardSubmissions?: ProgressState['pendingLeaderboardSubmissions'];
+  readonly selectedDifficulty?: Difficulty;
+  readonly settings?: Partial<ProgressState['settings']>;
+  readonly unlockedDifficulties?: Partial<ProgressState['unlockedDifficulties']>;
+}
+
+const CHARACTER_NAMES: Readonly<Record<PlayerCharacterId, string>> = {
+  'hero-engineer': '리벳',
+  'cloud-courier': '루미',
+  'star-alchemist': '세라',
+};
+
+function emptyDifficultyRun(): DifficultyRunProgress {
+  return {
+    highestUnlockedFloor: 1,
+    clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
+    owlDefeated: false,
+  };
+}
+
+function difficultyRun(
+  overrides: DifficultyRunOverrides | undefined,
+): DifficultyRunProgress {
+  const empty = emptyDifficultyRun();
+  return {
+    ...empty,
+    ...overrides,
+    clearedFloors: { ...empty.clearedFloors, ...overrides?.clearedFloors },
+  };
+}
+
+export async function chooseArcadeLetters(page: Page, initials: string): Promise<void> {
+  if (!/^[A-Z]{3}$/.test(initials)) {
+    throw new RangeError(`Arcade initials must be exactly three uppercase letters: ${initials}`);
+  }
+  for (const letter of initials) {
+    await page.getByRole('button', { name: letter, exact: true }).click();
+  }
+}
+
+export async function seedReturningProfile(
+  page: Page,
+  profile: SeedProfile,
+  overrides: SeedProgressOverrides = {},
+): Promise<void> {
+  const progress = {
+    schemaVersion: 4,
+    profile: { ...profile },
+    localBestScores: overrides.localBestScores === undefined
+      ? { easy: null, normal: null, hard: null }
+      : { ...overrides.localBestScores },
+    pendingLeaderboardSubmissions: {
+      ...overrides.pendingLeaderboardSubmissions,
+    },
+    selectedDifficulty: overrides.selectedDifficulty ?? 'easy',
+    unlockedDifficulties: {
+      easy: true,
+      normal: false,
+      hard: false,
+      ...overrides.unlockedDifficulties,
+    },
+    difficultyProgress: {
+      easy: difficultyRun(overrides.difficultyProgress?.easy),
+      normal: difficultyRun(overrides.difficultyProgress?.normal),
+      hard: difficultyRun(overrides.difficultyProgress?.hard),
+    },
+    settings: {
+      soundEnabled: true,
+      hapticsEnabled: true,
+      ...overrides.settings,
+    },
+  } satisfies ProgressState;
+
+  await page.addInitScript(({ key, serialized }) => {
+    window.localStorage.setItem(key, serialized);
+  }, { key: LOCAL_PROGRESS_KEY, serialized: JSON.stringify(progress) });
+}
+
+export async function completeFirstRunProfile(
+  page: Page,
+  initials: string,
+  characterId: PlayerCharacterId,
+): Promise<void> {
+  await page.goto('/');
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: 'START RUN' }).click();
+  await expect(page.getByTestId('name-entry-screen')).toBeVisible();
+  await chooseArcadeLetters(page, initials);
+  await page.getByRole('button', { name: 'END' }).click();
+  await expect(page.getByTestId('character-select-screen')).toBeVisible();
+  await page.getByRole('button', { name: CHARACTER_NAMES[characterId] }).click();
+  await page.getByRole('button', { name: 'SELECT' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+}
 
 interface BrowserErrorGuard {
   detach(): void;
@@ -48,6 +160,8 @@ export const test = base.extend<{ browserErrorGuard: void }>({
 export async function openTower(page: Page): Promise<number> {
   const startedAt = Date.now();
   await page.goto('/');
+  await expect(page.getByTestId('title-screen')).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'START RUN' }).click();
   await expect(page.getByTestId('tower-screen')).toBeVisible({ timeout: 10_000 });
   return Date.now() - startedAt;
 }

@@ -1,34 +1,10 @@
 import { type Locator, type Page } from '@playwright/test';
-import { expect, test } from './helpers';
-
-const FLOOR_FIVE_PROGRESS = {
-  schemaVersion: 4,
-  profile: { initials: 'RVT', characterId: 'hero-engineer' },
-  localBestScores: { easy: null, normal: null, hard: null },
-  pendingLeaderboardSubmissions: {},
-  selectedDifficulty: 'easy',
-  unlockedDifficulties: { easy: true, normal: false, hard: false },
-  difficultyProgress: {
-    easy: {
-      highestUnlockedFloor: 5,
-      clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
-      owlDefeated: false,
-    },
-    normal: {
-      highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-      owlDefeated: false,
-    },
-    hard: {
-      highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-      owlDefeated: false,
-    },
-  },
-  settings: { soundEnabled: true, hapticsEnabled: true },
-} as const;
-
-const LOCAL_PROGRESS_KEY = 'te-ppu.progress.identity.local.local-browser';
+import {
+  expect,
+  openTower as enterTower,
+  seedReturningProfile,
+  test,
+} from './helpers';
 
 const PORTRAITS = [
   { viewport: { width: 360, height: 640 } },
@@ -79,36 +55,25 @@ function expectNoBlockingOverlap(
   expect(overlapWidth * overlapHeight, `${label} should not overlap`).toBeLessThanOrEqual(0.5);
 }
 
-async function openTower(page: Page): Promise<void> {
-  await page.goto('/');
-  await page.evaluate(({ key, progress }) => {
-    window.localStorage.setItem(key, JSON.stringify(progress));
-  }, { key: LOCAL_PROGRESS_KEY, progress: FLOOR_FIVE_PROGRESS });
-  await page.reload();
-  await expect(page.getByTestId('title-screen')).toBeVisible();
-  await page.getByRole('button', { name: 'START RUN' }).click();
-  await expect(page.getByTestId('tower-screen')).toBeVisible();
-}
-
-async function openFloorFiveMatch(page: Page): Promise<void> {
-  await openTower(page);
-
+async function openFloorOneMatch(page: Page): Promise<void> {
   const floorCards = page.getByRole('button', { name: /층 선택/ });
   await expect(floorCards).toHaveCount(5);
-  const floorFive = floorCards.last();
-  await floorFive.scrollIntoViewIfNeeded();
-  await floorFive.click();
+  await floorCards.first().click();
   await expect(page.getByTestId('floor-intro-screen')).toBeVisible();
   await page.getByRole('button', { name: '대전 시작' }).click();
   await expect(page.getByTestId('match-screen')).toBeVisible();
-  await expect(page.getByTestId('match-screen')).toHaveAttribute('data-floor', '5');
+  await expect(page.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
   await expect(page.getByRole('group', { name: '게임 조작' })).toBeEnabled();
 }
 
 for (const { viewport } of PORTRAITS) {
-  test(`keeps the five-floor tower and floor-5 match usable at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+  test(`keeps the five-floor tower and legal floor-1 match usable at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await seedReturningProfile(page, {
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+    });
     await page.setViewportSize(viewport);
-    await openTower(page);
+    await enterTower(page);
 
     const floorCards = page.getByRole('button', { name: /층 선택/ });
     await expect(floorCards).toHaveCount(5);
@@ -155,7 +120,7 @@ for (const { viewport } of PORTRAITS) {
     }
     await expectInsideViewport(lastFloor, viewport, 'last floor card after scrolling');
 
-    await openFloorFiveMatch(page);
+    await openFloorOneMatch(page);
 
     const minimumPortraitSize = viewport.height <= 700 ? 60 : 68;
     const portraits = page.locator('.battle-hud__portrait');
@@ -178,6 +143,36 @@ for (const { viewport } of PORTRAITS) {
         objectFit: style.objectFit,
         objectPosition: style.objectPosition,
         width: box.width,
+      };
+    }));
+    const nextQueues = page.locator('.battle-hud__next');
+    await expect(nextQueues).toHaveCount(2);
+    for (const queue of await nextQueues.all()) {
+      await expect(queue.locator('[data-piece-preview]')).toHaveCount(2);
+    }
+    const nextPreviews = page.locator('[data-piece-preview]');
+    await expect(nextPreviews).toHaveCount(4);
+    for (const preview of await nextPreviews.all()) {
+      const cells = preview.locator('[data-piece-cell]');
+      await expect(cells).toHaveCount(4);
+      for (const cell of await cells.all()) await expect(cell).toBeVisible();
+    }
+    const nextPreviewMetrics = await nextPreviews.evaluateAll((nodes) => nodes.map((node) => {
+      const previewBox = node.getBoundingClientRect();
+      const grid = node.querySelector<HTMLElement>('[data-piece-grid]');
+      if (grid === null) throw new Error('NEXT preview grid is missing');
+      const gridBox = grid.getBoundingClientRect();
+      const cells = [...node.querySelectorAll<HTMLElement>('[data-piece-cell]')];
+      return {
+        cellCount: cells.length,
+        centerDeltaX: Math.abs(
+          previewBox.x + previewBox.width / 2 - (gridBox.x + gridBox.width / 2),
+        ),
+        centerDeltaY: Math.abs(
+          previewBox.y + previewBox.height / 2 - (gridBox.y + gridBox.height / 2),
+        ),
+        kind: (node as HTMLElement).dataset.pieceKind,
+        visibleText: (node as HTMLElement).innerText.trim(),
       };
     }));
 
@@ -281,11 +276,23 @@ for (const { viewport } of PORTRAITS) {
       expect(image.objectFit).toBe('cover');
       expect(image.objectPosition).toBe('50% 18%');
     }
+    for (const preview of nextPreviewMetrics) {
+      expect(preview.cellCount, `${preview.kind} NEXT should render four cells`).toBe(4);
+      expect(preview.visibleText, `${preview.kind} should not render a visible kind letter`).toBe('');
+      expect(preview.centerDeltaX, `${preview.kind} NEXT should be horizontally centered`)
+        .toBeLessThanOrEqual(1);
+      expect(preview.centerDeltaY, `${preview.kind} NEXT should be vertically centered`)
+        .toBeLessThanOrEqual(1);
+    }
   });
 }
 
 test('publishes deterministic safe-area CSS variables through the E2E platform', async ({ page }) => {
-  await openTower(page);
+  await seedReturningProfile(page, {
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+  });
+  await enterTower(page);
 
   const variables = await page.locator('[data-safe-area-provider]').evaluate((node) => {
     const style = getComputedStyle(node);
