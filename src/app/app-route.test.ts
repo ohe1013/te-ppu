@@ -49,6 +49,17 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'retry', seed: 2 },
     { type: 'continue' },
   ]],
+  ['intermediate floor intro', {
+    name: 'floor-intro', floor: 2, encounterIndex: 1, wins: 1,
+  }, [
+    ...taskFiveEvents,
+    { type: 'boot-ready' },
+    { type: 'select-floor', floor: 1 },
+    { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
+    { type: 'continue' },
+    { type: 'return-to-tower' },
+  ]],
   ['match', { name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 3 }, [
     ...taskFiveEvents,
     { type: 'boot-ready' },
@@ -56,6 +67,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'start-match', seed: 1 },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
+    { type: 'return-to-tower' },
   ]],
   ['result', {
     name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
@@ -66,6 +78,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
     { type: 'retry', seed: 2 },
+    { type: 'return-to-tower' },
   ]],
   ['ending', { name: 'ending' }, [
     ...taskFiveEventsWithoutReturnToTitle,
@@ -83,18 +96,21 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'owl-match-finished', result: 'win' },
+    { type: 'return-to-tower' },
   ]],
   ['owl match', { name: 'owl-match', seed: 7 }, [
     ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'start-owl-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
+    { type: 'return-to-tower' },
   ]],
   ['owl result', { name: 'owl-result', result: 'loss' }, [
     ...taskFiveEvents,
     { type: 'boot-ready' },
     { type: 'start-owl-match', seed: 1 },
     { type: 'owl-match-finished', result: 'win' },
+    { type: 'return-to-tower' },
   ]],
   ['title', { name: 'title' }, [
     { type: 'boot-ready' },

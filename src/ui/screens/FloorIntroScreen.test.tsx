@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getFloorEncounter } from '../../progression';
 import type { PlayerCharacterAssets, RivalCharacterAssets } from '../../assets';
 import type { PlayerCharacterDefinition } from '../../player';
@@ -35,7 +36,6 @@ describe('FloorIntroScreen', () => {
       <FloorIntroScreen
         encounter={encounter}
         floor={1}
-        onBack={() => undefined}
         onStart={() => undefined}
         player={player}
         playerAssets={playerAssets}
@@ -64,5 +64,29 @@ describe('FloorIntroScreen', () => {
       'src',
       '/cloud-courier-idle.webp',
     );
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('shows a working tower-back control for only the first encounter', async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    const encounter = getFloorEncounter(1, 0);
+    render(
+      <FloorIntroScreen
+        encounter={encounter}
+        floor={1}
+        onBack={onBack}
+        onStart={() => undefined}
+        player={player}
+        playerAssets={playerAssets}
+        rival={rival}
+        series={{ floor: 1, encounterIndex: 0, wins: 0 }}
+      />,
+    );
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    await user.click(buttons[0]!);
+    expect(onBack).toHaveBeenCalledOnce();
   });
 });

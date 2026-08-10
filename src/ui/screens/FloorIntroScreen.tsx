@@ -13,7 +13,7 @@ export interface FloorIntroScreenProps {
   readonly series: FloorSeriesState;
   readonly rival?: RivalCharacterAssets;
   readonly background?: LoadedImageRef;
-  readonly onBack: () => void;
+  readonly onBack?: () => void;
   readonly onStart: () => void;
   readonly player: PlayerCharacterDefinition;
   readonly playerAssets?: PlayerCharacterAssets;
@@ -66,7 +66,9 @@ export function FloorIntroScreen({
         />
       </div>
       <div className="screen-actions">
-        <button className="secondary-button" type="button" onClick={onBack}>타워로</button>
+        {encounter.index === 0 && onBack !== undefined ? (
+          <button className="secondary-button" type="button" onClick={onBack}>타워로</button>
+        ) : null}
         <button type="button" onClick={onStart}>대전 시작</button>
       </div>
     </section>

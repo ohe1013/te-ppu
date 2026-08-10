@@ -57,18 +57,6 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     return { name: 'title' };
   }
 
-  if (
-    event.type === 'return-to-tower'
-    && route.name !== 'boot'
-    && route.name !== 'title'
-    && route.name !== 'name-entry'
-    && route.name !== 'character-select'
-    && route.name !== 'ranking'
-    && route.name !== 'ending'
-  ) {
-    return route.name === 'tower' ? route : { name: 'tower' };
-  }
-
   switch (route.name) {
     case 'boot':
       return event.type === 'boot-ready' ? { name: 'title' } : route;
@@ -101,6 +89,9 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
         ? { name: 'floor-intro', floor: event.floor, encounterIndex: 0, wins: 0 }
         : route;
     case 'floor-intro':
+      if (event.type === 'return-to-tower' && route.encounterIndex === 0) {
+        return { name: 'tower' };
+      }
       return event.type === 'start-match'
         ? {
             name: 'match',

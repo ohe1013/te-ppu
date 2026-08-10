@@ -267,12 +267,22 @@ function TestMatch({
   );
 }
 
+type RetainedMatchCallbacks = Pick<MatchRouteViewProps, 'onFinished' | 'onScoreEvents'>;
+
+function retainMatchCallbacks(props: MatchRouteViewProps): RetainedMatchCallbacks {
+  return {
+    onFinished: props.onFinished,
+    onScoreEvents: props.onScoreEvents,
+  };
+}
+
 function renderGame(
   repository: ProgressRepository,
   platform: PlatformPort = createTestPlatform(),
   assetManager: AssetManager = createAssetManager(),
   audioPort: AudioPort = createAudioPort(),
   nowIso: () => string = () => '2026-08-10T12:34:56.000Z',
+  onRenderMatch: (props: MatchRouteViewProps) => void = () => undefined,
 ) {
   let seed = 100;
   const services: AppServices = {
@@ -286,7 +296,10 @@ function renderGame(
       services={services}
       createMatchSeed={() => seed++}
       nowIso={nowIso}
-      renderMatch={(props) => <TestMatch {...props} />}
+      renderMatch={(props) => {
+        onRenderMatch(props);
+        return <TestMatch {...props} />;
+      }}
     />,
   );
 }
@@ -939,6 +952,134 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000250');
     await user.click(screen.getByRole('button', { name: 'finish win' }));
 
+    expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
+  });
+
+  it('omits the tower-back action from an intermediate floor intro', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    const result = await screen.findByTestId('result-screen');
+    await user.click(within(result).getByRole('button'));
+    const intro = await screen.findByTestId('floor-intro-screen');
+
+    expect(intro).toHaveAttribute('data-encounter-index', '1');
+    expect(within(intro).getAllByRole('button')).toHaveLength(1);
+    await user.click(within(intro).getByRole('button'));
+    expect(await screen.findByTestId('match-encounter')).toHaveTextContent('1:1');
+  });
+
+  it('ignores retained normal-match callbacks after save and throughout a fresh match', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    let retained: RetainedMatchCallbacks | undefined;
+    const staleEvents = [
+      { type: 'lines-cleared', side: 'player', amount: 1 },
+      { type: 'attack-sent', side: 'player', amount: 1 },
+      { type: 'item-used', side: 'player', item: 'freeze' },
+    ] satisfies readonly GameEvent[];
+    renderGame(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (props) => {
+        if (retained === undefined && props.specialEncounter === undefined) {
+          retained = retainMatchCallbacks(props);
+        }
+      },
+    );
+
+    await enterMatch(user, 1, 0);
+    if (retained === undefined) throw new Error('normal match callbacks were not retained');
+    const oldMatch = retained;
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+    const endedResult = await screen.findByTestId('result-screen');
+    await waitFor(() => expect(within(endedResult).getByRole('button')).toBeEnabled());
+    const savesAfterResult = repository.saves.length;
+
+    act(() => oldMatch.onScoreEvents(staleEvents));
+    await expect(act(async () => {
+      await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
+    })).resolves.toBeUndefined();
+    expect(screen.getByTestId('result-score')).toHaveTextContent('RUN SCORE 000000');
+    expect(repository.saves).toHaveLength(savesAfterResult);
+
+    await user.click(within(endedResult).getByRole('button'));
+    await screen.findByTestId('title-screen');
+    await enterMatch(user, 1, 0);
+    const savesBeforeFreshCallbacks = repository.saves.length;
+
+    act(() => oldMatch.onScoreEvents(staleEvents));
+    await expect(act(async () => {
+      await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
+    })).resolves.toBeUndefined();
+    expect(screen.getByTestId('match-screen')).toBeInTheDocument();
+    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
+  });
+
+  it('ignores retained owl-match callbacks after save and throughout a fresh normal match', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress);
+    let retained: RetainedMatchCallbacks | undefined;
+    const staleEvents = [
+      { type: 'lines-cleared', side: 'player', amount: 1 },
+      { type: 'attack-sent', side: 'player', amount: 1 },
+      { type: 'item-used', side: 'player', item: 'freeze' },
+    ] satisfies readonly GameEvent[];
+    renderGame(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (props) => {
+        if (retained === undefined && props.specialEncounter !== undefined) {
+          retained = retainMatchCallbacks(props);
+        }
+      },
+    );
+
+    await reachOwlReveal(user);
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await screen.findByTestId('match-screen');
+    if (retained === undefined) throw new Error('owl match callbacks were not retained');
+    const oldMatch = retained;
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+    const endedResult = await screen.findByTestId('owl-result-screen');
+    await waitFor(() => expect(within(endedResult).getByRole('button')).toBeEnabled());
+    const savesAfterResult = repository.saves.length;
+
+    act(() => oldMatch.onScoreEvents(staleEvents));
+    await expect(act(async () => {
+      await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
+    })).resolves.toBeUndefined();
+    expect(screen.getByTestId('owl-result-score')).toHaveTextContent('RUN SCORE 025000');
+    expect(repository.saves).toHaveLength(savesAfterResult);
+
+    await user.click(within(endedResult).getByRole('button'));
+    await screen.findByTestId('title-screen');
+    await enterMatch(user, 1, 0);
+    const savesBeforeFreshCallbacks = repository.saves.length;
+
+    act(() => oldMatch.onScoreEvents(staleEvents));
+    await expect(act(async () => {
+      await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
+    })).resolves.toBeUndefined();
+    expect(screen.getByTestId('match-screen')).toBeInTheDocument();
+    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
   });
 
