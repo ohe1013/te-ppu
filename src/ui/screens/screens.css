@@ -71,7 +71,7 @@
   pointer-events: none;
 }
 
-.screen-shell > :not(.screen-backdrop) {
+.screen-shell > :not(.screen-backdrop):not(.modal-overlay) {
   position: relative;
   z-index: 1;
 }

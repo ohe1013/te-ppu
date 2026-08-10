@@ -15,6 +15,7 @@ import { PLAYER_CHARACTERS } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import { MatchScreen } from '../screens/MatchScreen';
 import { ExitConfirmation } from './ExitConfirmation';
+import { ModalOverlay } from './ModalOverlay';
 import { ResumeCountdown } from './ResumeCountdown';
 import { SettingsPanel } from './SettingsPanel';
 
@@ -101,6 +102,36 @@ describe('lifecycle UI', () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('portals an overlay into the app modal host when one exists', () => {
+    const host = document.createElement('div');
+    host.id = 'modal-root';
+    host.dataset.modalRoot = '';
+    document.body.append(host);
+
+    const view = render(
+      <ModalOverlay testId="test-overlay">
+        <div>overlay content</div>
+      </ModalOverlay>,
+    );
+
+    try {
+      expect(screen.getByTestId('test-overlay').parentElement).toBe(host);
+    } finally {
+      view.unmount();
+      host.remove();
+    }
+  });
+
+  it('renders an overlay inline when no app modal host exists', () => {
+    const view = render(
+      <ModalOverlay testId="test-overlay">
+        <div>overlay content</div>
+      </ModalOverlay>,
+    );
+
+    expect(screen.getByTestId('test-overlay').parentElement).toBe(view.container);
   });
 
   it('renders only the current resume countdown value', () => {

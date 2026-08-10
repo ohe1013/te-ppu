@@ -484,6 +484,17 @@ function expectSelectedMatchPlayer(
 }
 
 describe('AppRoot', () => {
+  it('mounts one modal host after the active title screen', async () => {
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await screen.findByTestId('title-screen');
+    const shell = screen.getByTestId('app-shell');
+    const host = shell.querySelector('[data-modal-root]');
+    expect(host).not.toBeNull();
+    expect(shell.querySelectorAll('[data-modal-root]')).toHaveLength(1);
+    expect(shell.lastElementChild).toBe(host);
+  });
+
   it('shows title after boot and saves a first profile before entering the tower', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(DEFAULT_PROGRESS);

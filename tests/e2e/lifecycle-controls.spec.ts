@@ -1,4 +1,36 @@
+import type { Page } from '@playwright/test';
 import { expect, openMatch, seedReturningProfile, test } from './helpers';
+
+async function expectViewportCenteredOverlay(page: Page): Promise<void> {
+  const geometry = await page.locator('.modal-overlay').evaluate((overlay) => {
+    const overlayRect = overlay.getBoundingClientRect();
+    const surface = overlay.querySelector<HTMLElement>('.modal-overlay__surface');
+    if (surface === null) throw new Error('missing modal surface');
+    const surfaceRect = surface.getBoundingClientRect();
+    return {
+      position: getComputedStyle(overlay).position,
+      overlayRect: {
+        left: overlayRect.left,
+        top: overlayRect.top,
+        right: overlayRect.right,
+        bottom: overlayRect.bottom,
+      },
+      centerDeltaX: Math.abs(
+        surfaceRect.left + surfaceRect.width / 2 - window.innerWidth / 2,
+      ),
+      centerDeltaY: Math.abs(
+        surfaceRect.top + surfaceRect.height / 2 - window.innerHeight / 2,
+      ),
+    };
+  });
+  expect(geometry.position).toBe('fixed');
+  expect(geometry.overlayRect.left).toBe(0);
+  expect(geometry.overlayRect.top).toBe(0);
+  expect(geometry.overlayRect.right).toBe(page.viewportSize()!.width);
+  expect(geometry.overlayRect.bottom).toBe(page.viewportSize()!.height);
+  expect(geometry.centerDeltaX).toBeLessThanOrEqual(1);
+  expect(geometry.centerDeltaY).toBeLessThanOrEqual(1);
+}
 
 test.beforeEach(async ({ page }) => {
   await seedReturningProfile(page, {
@@ -80,6 +112,7 @@ test('pauses hidden match time and resumes only after the visible 3-2-1 countdow
   await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('visible'));
   const countdown = page.getByRole('status', { name: '게임 재개 카운트다운' });
   await expect(countdown).toHaveText('3');
+  await expectViewportCenteredOverlay(page);
   await expect(countdown).toHaveText('2', { timeout: 1_500 });
   await expect(countdown).toHaveText('1', { timeout: 1_500 });
   await expect(countdown).not.toBeVisible({ timeout: 1_500 });
@@ -93,6 +126,7 @@ test('pauses for exit, cancels safely, and closes only after confirmation', asyn
 
   await page.getByRole('button', { name: '게임 나가기' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  await expectViewportCenteredOverlay(page);
   await expect(page.getByRole('group', { name: '게임 조작' }))
     .toHaveAttribute('disabled', '');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);

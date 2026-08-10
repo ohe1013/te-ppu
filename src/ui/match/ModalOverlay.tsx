@@ -1,4 +1,5 @@
 import { type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ModalOverlayProps {
   readonly ariaLabel?: string;
@@ -21,7 +22,7 @@ export function ModalOverlay({
     if (onDismiss !== undefined && event.target === event.currentTarget) onDismiss();
   }
 
-  return (
+  const overlay = (
     <div
       aria-label={ariaLabel}
       aria-live={role === 'status' ? 'assertive' : undefined}
@@ -33,4 +34,8 @@ export function ModalOverlay({
       {children}
     </div>
   );
+
+  if (typeof document === 'undefined') return overlay;
+  const host = document.querySelector<HTMLElement>('[data-modal-root]');
+  return host === null ? overlay : createPortal(overlay, host);
 }

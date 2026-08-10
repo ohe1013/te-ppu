@@ -954,6 +954,7 @@ export function AppRoot({
       }}
     >
       {content}
+      <div data-modal-root="" id="modal-root" />
     </main>
   );
 }
