@@ -192,8 +192,11 @@ describe('lifecycle UI', () => {
 
     const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
     fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await act(async () => undefined);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
-    await act(async () => vi.advanceTimersByTimeAsync(1_200));
+    await act(async () => vi.advanceTimersByTimeAsync(400));
 
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'failed');
     expect(screen.getByRole('status')).toHaveTextContent('게임을 닫지 못했습니다');
