@@ -422,6 +422,126 @@ describe('useLeaderboard pending submission queue', () => {
     ]);
   });
 
+  it('does not carry a retained repository A candidate into repository B', async () => {
+    const candidate = scoreRecord('easy', { score: 1_000 });
+    const submitA = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValue({ ok: false, reason: 'WRITE_FAILED' });
+    const submitB = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValue({ ok: true, source: 'firestore' });
+    const repositoryA = repository({ submitBest: submitA });
+    const repositoryB = repository({ submitBest: submitB });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const { result, rerender } = renderHook(
+      ({
+        activeRepository,
+        progress,
+      }: {
+        activeRepository: LeaderboardRepository;
+        progress: ProgressState;
+      }) => useLeaderboard({
+        repository: activeRepository,
+        progress,
+        onClearPending,
+      }),
+      {
+        initialProps: {
+          activeRepository: repositoryA,
+          progress: progressWithPending(candidate),
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    rerender({
+      activeRepository: repositoryB,
+      progress: cloneProgressState(DEFAULT_PROGRESS),
+    });
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(vi.mocked(submitA).mock.calls.map(([record]) => record.score)).toEqual([1_000]);
+    expect(submitB).not.toHaveBeenCalled();
+    expect(onClearPending).not.toHaveBeenCalled();
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+
+  it('does not carry queued or in-flight repository A candidates into repository B', async () => {
+    const writeA = deferred<LeaderboardWriteResult>();
+    const inFlightCandidate = scoreRecord('easy', { score: 1_000 });
+    const queuedCandidate = scoreRecord('normal', { score: 1_500 });
+    const submitA = vi.fn<LeaderboardRepository['submitBest']>(() => writeA.promise);
+    const submitB = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValue({ ok: true, source: 'firestore' });
+    const repositoryA = repository({ submitBest: submitA });
+    const repositoryB = repository({ submitBest: submitB });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const { result, rerender } = renderHook(
+      ({
+        activeRepository,
+        progress,
+      }: {
+        activeRepository: LeaderboardRepository;
+        progress: ProgressState;
+      }) => useLeaderboard({
+        repository: activeRepository,
+        progress,
+        onClearPending,
+      }),
+      {
+        initialProps: {
+          activeRepository: repositoryA,
+          progress: progressWithPending(inFlightCandidate),
+        },
+      },
+    );
+
+    let inFlightRetry!: Promise<void>;
+    let queuedRetry!: Promise<void>;
+    act(() => {
+      inFlightRetry = result.current.retryPending();
+      queuedRetry = result.current.submitPending('normal', queuedCandidate);
+    });
+    expect(vi.mocked(submitA).mock.calls.map(([record]) => ({
+      difficulty: record.difficulty,
+      score: record.score,
+    }))).toEqual([{ difficulty: 'easy', score: 1_000 }]);
+
+    rerender({
+      activeRepository: repositoryB,
+      progress: cloneProgressState(DEFAULT_PROGRESS),
+    });
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    await act(async () => {
+      writeA.resolve({ ok: true, source: 'firestore' });
+      await Promise.all([inFlightRetry, queuedRetry]);
+    });
+
+    expect(vi.mocked(submitA).mock.calls.map(([record]) => ({
+      difficulty: record.difficulty,
+      score: record.score,
+    }))).toEqual([{ difficulty: 'easy', score: 1_000 }]);
+    expect(submitB).not.toHaveBeenCalled();
+    expect(onClearPending).not.toHaveBeenCalled();
+    expect(result.current.pendingDifficulties).toEqual({
+      easy: false,
+      normal: false,
+      hard: false,
+    });
+  });
+
   it('isolates repository B queue state from a deferred repository A worker', async () => {
     const writeA = deferred<LeaderboardWriteResult>();
     const writeB = deferred<LeaderboardWriteResult>();
@@ -496,6 +616,11 @@ describe('useLeaderboard pending submission queue', () => {
       2_000,
     ]);
     expect(result.current.pendingDifficulties.easy).toBe(false);
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    expect(vi.mocked(submitB).mock.calls.map(([candidate]) => candidate.score)).toEqual([2_000]);
   });
 
   it('discards a failed 1000 retry after a newer 2000 candidate synchronizes', async () => {

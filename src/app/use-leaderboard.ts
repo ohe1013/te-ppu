@@ -82,34 +82,16 @@ function cloneCandidateMap(source: CandidateMap): CandidateMap {
   ) as CandidateMap;
 }
 
-function carryPendingCandidates(context: RepositoryContext): CandidateMap {
-  const carried: CandidateMap = {};
-  for (const source of [context.retained, context.queued, context.inFlight]) {
-    for (const difficulty of DIFFICULTIES) {
-      const candidate = source[difficulty];
-      const current = carried[difficulty];
-      if (
-        candidate !== undefined
-        && (current === undefined || isBetterScore(candidate, current))
-      ) {
-        carried[difficulty] = { ...candidate };
-      }
-    }
-  }
-  return carried;
-}
-
 function createRepositoryContext(
   repository: LeaderboardRepository,
   generation: number,
-  retained: CandidateMap = {},
 ): RepositoryContext {
   return {
     generation,
     repository,
     queued: {},
     inFlight: {},
-    retained: cloneCandidateMap(retained),
+    retained: {},
     cleared: {},
     worker: null,
   };
@@ -140,7 +122,6 @@ export function useLeaderboard({
     repositoryContext = createRepositoryContext(
       repository,
       previousRepositoryContext.generation + 1,
-      carryPendingCandidates(previousRepositoryContext),
     );
     repositoryContextRef.current = repositoryContext;
     readTokenRef.current += 1;
