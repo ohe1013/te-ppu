@@ -250,6 +250,19 @@ function isUnlockedDifficulties(
     && DIFFICULTIES.every((difficulty) => typeof value[difficulty] === 'boolean');
 }
 
+function isBoundedSafeInteger(value: unknown, maximum: number): value is number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= 0
+    && value <= maximum;
+}
+
+function isCanonicalIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
 function parseScoreRecord(value: unknown): ScoreRecord | null {
   if (!exactObject(value, [
     'schemaVersion',
@@ -271,12 +284,13 @@ function parseScoreRecord(value: unknown): ScoreRecord | null {
   ) return null;
   if (!isDifficulty(value.difficulty) || !isFloor(value.reachedFloor)) return null;
   if (
-    typeof value.score !== 'number'
-    || typeof value.durationTicks !== 'number'
-    || typeof value.encountersWon !== 'number'
+    !isBoundedSafeInteger(value.score, 10_000_000)
+    || !isBoundedSafeInteger(value.durationTicks, 100_000_000)
+    || !isBoundedSafeInteger(value.encountersWon, 16)
     || typeof value.owlDefeated !== 'boolean'
-    || typeof value.achievedAt !== 'string'
+    || !isCanonicalIsoTimestamp(value.achievedAt)
   ) return null;
+  if (value.owlDefeated && (value.reachedFloor !== 5 || value.encountersWon !== 16)) return null;
 
   return {
     schemaVersion: 1,

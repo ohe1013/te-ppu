@@ -62,6 +62,42 @@ const scoreRecord = {
   achievedAt: '2026-08-09T12:00:00.000Z',
 } as const;
 
+const scoreContainers = [
+  {
+    name: 'local best',
+    withRecord: (record: Record<string, unknown>) => ({
+      ...currentState,
+      localBestScores: { easy: record, normal: null, hard: null },
+    }),
+  },
+  {
+    name: 'pending leaderboard submission',
+    withRecord: (record: Record<string, unknown>) => ({
+      ...currentState,
+      pendingLeaderboardSubmissions: { easy: record },
+    }),
+  },
+] as const;
+
+const invalidScoreRecords = [
+  ['a negative score', { score: -1 }],
+  ['a score above the maximum', { score: 10_000_001 }],
+  ['a fractional score', { score: 1.5 }],
+  ['a non-finite score', { score: Number.POSITIVE_INFINITY }],
+  ['a negative duration', { durationTicks: -1 }],
+  ['a duration above the maximum', { durationTicks: 100_000_001 }],
+  ['a fractional duration', { durationTicks: 1.5 }],
+  ['a non-finite duration', { durationTicks: Number.NaN }],
+  ['negative encounters won', { encountersWon: -1 }],
+  ['too many encounters won', { encountersWon: 17 }],
+  ['fractional encounters won', { encountersWon: 1.5 }],
+  ['an invalid timestamp', { achievedAt: 'not-a-date' }],
+  ['a normalized impossible timestamp', { achievedAt: '2026-02-30T12:00:00.000Z' }],
+  ['a non-canonical timestamp', { achievedAt: '2026-08-09T12:00:00Z' }],
+  ['an owl clear below floor 5', { owlDefeated: true, reachedFloor: 4, encountersWon: 16 }],
+  ['an owl clear below 16 wins', { owlDefeated: true, reachedFloor: 5, encountersWon: 15 }],
+] as const;
+
 describe('difficulty progress schema', () => {
   it('starts a new save on Easy with only Easy unlocked', () => {
     expect(DEFAULT_PROGRESS).toEqual(currentState);
@@ -172,6 +208,32 @@ describe('difficulty progress schema', () => {
       ...currentState,
       pendingLeaderboardSubmissions: { normal: scoreRecord },
     })).toBeNull();
+  });
+
+  it.each(scoreContainers.flatMap((container) => (
+    invalidScoreRecords.map(([name, overrides]) => (
+      [container.name, name, container.withRecord, overrides] as const
+    ))
+  )))('rejects %s with %s', (_containerName, _invalidName, withRecord, overrides) => {
+    const persisted = withRecord({ ...scoreRecord, ...overrides });
+
+    expect(parsePersistedProgress(persisted)).toBeNull();
+  });
+
+  it.each(scoreContainers)('accepts Firestore score boundaries in $name records', ({ withRecord }) => {
+    const boundaryRecords = [
+      { ...scoreRecord, score: 0 },
+      { ...scoreRecord, score: 10_000_000 },
+      { ...scoreRecord, durationTicks: 0 },
+      { ...scoreRecord, durationTicks: 100_000_000 },
+      { ...scoreRecord, encountersWon: 0 },
+      { ...scoreRecord, encountersWon: 16 },
+      { ...scoreRecord, reachedFloor: 5, encountersWon: 16, owlDefeated: true },
+    ];
+
+    for (const record of boundaryRecords) {
+      expect(parsePersistedProgress(withRecord(record))).not.toBeNull();
+    }
   });
 
   it('deep-clones profile, score records, and pending leaderboard submissions', () => {
