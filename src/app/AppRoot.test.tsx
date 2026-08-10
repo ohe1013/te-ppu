@@ -38,6 +38,10 @@ import {
   type MatchRouteViewProps,
 } from './AppRoot';
 import type { AppServices } from './app-services';
+import {
+  TowerController,
+  type CompleteEncounterResult,
+} from './towerController';
 
 vi.mock('../render/BattleCanvas', () => ({
   BattleCanvas: () => null,
@@ -1357,6 +1361,76 @@ describe('AppRoot', () => {
     });
   });
 
+  it.each(['loss', 'draw'] as const)(
+    'lets the latest successful score snapshot supersede an earlier failed normal %s save',
+    async (result) => {
+      const originalCompleteEncounter = TowerController.prototype.completeEncounter;
+      const completionSpy = vi.spyOn(TowerController.prototype, 'completeEncounter')
+        .mockImplementation(function persistNormalCompletion(
+          this: TowerController,
+          floorResult,
+        ): Promise<CompleteEncounterResult> {
+          const completion = originalCompleteEncounter.call(this, floorResult);
+          const progressSave = this.updateSettings({});
+          return Promise.all([completion, progressSave]).then(([
+            completionResult,
+            progressSaveResult,
+          ]) => {
+            if (progressSaveResult.ok) return completionResult;
+            return {
+              ok: false,
+              reason: progressSaveResult.reason,
+              route: completionResult.route,
+              encounter: completionResult.encounter,
+              series: completionResult.series,
+              floorCompleted: completionResult.floorCompleted,
+            };
+          });
+        });
+
+      try {
+        const user = userEvent.setup();
+        const repository = new TestProgressRepository(floorOneProgress, [
+          {
+            ok: false,
+            error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+          },
+          { ok: true },
+        ]);
+        renderGame(repository);
+
+        await enterMatch(user, 1, 0);
+        await user.click(screen.getByRole('button', { name: `finish ${result}` }));
+        const resultScreen = await screen.findByTestId('result-screen');
+        await waitFor(() => expect(repository.saves).toHaveLength(2));
+
+        expect(repository.saves[0]?.localBestScores.easy).toBeNull();
+        expect(repository.saves[1]?.localBestScores.easy).toMatchObject({
+          score: 0,
+          durationTicks: 300,
+          reachedFloor: 1,
+          encountersWon: 0,
+          owlDefeated: false,
+          achievedAt: '2026-08-10T12:34:56.000Z',
+        });
+        expect(repository.saves[1]?.pendingLeaderboardSubmissions.easy).toEqual(
+          repository.saves[1]?.localBestScores.easy,
+        );
+        expect(within(resultScreen).queryByRole('alert')).not.toBeInTheDocument();
+        const continueButton = within(
+          resultScreen.querySelector<HTMLElement>('.screen-actions')!,
+        ).getByRole('button');
+        expect(continueButton).toBeEnabled();
+
+        await user.click(continueButton);
+        expect(await screen.findByTestId('title-screen')).toBeVisible();
+        expect(repository.saves).toHaveLength(2);
+      } finally {
+        completionSpy.mockRestore();
+      }
+    },
+  );
+
   it('submits an accepted final score only after its local save succeeds and does not await the remote write', async () => {
     const user = userEvent.setup();
     const progressRepository = new DeferredSaveRepository(floorOneProgress);
@@ -1636,6 +1710,93 @@ describe('AppRoot', () => {
     expect(repository.saves.at(-1)?.pendingLeaderboardSubmissions.easy).toEqual(
       repository.saves.at(-1)?.localBestScores.easy,
     );
+  });
+
+  it('lets the latest successful owl score snapshot supersede its failed progression save', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress, [
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      {
+        ok: false,
+        error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+      },
+      { ok: true },
+    ]);
+    renderGame(repository);
+
+    await reachOwlReveal(user);
+    expect(repository.saves).toHaveLength(5);
+    await user.click(within(screen.getByTestId('owl-reveal-screen')).getByRole('button'));
+    await screen.findByTestId('match-screen');
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    const owlResult = await screen.findByTestId('owl-result-screen');
+    await waitFor(() => expect(repository.saves).toHaveLength(7));
+
+    expect(repository.saves[5]?.difficultyProgress.easy.owlDefeated).toBe(true);
+    expect(repository.saves[5]?.localBestScores.easy).toBeNull();
+    expect(repository.saves[6]?.difficultyProgress.easy.owlDefeated).toBe(true);
+    expect(repository.saves[6]?.unlockedDifficulties.normal).toBe(true);
+    expect(repository.saves[6]?.localBestScores.easy).toMatchObject({
+      score: 31_000,
+      reachedFloor: 5,
+      encountersWon: 16,
+      owlDefeated: true,
+    });
+    expect(repository.saves[6]?.pendingLeaderboardSubmissions.easy).toEqual(
+      repository.saves[6]?.localBestScores.easy,
+    );
+    expect(within(owlResult).queryByRole('alert')).not.toBeInTheDocument();
+    const continueButton = within(
+      owlResult.querySelector<HTMLElement>('.screen-actions')!,
+    ).getByRole('button');
+    expect(continueButton).toBeEnabled();
+
+    await user.click(continueButton);
+    expect(await screen.findByTestId('ending-screen')).toBeInTheDocument();
+    expect(repository.saves).toHaveLength(7);
+  });
+
+  it('blocks an owl result when the latest score snapshot fails and retries that snapshot', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorFiveProgress, [
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      { ok: true },
+      {
+        ok: false,
+        error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+      },
+      { ok: true },
+    ]);
+    renderGame(repository);
+
+    await reachOwlReveal(user);
+    await user.click(within(screen.getByTestId('owl-reveal-screen')).getByRole('button'));
+    await screen.findByTestId('match-screen');
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    const owlResult = await screen.findByTestId('owl-result-screen');
+    await waitFor(() => expect(repository.saves).toHaveLength(7));
+
+    const alert = within(owlResult).getByRole('alert');
+    const continueButton = within(
+      owlResult.querySelector<HTMLElement>('.screen-actions')!,
+    ).getByRole('button');
+    expect(continueButton).toBeDisabled();
+    await user.click(within(alert).getByRole('button'));
+
+    await waitFor(() => expect(repository.saves).toHaveLength(8));
+    expect(repository.saves[7]).toEqual(repository.saves[6]);
+    expect(within(owlResult).queryByRole('alert')).not.toBeInTheDocument();
+    expect(continueButton).toBeEnabled();
+    await user.click(continueButton);
+    expect(await screen.findByTestId('ending-screen')).toBeInTheDocument();
   });
 
   it('reveals the hidden owl boss after the floor-five victory', async () => {

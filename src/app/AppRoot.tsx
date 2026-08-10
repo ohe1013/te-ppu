@@ -390,9 +390,10 @@ export function AppRoot({
     if (controller === null) return null;
     const previousBest = controller.progress.localBestScores[record.difficulty];
     const accepted = isBetterScore(record, previousBest);
+    if (!accepted) return null;
     const result = await controller.recordScore(record, true);
     if (mountedRef.current) refreshControllerView();
-    if (result.ok && accepted && leaderboardRepository.kind === 'firestore') {
+    if (result.ok && leaderboardRepository.kind === 'firestore') {
       const pending = controller.progress.pendingLeaderboardSubmissions[record.difficulty];
       if (pending !== undefined && sameScoreRecord(pending, record)) {
         void leaderboard.submitPending(record.difficulty, pending);
@@ -432,13 +433,14 @@ export function AppRoot({
     setResultSavePending(identity.encounterIndex === 2 || finalScoreSave !== null);
     dispatchRoute({ type: 'match-finished', result });
     refreshControllerView();
-    const saveResults = await Promise.all(finalScoreSave === null
-      ? [progressSave]
-      : [progressSave, finalScoreSave]);
+    const [progressSaveResult, finalScoreSaveResult] = await Promise.all([
+      progressSave,
+      finalScoreSave ?? Promise.resolve(null),
+    ]);
     if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
     setResultSavePending(false);
-    setResultSaveFailed(saveResults.some((saveResult) => saveResult?.ok !== true));
+    setResultSaveFailed((finalScoreSaveResult ?? progressSaveResult).ok !== true);
     refreshControllerView();
   }
 
@@ -490,13 +492,14 @@ export function AppRoot({
       : null;
     dispatchRoute({ type: 'owl-match-finished', result });
     refreshControllerView();
-    const saveResults = await Promise.all(finalScoreSave === null
-      ? [progressSave]
-      : [progressSave, finalScoreSave]);
+    const [progressSaveResult, finalScoreSaveResult] = await Promise.all([
+      progressSave,
+      finalScoreSave ?? Promise.resolve(null),
+    ]);
     if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
     setResultSavePending(false);
-    setResultSaveFailed(saveResults.some((saveResult) => saveResult?.ok !== true));
+    setResultSaveFailed((finalScoreSaveResult ?? progressSaveResult).ok !== true);
     refreshControllerView();
   }
 

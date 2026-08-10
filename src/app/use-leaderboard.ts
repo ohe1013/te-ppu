@@ -34,6 +34,31 @@ export interface UseLeaderboardOptions {
 
 type CandidateMap = Partial<Record<Difficulty, ScoreRecord>>;
 
+interface RepositoryContext {
+  readonly generation: number;
+  readonly repository: LeaderboardRepository;
+  readonly queued: CandidateMap;
+  readonly inFlight: CandidateMap;
+  readonly retained: CandidateMap;
+  readonly cleared: CandidateMap;
+  worker: Promise<void> | null;
+}
+
+interface VersionedReadState {
+  readonly generation: number;
+  readonly value: LeaderboardReadState;
+}
+
+function idleReadState(): LeaderboardReadState {
+  return {
+    status: 'idle',
+    difficulty: null,
+    source: null,
+    currentUserId: null,
+    entries: [],
+  };
+}
+
 function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
   return left.schemaVersion === right.schemaVersion
     && left.initials === right.initials
@@ -53,46 +78,89 @@ function cloneCandidateMap(source: CandidateMap): CandidateMap {
   ) as CandidateMap;
 }
 
+function carryPendingCandidates(context: RepositoryContext): CandidateMap {
+  const carried: CandidateMap = {};
+  for (const source of [context.retained, context.queued, context.inFlight]) {
+    for (const difficulty of DIFFICULTIES) {
+      const candidate = source[difficulty];
+      const current = carried[difficulty];
+      if (
+        candidate !== undefined
+        && (current === undefined || isBetterScore(candidate, current))
+      ) {
+        carried[difficulty] = { ...candidate };
+      }
+    }
+  }
+  return carried;
+}
+
+function createRepositoryContext(
+  repository: LeaderboardRepository,
+  generation: number,
+  retained: CandidateMap = {},
+): RepositoryContext {
+  return {
+    generation,
+    repository,
+    queued: {},
+    inFlight: {},
+    retained: cloneCandidateMap(retained),
+    cleared: {},
+    worker: null,
+  };
+}
+
 export function useLeaderboard({
   repository,
   progress,
   onClearPending,
 }: UseLeaderboardOptions) {
-  const [read, setRead] = useState<LeaderboardReadState>({
-    status: 'idle',
-    difficulty: null,
-    source: null,
-    currentUserId: null,
-    entries: [],
+  const [versionedRead, setVersionedRead] = useState<VersionedReadState>({
+    generation: 0,
+    value: idleReadState(),
   });
   const [, refreshQueueState] = useReducer((value: number) => value + 1, 0);
   const mountedRef = useRef(false);
   const readTokenRef = useRef(0);
   const progressRef = useRef(cloneProgressState(progress));
   const onClearPendingRef = useRef(onClearPending);
-  const queuedRef = useRef<CandidateMap>({});
-  const inFlightRef = useRef<CandidateMap>({});
-  const retainedRef = useRef<CandidateMap>({});
-  const clearedRef = useRef<CandidateMap>({});
-  const workerRef = useRef<Promise<void> | null>(null);
+  const repositoryContextRef = useRef<RepositoryContext | null>(null);
+
+  const previousRepositoryContext = repositoryContextRef.current;
+  let repositoryContext: RepositoryContext;
+  if (previousRepositoryContext === null) {
+    repositoryContext = createRepositoryContext(repository, 0);
+    repositoryContextRef.current = repositoryContext;
+  } else if (previousRepositoryContext.repository !== repository) {
+    repositoryContext = createRepositoryContext(
+      repository,
+      previousRepositoryContext.generation + 1,
+      carryPendingCandidates(previousRepositoryContext),
+    );
+    repositoryContextRef.current = repositoryContext;
+    readTokenRef.current += 1;
+  } else {
+    repositoryContext = previousRepositoryContext;
+  }
 
   progressRef.current = cloneProgressState(progress);
   onClearPendingRef.current = onClearPending;
 
   for (const difficulty of DIFFICULTIES) {
-    const cleared = clearedRef.current[difficulty];
+    const cleared = repositoryContext.cleared[difficulty];
     const stored = progress.pendingLeaderboardSubmissions[difficulty];
     if (cleared !== undefined && (stored === undefined || !sameScoreRecord(stored, cleared))) {
-      delete clearedRef.current[difficulty];
+      delete repositoryContext.cleared[difficulty];
     }
-    const retained = retainedRef.current[difficulty];
+    const retained = repositoryContext.retained[difficulty];
     if (
       retained !== undefined
       && stored !== undefined
       && !sameScoreRecord(stored, retained)
       && isBetterScore(stored, retained)
     ) {
-      delete retainedRef.current[difficulty];
+      delete repositoryContext.retained[difficulty];
     }
   }
 
@@ -104,106 +172,134 @@ export function useLeaderboard({
     };
   }, []);
 
-  const notifyQueueChanged = useCallback(() => {
-    if (mountedRef.current) refreshQueueState();
+  const notifyQueueChanged = useCallback((context: RepositoryContext) => {
+    if (mountedRef.current && repositoryContextRef.current === context) refreshQueueState();
   }, []);
 
   const load = useCallback(async (difficulty: Difficulty): Promise<void> => {
+    const context = repositoryContext;
     const token = ++readTokenRef.current;
-    if (repository.kind === 'local') {
-      setRead({
-        status: 'local',
-        difficulty,
-        source: 'local',
-        currentUserId: null,
-        entries: [],
+    if (context.repository.kind === 'local') {
+      setVersionedRead({
+        generation: context.generation,
+        value: {
+          status: 'local',
+          difficulty,
+          source: 'local',
+          currentUserId: null,
+          entries: [],
+        },
       });
       return;
     }
 
-    setRead({
-      status: 'loading',
-      difficulty,
-      source: 'firestore',
-      currentUserId: null,
-      entries: [],
+    setVersionedRead({
+      generation: context.generation,
+      value: {
+        status: 'loading',
+        difficulty,
+        source: 'firestore',
+        currentUserId: null,
+        entries: [],
+      },
     });
     try {
-      const response = await repository.getTop(difficulty);
-      if (!mountedRef.current || token !== readTokenRef.current) return;
+      const response = await context.repository.getTop(difficulty);
+      if (
+        !mountedRef.current
+        || token !== readTokenRef.current
+        || repositoryContextRef.current !== context
+      ) return;
       if (!response.ok) {
-        setRead({
+        setVersionedRead({
+          generation: context.generation,
+          value: {
+            status: 'unavailable',
+            difficulty,
+            source: 'firestore',
+            currentUserId: null,
+            entries: [],
+          },
+        });
+        return;
+      }
+      setVersionedRead({
+        generation: context.generation,
+        value: {
+          status: 'ready',
+          difficulty,
+          source: 'firestore',
+          currentUserId: response.currentUserId,
+          entries: response.entries.map((entry) => ({ ...entry })),
+        },
+      });
+    } catch {
+      if (
+        !mountedRef.current
+        || token !== readTokenRef.current
+        || repositoryContextRef.current !== context
+      ) return;
+      setVersionedRead({
+        generation: context.generation,
+        value: {
           status: 'unavailable',
           difficulty,
           source: 'firestore',
           currentUserId: null,
           entries: [],
-        });
-        return;
-      }
-      setRead({
-        status: 'ready',
-        difficulty,
-        source: 'firestore',
-        currentUserId: response.currentUserId,
-        entries: response.entries.map((entry) => ({ ...entry })),
-      });
-    } catch {
-      if (!mountedRef.current || token !== readTokenRef.current) return;
-      setRead({
-        status: 'unavailable',
-        difficulty,
-        source: 'firestore',
-        currentUserId: null,
-        entries: [],
+        },
       });
     }
-  }, [repository]);
+  }, [repositoryContext]);
 
   const enqueueCandidates = useCallback((candidates: CandidateMap): Promise<void> => {
-    if (repository.kind === 'local') return Promise.resolve();
+    const context = repositoryContext;
+    if (context.repository.kind === 'local') return Promise.resolve();
 
     for (const difficulty of DIFFICULTIES) {
       const candidate = candidates[difficulty];
       if (candidate === undefined) continue;
-      const inFlight = inFlightRef.current[difficulty];
+      const inFlight = context.inFlight[difficulty];
       if (inFlight !== undefined && sameScoreRecord(inFlight, candidate)) continue;
-      const queued = queuedRef.current[difficulty];
+      const queued = context.queued[difficulty];
       if (
         queued !== undefined
         && (sameScoreRecord(queued, candidate) || !isBetterScore(candidate, queued))
       ) continue;
-      queuedRef.current[difficulty] = { ...candidate };
+      context.queued[difficulty] = { ...candidate };
     }
 
-    if (workerRef.current !== null) {
-      notifyQueueChanged();
-      return workerRef.current;
+    if (context.worker !== null) {
+      notifyQueueChanged(context);
+      return context.worker;
     }
 
     const drainQueue = async (): Promise<void> => {
       while (true) {
+        if (!mountedRef.current || repositoryContextRef.current !== context) return;
         const difficulty = DIFFICULTIES.find(
-          (candidateDifficulty) => queuedRef.current[candidateDifficulty] !== undefined,
+          (candidateDifficulty) => context.queued[candidateDifficulty] !== undefined,
         );
         if (difficulty === undefined) return;
-        const queued = queuedRef.current[difficulty];
+        const queued = context.queued[difficulty];
         if (queued === undefined) continue;
         const candidate = { ...queued };
-        delete queuedRef.current[difficulty];
-        inFlightRef.current[difficulty] = { ...candidate };
-        notifyQueueChanged();
+        delete context.queued[difficulty];
+        context.inFlight[difficulty] = { ...candidate };
+        notifyQueueChanged(context);
 
         let writeSucceeded = false;
         try {
-          const write = await repository.submitBest({ ...candidate });
+          const write = await context.repository.submitBest({ ...candidate });
           writeSucceeded = write.ok && write.source === 'firestore';
         } catch {
           writeSucceeded = false;
         }
 
+        if (!mountedRef.current || repositoryContextRef.current !== context) return;
+
         if (!writeSucceeded) {
-          retainedRef.current[difficulty] = { ...candidate };
+          context.retained[difficulty] = { ...candidate };
         } else {
           let clearSucceeded = false;
           try {
@@ -212,41 +308,42 @@ export function useLeaderboard({
           } catch {
             clearSucceeded = false;
           }
+          if (!mountedRef.current || repositoryContextRef.current !== context) return;
           if (clearSucceeded) {
-            const retained = retainedRef.current[difficulty];
+            const retained = context.retained[difficulty];
             if (retained !== undefined && sameScoreRecord(retained, candidate)) {
-              delete retainedRef.current[difficulty];
+              delete context.retained[difficulty];
             }
-            clearedRef.current[difficulty] = { ...candidate };
+            context.cleared[difficulty] = { ...candidate };
           } else {
-            retainedRef.current[difficulty] = { ...candidate };
+            context.retained[difficulty] = { ...candidate };
           }
         }
 
-        delete inFlightRef.current[difficulty];
-        notifyQueueChanged();
+        delete context.inFlight[difficulty];
+        notifyQueueChanged(context);
       }
     };
 
     const worker = drainQueue().finally(() => {
-      if (workerRef.current === worker) workerRef.current = null;
-      notifyQueueChanged();
+      if (context.worker === worker) context.worker = null;
+      notifyQueueChanged(context);
     });
-    workerRef.current = worker;
-    notifyQueueChanged();
+    context.worker = worker;
+    notifyQueueChanged(context);
     return worker;
-  }, [notifyQueueChanged, repository]);
+  }, [notifyQueueChanged, repositoryContext]);
 
   const retryPending = useCallback((): Promise<void> => {
-    if (repository.kind === 'local') return Promise.resolve();
+    if (repositoryContext.repository.kind === 'local') return Promise.resolve();
     const candidates = cloneCandidateMap(progressRef.current.pendingLeaderboardSubmissions);
     for (const difficulty of DIFFICULTIES) {
-      const cleared = clearedRef.current[difficulty];
+      const cleared = repositoryContext.cleared[difficulty];
       const stored = candidates[difficulty];
       if (cleared !== undefined && stored !== undefined && sameScoreRecord(cleared, stored)) {
         delete candidates[difficulty];
       }
-      const retained = retainedRef.current[difficulty];
+      const retained = repositoryContext.retained[difficulty];
       const remaining = candidates[difficulty];
       if (retained === undefined) continue;
       if (remaining === undefined || !isBetterScore(remaining, retained)) {
@@ -254,7 +351,7 @@ export function useLeaderboard({
       }
     }
     return enqueueCandidates(candidates);
-  }, [enqueueCandidates, repository.kind]);
+  }, [enqueueCandidates, repositoryContext]);
 
   const submitPending = useCallback((
     difficulty: Difficulty,
@@ -262,14 +359,18 @@ export function useLeaderboard({
   ): Promise<void> => enqueueCandidates({ [difficulty]: { ...candidate } }), [enqueueCandidates]);
 
   const pendingDifficulties = Object.fromEntries(DIFFICULTIES.map((difficulty) => {
-    if (repository.kind === 'local') return [difficulty, false];
+    if (repositoryContext.repository.kind === 'local') return [difficulty, false];
     const stored = progress.pendingLeaderboardSubmissions[difficulty];
-    const cleared = clearedRef.current[difficulty];
-    return [difficulty, retainedRef.current[difficulty] !== undefined
-      || queuedRef.current[difficulty] !== undefined
-      || inFlightRef.current[difficulty] !== undefined
+    const cleared = repositoryContext.cleared[difficulty];
+    return [difficulty, repositoryContext.retained[difficulty] !== undefined
+      || repositoryContext.queued[difficulty] !== undefined
+      || repositoryContext.inFlight[difficulty] !== undefined
       || (stored !== undefined && (cleared === undefined || !sameScoreRecord(stored, cleared)))];
   })) as Record<Difficulty, boolean>;
+
+  const read = versionedRead.generation === repositoryContext.generation
+    ? versionedRead.value
+    : idleReadState();
 
   return {
     read,

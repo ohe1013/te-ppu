@@ -202,6 +202,93 @@ describe('useLeaderboard reads', () => {
       currentUserId: 'hard-user',
     });
   });
+
+  it.each([
+    {
+      label: 'success',
+      staleResult: {
+        ok: true,
+        source: 'firestore',
+        currentUserId: 'repository-a-user',
+        entries: [leaderboardEntry('easy', 'repository-a-user', { score: 91_000 })],
+      } satisfies LeaderboardReadResult,
+    },
+    {
+      label: 'failure',
+      staleResult: {
+        ok: false,
+        reason: 'READ_FAILED',
+        entries: [],
+      } satisfies LeaderboardReadResult,
+    },
+  ])('invalidates a deferred repository A $label when repository B replaces it', async ({
+    staleResult,
+  }) => {
+    const readA = deferred<LeaderboardReadResult>();
+    const readB = deferred<LeaderboardReadResult>();
+    const repositoryA = repository({ getTop: vi.fn(() => readA.promise) });
+    const repositoryB = repository({ getTop: vi.fn(() => readB.promise) });
+    const { result, rerender } = renderHook(
+      ({ activeRepository }: { activeRepository: LeaderboardRepository }) => useLeaderboard({
+        repository: activeRepository,
+        progress: DEFAULT_PROGRESS,
+        onClearPending: async () => ({ ok: true }),
+      }),
+      { initialProps: { activeRepository: repositoryA } },
+    );
+
+    let staleLoad!: Promise<void>;
+    act(() => {
+      staleLoad = result.current.load('easy');
+    });
+    expect(result.current.read).toMatchObject({ status: 'loading', difficulty: 'easy' });
+
+    rerender({ activeRepository: repositoryB });
+    expect(result.current.read).toEqual({
+      status: 'idle',
+      difficulty: null,
+      source: null,
+      currentUserId: null,
+      entries: [],
+    });
+
+    await act(async () => {
+      readA.resolve(staleResult);
+      await staleLoad;
+    });
+    expect(result.current.read).toEqual({
+      status: 'idle',
+      difficulty: null,
+      source: null,
+      currentUserId: null,
+      entries: [],
+    });
+
+    const repositoryBEntry = leaderboardEntry('easy', 'repository-b-user', { score: 42_000 });
+    let currentLoad!: Promise<void>;
+    act(() => {
+      currentLoad = result.current.load('easy');
+    });
+    await act(async () => {
+      readB.resolve({
+        ok: true,
+        source: 'firestore',
+        currentUserId: 'repository-b-user',
+        entries: [repositoryBEntry],
+      });
+      await currentLoad;
+    });
+
+    expect(result.current.read).toEqual({
+      status: 'ready',
+      difficulty: 'easy',
+      source: 'firestore',
+      currentUserId: 'repository-b-user',
+      entries: [repositoryBEntry],
+    });
+    expect(repositoryA.getTop).toHaveBeenCalledTimes(1);
+    expect(repositoryB.getTop).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('useLeaderboard pending submission queue', () => {
@@ -224,8 +311,9 @@ describe('useLeaderboard pending submission queue', () => {
       return { ok: true as const };
     });
     const progress = progressWithPending(...candidates);
+    const remote = repository({ submitBest });
     const { result } = renderHook(() => useLeaderboard({
-      repository: repository({ submitBest }),
+      repository: remote,
       progress,
       onClearPending,
     }));
@@ -258,10 +346,11 @@ describe('useLeaderboard pending submission queue', () => {
     async (reason) => {
       const candidate = scoreRecord('easy');
       const onClearPending = vi.fn(async () => ({ ok: true as const }));
+      const remote = repository({
+        submitBest: vi.fn(async () => ({ ok: false as const, reason })),
+      });
       const { result } = renderHook(() => useLeaderboard({
-        repository: repository({
-          submitBest: vi.fn(async () => ({ ok: false as const, reason })),
-        }),
+        repository: remote,
         progress: progressWithPending(candidate),
         onClearPending,
       }));
@@ -292,9 +381,10 @@ describe('useLeaderboard pending submission queue', () => {
       _candidate: ScoreRecord,
     ) => ({ ok: true as const }));
     const initialProgress = progressWithPending(oldCandidate);
+    const remote = repository({ submitBest });
     const { result, rerender } = renderHook(
       ({ progress }: { progress: ProgressState }) => useLeaderboard({
-        repository: repository({ submitBest }),
+        repository: remote,
         progress,
         onClearPending,
       }),
@@ -332,6 +422,82 @@ describe('useLeaderboard pending submission queue', () => {
     ]);
   });
 
+  it('isolates repository B queue state from a deferred repository A worker', async () => {
+    const writeA = deferred<LeaderboardWriteResult>();
+    const writeB = deferred<LeaderboardWriteResult>();
+    const oldCandidate = scoreRecord('easy', { score: 1_000 });
+    const newerCandidate = scoreRecord('easy', {
+      score: 2_000,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const submitA = vi.fn<LeaderboardRepository['submitBest']>(() => writeA.promise);
+    const submitB = vi.fn<LeaderboardRepository['submitBest']>(() => writeB.promise);
+    const repositoryA = repository({ submitBest: submitA });
+    const repositoryB = repository({ submitBest: submitB });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const { result, rerender } = renderHook(
+      ({
+        activeRepository,
+        progress,
+      }: {
+        activeRepository: LeaderboardRepository;
+        progress: ProgressState;
+      }) => useLeaderboard({
+        repository: activeRepository,
+        progress,
+        onClearPending,
+      }),
+      {
+        initialProps: {
+          activeRepository: repositoryA,
+          progress: progressWithPending(oldCandidate),
+        },
+      },
+    );
+
+    let oldRetry!: Promise<void>;
+    act(() => {
+      oldRetry = result.current.retryPending();
+    });
+    expect(vi.mocked(submitA).mock.calls.map(([candidate]) => candidate.score)).toEqual([1_000]);
+
+    rerender({
+      activeRepository: repositoryB,
+      progress: progressWithPending(newerCandidate),
+    });
+    let newerRetry!: Promise<void>;
+    act(() => {
+      newerRetry = result.current.retryPending();
+    });
+
+    expect(vi.mocked(submitB).mock.calls.map(([candidate]) => candidate.score)).toEqual([2_000]);
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    await act(async () => {
+      writeA.resolve({ ok: true, source: 'firestore' });
+      await oldRetry;
+    });
+
+    expect(vi.mocked(submitA).mock.calls.map(([candidate]) => candidate.score)).toEqual([1_000]);
+    expect(vi.mocked(submitB).mock.calls.map(([candidate]) => candidate.score)).toEqual([2_000]);
+    expect(onClearPending).not.toHaveBeenCalled();
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    await act(async () => {
+      writeB.resolve({ ok: true, source: 'firestore' });
+      await newerRetry;
+    });
+
+    expect(vi.mocked(submitB).mock.calls.map(([candidate]) => candidate.score)).toEqual([2_000]);
+    expect(vi.mocked(onClearPending).mock.calls.map(([, candidate]) => candidate.score)).toEqual([
+      2_000,
+    ]);
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+
   it('retains a remotely written candidate until its local clear saves successfully', async () => {
     const candidate = scoreRecord('easy');
     const submitBest = vi.fn(async () => ({ ok: true as const, source: 'firestore' as const }));
@@ -339,9 +505,10 @@ describe('useLeaderboard pending submission queue', () => {
       .mockResolvedValueOnce({ ok: false })
       .mockResolvedValueOnce({ ok: true });
     const initialProgress = progressWithPending(candidate);
+    const remote = repository({ submitBest });
     const { result, rerender } = renderHook(
       ({ progress }: { progress: ProgressState }) => useLeaderboard({
-        repository: repository({ submitBest }),
+        repository: remote,
         progress,
         onClearPending,
       }),
