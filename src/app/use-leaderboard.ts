@@ -73,9 +73,7 @@ function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
 }
 
 function sameRankingStream(left: ScoreRecord, right: ScoreRecord): boolean {
-  return left.initials === right.initials
-    && left.characterId === right.characterId
-    && left.difficulty === right.difficulty;
+  return left.difficulty === right.difficulty;
 }
 
 function cloneCandidateMap(source: CandidateMap): CandidateMap {

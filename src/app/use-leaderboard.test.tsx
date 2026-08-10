@@ -544,6 +544,62 @@ describe('useLeaderboard pending submission queue', () => {
     expect(result.current.pendingDifficulties.easy).toBe(false);
   });
 
+  it('discards a failed 1000 retry after the same user changes profile and syncs 2000', async () => {
+    const olderCandidate = scoreRecord('easy', {
+      initials: 'RVT',
+      characterId: 'hero-engineer',
+      score: 1_000,
+    });
+    const newerCandidate = scoreRecord('easy', {
+      initials: 'NEW',
+      characterId: 'cloud-courier',
+      score: 2_000,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const submitBest = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValueOnce({ ok: false, reason: 'WRITE_FAILED' })
+      .mockResolvedValue({ ok: true, source: 'firestore' });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const remote = repository({ submitBest });
+    const { result, rerender } = renderHook(
+      ({ progress }: { progress: ProgressState }) => useLeaderboard({
+        repository: remote,
+        progress,
+        onClearPending,
+      }),
+      { initialProps: { progress: progressWithPending(olderCandidate) } },
+    );
+
+    await act(async () => {
+      await result.current.retryPending();
+      await result.current.submitPending('easy', newerCandidate);
+    });
+    rerender({ progress: cloneProgressState(DEFAULT_PROGRESS) });
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(vi.mocked(submitBest).mock.calls.map(([candidate]) => ({
+      score: candidate.score,
+      initials: candidate.initials,
+      characterId: candidate.characterId,
+    }))).toEqual([
+      { score: 1_000, initials: 'RVT', characterId: 'hero-engineer' },
+      { score: 2_000, initials: 'NEW', characterId: 'cloud-courier' },
+    ]);
+    expect(vi.mocked(onClearPending).mock.calls.map(([, candidate]) => ({
+      score: candidate.score,
+      initials: candidate.initials,
+      characterId: candidate.characterId,
+    }))).toEqual([
+      { score: 2_000, initials: 'NEW', characterId: 'cloud-courier' },
+    ]);
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+
   it('keeps a failed 2000 retry when an older 1000 candidate synchronizes', async () => {
     const newerCandidate = scoreRecord('easy', { score: 2_000 });
     const olderCandidate = scoreRecord('easy', {
