@@ -47,6 +47,7 @@ import { AssetIcon } from '../match/AssetIcon';
 import {
   createPortraitMemory,
   createPortraitPresentation,
+  mapOwlPortraitUrls,
   reducePortraitBatches,
   resolvePortraitState,
   type PortraitMemory,
@@ -315,18 +316,21 @@ export function MatchScreen({
     onEvents: handleMatchEvents,
     onFinished,
   });
-  const resolvedPortraitSources = useMemo(() => ({
-    player: {
-      ...portraitUrls(playerAssets?.portraits),
-      ...portraitSources?.player,
-    },
-    opponent: {
+  const resolvedPortraitSources = useMemo(() => {
+    const opponent = {
       ...portraitUrls(isOwlMatch
         ? commonAssets?.owl.portraits
         : commonAssets?.rivals[getFloorEncounter(floor, encounterIndex).characterId]?.portraits),
       ...portraitSources?.opponent,
-    },
-  }), [
+    };
+    return {
+      player: {
+        ...portraitUrls(playerAssets?.portraits),
+        ...portraitSources?.player,
+      },
+      opponent: isOwlMatch ? mapOwlPortraitUrls(opponent) : opponent,
+    };
+  }, [
     commonAssets?.owl.portraits,
     commonAssets?.rivals,
     encounter.characterId,

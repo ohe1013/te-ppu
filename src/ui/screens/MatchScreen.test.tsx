@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PlayerCharacterAssets } from '../../assets';
+import type { CommonAssets, PlayerCharacterAssets } from '../../assets';
 import { createMatch, createPublicMatchView, type GameEvent } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
 import type { AudioPort } from '../../platform/audio-port';
@@ -144,6 +144,23 @@ const cloudCourierAssets = {
   },
 } as PlayerCharacterAssets;
 
+const owlCommonAssets = {
+  audio: { bgm: {}, sfx: {} },
+  generation: 1,
+  icons: {},
+  items: {},
+  owl: {
+    portraits: {
+      cheer: { url: '/owl/portrait-cheer.webp' },
+      idle: { url: '/owl/portrait-idle.webp' },
+      worry: { url: '/owl/portrait-worry.webp' },
+    },
+  },
+  players: {},
+  rivals: {},
+  tiles: {},
+} as unknown as CommonAssets;
+
 function portraitLoop(
   event: GameEvent | null,
   status: MatchLoopView['view']['status'] = 'playing',
@@ -165,6 +182,35 @@ function portraitLoop(
   return {
     ...loop,
     eventBatches,
+    events: event === null ? [] : [event],
+    view,
+  };
+}
+
+function owlPortraitLoop(
+  state: 'idle' | 'attack' | 'hit' | 'rage' | 'defeat',
+): MatchLoopView {
+  const loop = activeLoop();
+  const event = state === 'attack'
+    ? { amount: 2, side: 'opponent' as const, type: 'attack-sent' as const }
+    : state === 'hit'
+      ? { amount: 2, side: 'opponent' as const, type: 'garbage-landed' as const }
+      : null;
+  const view = {
+    ...loop.view,
+    status: state === 'defeat' ? 'player-won' as const : 'playing' as const,
+    tick: 10,
+    sides: {
+      ...loop.view.sides,
+      opponent: {
+        ...loop.view.sides.opponent,
+        incoming: state === 'rage' ? 4 : loop.view.sides.opponent.incoming,
+      },
+    },
+  };
+  return {
+    ...loop,
+    eventBatches: event === null ? [] : [{ events: [event], tick: 10, view }],
     events: event === null ? [] : [event],
     view,
   };
@@ -233,6 +279,49 @@ describe('MatchScreen', () => {
       .toHaveAttribute('data-character-id', 'owl-companion');
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
     expect(screen.getByText('HIDDEN BOSS')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['idle', '/owl/portrait-idle.webp'],
+    ['attack', '/owl/portrait-cheer.webp'],
+    ['hit', '/owl/portrait-worry.webp'],
+    ['rage', '/owl/portrait-worry.webp'],
+    ['defeat', '/owl/portrait-worry.webp'],
+  ] as const)('renders the owl %s state with its mapped authored portrait URL', (
+    portraitState,
+    expectedUrl,
+  ) => {
+    useMatchLoopMock.mockReturnValue(owlPortraitLoop(portraitState));
+
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        commonAssets={owlCommonAssets}
+        floor={5}
+        onFinished={vi.fn()}
+        seed={17}
+        specialEncounter={{
+          characterId: 'owl-companion',
+          displayName: 'Owl Architect',
+          intro: 'The tower architect reveals the truth.',
+          lossLine: 'The tower resets.',
+          title: 'Tower Architect',
+          winLine: 'The tower opens.',
+        }}
+      />,
+    );
+
+    const opponentHud = screen.getByRole('region', {
+      name: 'Owl Architect battle status',
+    });
+    expect(opponentHud.querySelector('[data-portrait-state]')).toHaveAttribute(
+      'data-portrait-state',
+      portraitState,
+    );
+    expect(screen.getByAltText(`RIVAL ${portraitState} portrait`)).toHaveAttribute(
+      'src',
+      expectedUrl,
+    );
   });
 
   it.each([

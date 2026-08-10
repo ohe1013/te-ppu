@@ -382,4 +382,47 @@ describe('portrait state', () => {
       state: 'panic',
     });
   });
+
+  it('maps owl battle states to the authored cheer and worry portrait URLs', async () => {
+    const { mapOwlPortraitUrls } = await portraitRuntime();
+
+    const mapped = mapOwlPortraitUrls({
+      cheer: '/owl-cheer.webp',
+      idle: '/owl-idle.webp',
+      worry: '/owl-worry.webp',
+    });
+
+    expect(mapped).toMatchObject({
+      attack: '/owl-cheer.webp',
+      cheer: '/owl-cheer.webp',
+      defeat: '/owl-worry.webp',
+      hit: '/owl-worry.webp',
+      idle: '/owl-idle.webp',
+      rage: '/owl-worry.webp',
+      worry: '/owl-worry.webp',
+    });
+  });
+
+  it('keeps owl portrait fallback behavior when an authored source is absent', async () => {
+    const { createPortraitPresentation, mapOwlPortraitUrls } = await portraitRuntime();
+
+    expect(createPortraitPresentation(
+      'hit',
+      mapOwlPortraitUrls({ idle: '/owl-idle.webp' }),
+      'RIVAL',
+    )).toEqual({
+      alt: 'RIVAL hit portrait',
+      state: 'hit',
+      url: '/owl-idle.webp',
+    });
+    expect(createPortraitPresentation(
+      'hit',
+      mapOwlPortraitUrls({ cheer: '/owl-cheer.webp' }),
+      'RIVAL',
+    )).toEqual({
+      alt: 'RIVAL hit portrait',
+      state: 'hit',
+    });
+    expect(mapOwlPortraitUrls(undefined)).toEqual({});
+  });
 });

@@ -1,4 +1,4 @@
-import type { PortraitState } from '../../assets/index';
+import type { OwlPortraitState, PortraitState } from '../../assets/index';
 import type { GameEventBatch } from '../../app/use-match-loop';
 import {
   BOARD_WIDTH,
@@ -192,6 +192,34 @@ export function resolvePortraitState({
 
 function usableUrl(url: string | undefined): string | undefined {
   return url === undefined || url === '' ? undefined : url;
+}
+
+const OWL_PORTRAIT_SOURCE_STATE = {
+  attack: 'cheer',
+  cheer: 'cheer',
+  defeat: 'worry',
+  hit: 'worry',
+  idle: 'idle',
+  rage: 'worry',
+  worry: 'worry',
+} as const satisfies Partial<Record<PortraitState, OwlPortraitState>>;
+
+export function mapOwlPortraitUrls(
+  urls: Partial<Record<PortraitState, string>> | undefined,
+): Partial<Record<PortraitState, string>> {
+  const mapped = { ...urls };
+  for (const [state, sourceState] of Object.entries(OWL_PORTRAIT_SOURCE_STATE) as
+    [PortraitState, OwlPortraitState][]) {
+    const directUrl = usableUrl(mapped[state]);
+    if (directUrl !== undefined) {
+      mapped[state] = directUrl;
+      continue;
+    }
+    const sourceUrl = usableUrl(urls?.[sourceState]);
+    if (sourceUrl === undefined) delete mapped[state];
+    else mapped[state] = sourceUrl;
+  }
+  return mapped;
 }
 
 export function createPortraitPresentation(
