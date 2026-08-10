@@ -72,6 +72,12 @@ function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
     && left.achievedAt === right.achievedAt;
 }
 
+function sameRankingStream(left: ScoreRecord, right: ScoreRecord): boolean {
+  return left.initials === right.initials
+    && left.characterId === right.characterId
+    && left.difficulty === right.difficulty;
+}
+
 function cloneCandidateMap(source: CandidateMap): CandidateMap {
   return Object.fromEntries(
     Object.entries(source).map(([difficulty, candidate]) => [difficulty, { ...candidate }]),
@@ -311,7 +317,13 @@ export function useLeaderboard({
           if (!mountedRef.current || repositoryContextRef.current !== context) return;
           if (clearSucceeded) {
             const retained = context.retained[difficulty];
-            if (retained !== undefined && sameScoreRecord(retained, candidate)) {
+            if (
+              retained !== undefined
+              && (
+                sameScoreRecord(retained, candidate)
+                || (sameRankingStream(retained, candidate) && isBetterScore(candidate, retained))
+              )
+            ) {
               delete context.retained[difficulty];
             }
             context.cleared[difficulty] = { ...candidate };

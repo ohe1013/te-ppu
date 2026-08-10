@@ -498,6 +498,94 @@ describe('useLeaderboard pending submission queue', () => {
     expect(result.current.pendingDifficulties.easy).toBe(false);
   });
 
+  it('discards a failed 1000 retry after a newer 2000 candidate synchronizes', async () => {
+    const olderCandidate = scoreRecord('easy', { score: 1_000 });
+    const newerCandidate = scoreRecord('easy', {
+      score: 2_000,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const submitBest = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValueOnce({ ok: false, reason: 'WRITE_FAILED' })
+      .mockResolvedValue({ ok: true, source: 'firestore' });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const remote = repository({ submitBest });
+    const { result, rerender } = renderHook(
+      ({ progress }: { progress: ProgressState }) => useLeaderboard({
+        repository: remote,
+        progress,
+        onClearPending,
+      }),
+      { initialProps: { progress: progressWithPending(olderCandidate) } },
+    );
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    await act(async () => {
+      await result.current.submitPending('easy', newerCandidate);
+    });
+    rerender({ progress: cloneProgressState(DEFAULT_PROGRESS) });
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(vi.mocked(submitBest).mock.calls.map(([candidate]) => candidate.score)).toEqual([
+      1_000,
+      2_000,
+    ]);
+    expect(vi.mocked(onClearPending).mock.calls.map(([, candidate]) => candidate.score)).toEqual([
+      2_000,
+    ]);
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+
+  it('keeps a failed 2000 retry when an older 1000 candidate synchronizes', async () => {
+    const newerCandidate = scoreRecord('easy', { score: 2_000 });
+    const olderCandidate = scoreRecord('easy', {
+      score: 1_000,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const submitBest = vi.fn<LeaderboardRepository['submitBest']>()
+      .mockResolvedValueOnce({ ok: false, reason: 'WRITE_FAILED' })
+      .mockResolvedValue({ ok: true, source: 'firestore' });
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const remote = repository({ submitBest });
+    const { result } = renderHook(() => useLeaderboard({
+      repository: remote,
+      progress: progressWithPending(newerCandidate),
+      onClearPending,
+    }));
+
+    await act(async () => {
+      await result.current.retryPending();
+      await result.current.submitPending('easy', olderCandidate);
+    });
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(vi.mocked(submitBest).mock.calls.map(([candidate]) => candidate.score)).toEqual([
+      2_000,
+      1_000,
+      2_000,
+    ]);
+    expect(vi.mocked(onClearPending).mock.calls.map(([, candidate]) => candidate.score)).toEqual([
+      1_000,
+      2_000,
+    ]);
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+
   it('retains a remotely written candidate until its local clear saves successfully', async () => {
     const candidate = scoreRecord('easy');
     const submitBest = vi.fn(async () => ({ ok: true as const, source: 'firestore' as const }));
