@@ -15,7 +15,11 @@ import { OwlRevealScreen } from '../ui/screens/OwlRevealScreen';
 import { OwlResultScreen } from '../ui/screens/OwlResultScreen';
 import { CharacterSelectScreen } from '../ui/screens/CharacterSelectScreen';
 import { NameEntryScreen } from '../ui/screens/NameEntryScreen';
-import { RankingScreen } from '../ui/screens/RankingScreen';
+import {
+  RankingScreen,
+  type RankingEntry,
+  type RankingStatus,
+} from '../ui/screens/RankingScreen';
 import { TitleScreen } from '../ui/screens/TitleScreen';
 import '../ui/screens/screens.css';
 import {
@@ -30,8 +34,9 @@ import type { AssetManager, PlayerCharacterAssets } from '../assets';
 import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
-import type { ProgressState } from '../progression/index';
+import type { ProgressState, ScoreRecord } from '../progression/index';
 import {
+  DEFAULT_PROGRESS,
   FINAL_FLOOR,
   getFloorEncounter,
   OWL_ENCOUNTER,
@@ -46,11 +51,18 @@ import {
   type PlayerCharacterId,
 } from '../player';
 import type { Difficulty } from '../progression';
+import {
+  createLocalLeaderboardRepository,
+  type LeaderboardEntry,
+  type LeaderboardRepository,
+} from '../leaderboard';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
+import { useLeaderboard } from './use-leaderboard';
 import type { GameEvent } from '../core';
 import {
   createScoreRecord,
+  isBetterScore,
   ScoreRunController,
   type ScoreRunSnapshot,
 } from '../scoring';
@@ -119,6 +131,60 @@ function isPristineRun(snapshot: ScoreRunSnapshot): boolean {
     && snapshot.requiredFloor === 1;
 }
 
+function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
+  return left.schemaVersion === right.schemaVersion
+    && left.initials === right.initials
+    && left.characterId === right.characterId
+    && left.difficulty === right.difficulty
+    && left.score === right.score
+    && left.durationTicks === right.durationTicks
+    && left.reachedFloor === right.reachedFloor
+    && left.encountersWon === right.encountersWon
+    && left.owlDefeated === right.owlDefeated
+    && left.achievedAt === right.achievedAt;
+}
+
+function toRankingEntry(
+  record: ScoreRecord | LeaderboardEntry,
+  rank: number | '?',
+  badge?: 'LOCAL',
+): RankingEntry {
+  return {
+    rank,
+    ...(badge === undefined ? {} : { badge }),
+    initials: record.initials,
+    characterId: record.characterId,
+    score: record.score,
+    reachedFloor: record.reachedFloor,
+    encountersWon: record.encountersWon,
+    owlDefeated: record.owlDefeated,
+  };
+}
+
+function scoreEquivalent(left: LeaderboardEntry, right: ScoreRecord): boolean {
+  return left.score === right.score && left.durationTicks === right.durationTicks;
+}
+
+function mergeRankingEntries(
+  remoteEntries: readonly LeaderboardEntry[],
+  currentUserId: string | null,
+  localBest: ScoreRecord | null,
+): readonly RankingEntry[] {
+  const rankedRemote = remoteEntries.map((entry, index) => toRankingEntry(entry, index + 1));
+  if (localBest === null) return rankedRemote;
+  const localEntry = toRankingEntry(localBest, '?', 'LOCAL');
+  if (currentUserId === null) return [...rankedRemote, localEntry];
+
+  const equivalentCurrentUserRow = remoteEntries.some(
+    (entry) => entry.userId === currentUserId && scoreEquivalent(entry, localBest),
+  );
+  if (equivalentCurrentUserRow) return rankedRemote;
+  return [
+    ...rankedRemote.filter((_entry, index) => remoteEntries[index]?.userId !== currentUserId),
+    localEntry,
+  ];
+}
+
 interface RankedMatchIdentity {
   readonly token: symbol;
   readonly scoreRun: ScoreRunController;
@@ -150,10 +216,12 @@ export function AppRoot({
   const commonAssets = boot.status === 'ready' ? services.assetManager.getCommonAssets() : null;
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
   const [resultSavePending, setResultSavePending] = useState(false);
+  const [resultSaveFailed, setResultSaveFailed] = useState(false);
   const [saveRetrying, setSaveRetrying] = useState(false);
   const [profileSaveStatus, setProfileSaveStatus] = useState<'idle' | 'saving' | 'failed'>('idle');
   const [rankingDifficulty, setRankingDifficulty] = useState<Difficulty>('easy');
   const controllerRef = useRef<TowerController | null>(null);
+  const fallbackLeaderboardRef = useRef<LeaderboardRepository | null>(null);
   const scoreRunRef = useRef<ScoreRunController | null>(null);
   const matchIdentityRef = useRef<RankedMatchIdentity | null>(null);
   const completionPendingRef = useRef(false);
@@ -166,6 +234,25 @@ export function AppRoot({
     controllerRef.current = new TowerController(boot.progress, boot.progressRepository);
   }
   const controller = controllerRef.current;
+  if (services.leaderboardRepository === undefined && fallbackLeaderboardRef.current === null) {
+    fallbackLeaderboardRef.current = createLocalLeaderboardRepository();
+  }
+  const leaderboardRepository = services.leaderboardRepository
+    ?? fallbackLeaderboardRef.current!;
+  const leaderboard = useLeaderboard({
+    repository: leaderboardRepository,
+    progress: controller?.progress ?? DEFAULT_PROGRESS,
+    onClearPending: async (difficulty, candidate) => {
+      const activeController = controllerRef.current;
+      if (activeController === null) return { ok: false };
+      const current = activeController.progress.pendingLeaderboardSubmissions[difficulty];
+      const result = current === undefined && activeController.saveError === 'SAVE_FAILED'
+        ? await activeController.retrySave()
+        : await activeController.clearPendingSubmission(difficulty, candidate);
+      if (mountedRef.current) refreshControllerView();
+      return { ok: result.ok };
+    },
+  });
   const scoreRunSnapshot = scoreRunRef.current?.snapshot ?? null;
   const profileCharacterId = controller?.progress.profile?.characterId;
   const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
@@ -177,6 +264,12 @@ export function AppRoot({
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
   }, [boot.status]);
+
+  useEffect(() => {
+    if (controller !== null && (route.name === 'title' || route.name === 'ranking')) {
+      void leaderboard.retryPending();
+    }
+  }, [controller, leaderboard.retryPending, route.name]);
 
   useEffect(() => {
     if (profileSaveStatus === 'failed') retryProfileButtonRef.current?.focus();
@@ -272,6 +365,7 @@ export function AppRoot({
     completionPendingRef.current = false;
     completionTokenRef.current += 1;
     setResultSavePending(false);
+    setResultSaveFailed(false);
     refreshControllerView();
   }
 
@@ -292,6 +386,21 @@ export function AppRoot({
     refreshControllerView();
   }
 
+  async function saveFinalScore(record: ScoreRecord) {
+    if (controller === null) return null;
+    const previousBest = controller.progress.localBestScores[record.difficulty];
+    const accepted = isBetterScore(record, previousBest);
+    const result = await controller.recordScore(record, true);
+    if (mountedRef.current) refreshControllerView();
+    if (result.ok && accepted && leaderboardRepository.kind === 'firestore') {
+      const pending = controller.progress.pendingLeaderboardSubmissions[record.difficulty];
+      if (pending !== undefined && sameScoreRecord(pending, record)) {
+        void leaderboard.submitPending(record.difficulty, pending);
+      }
+    }
+    return result;
+  }
+
   async function finishMatch(
     identity: RankedMatchIdentity,
     { result, durationTicks }: MatchOutcome,
@@ -306,6 +415,7 @@ export function AppRoot({
     completionPendingRef.current = true;
     const completionToken = completionTokenRef.current + 1;
     completionTokenRef.current = completionToken;
+    setResultSaveFailed(false);
     const resolution = identity.scoreRun.completeMatch({
       floor: identity.floor,
       encounterIndex: identity.encounterIndex,
@@ -315,20 +425,20 @@ export function AppRoot({
     });
     const progressSave = controller.completeEncounter(toControllerResult(result));
     const finalScoreSave = resolution.kind === 'ended' && controller.progress.profile !== null
-      ? controller.recordScore(
+      ? saveFinalScore(
           createScoreRecord(resolution.summary, controller.progress.profile, nowIso()),
-          true,
         )
       : null;
     setResultSavePending(identity.encounterIndex === 2 || finalScoreSave !== null);
     dispatchRoute({ type: 'match-finished', result });
     refreshControllerView();
-    await Promise.all(finalScoreSave === null
+    const saveResults = await Promise.all(finalScoreSave === null
       ? [progressSave]
       : [progressSave, finalScoreSave]);
     if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
     setResultSavePending(false);
+    setResultSaveFailed(saveResults.some((saveResult) => saveResult?.ok !== true));
     refreshControllerView();
   }
 
@@ -365,6 +475,7 @@ export function AppRoot({
     const completionToken = completionTokenRef.current + 1;
     completionTokenRef.current = completionToken;
     setResultSavePending(true);
+    setResultSaveFailed(false);
     const resolution = identity.scoreRun.completeMatch({
       floor: identity.floor,
       encounterIndex: identity.encounterIndex,
@@ -375,16 +486,17 @@ export function AppRoot({
     const progressSave = controller.completeOwlMatch(toControllerResult(result));
     const profile = controller.progress.profile;
     const finalScoreSave = resolution.kind === 'ended' && profile !== null
-      ? controller.recordScore(createScoreRecord(resolution.summary, profile, nowIso()), true)
+      ? saveFinalScore(createScoreRecord(resolution.summary, profile, nowIso()))
       : null;
     dispatchRoute({ type: 'owl-match-finished', result });
     refreshControllerView();
-    await Promise.all(finalScoreSave === null
+    const saveResults = await Promise.all(finalScoreSave === null
       ? [progressSave]
       : [progressSave, finalScoreSave]);
     if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
     setResultSavePending(false);
+    setResultSaveFailed(saveResults.some((saveResult) => saveResult?.ok !== true));
     refreshControllerView();
   }
 
@@ -394,6 +506,9 @@ export function AppRoot({
     const result = await controller.retrySave();
     if (!mountedRef.current) return result.ok;
     setSaveRetrying(false);
+    if (route.name === 'result' || route.name === 'owl-result') {
+      setResultSaveFailed(!result.ok);
+    }
     refreshControllerView();
     return result.ok;
   }
@@ -431,6 +546,7 @@ export function AppRoot({
     completionPendingRef.current = false;
     completionTokenRef.current += 1;
     setResultSavePending(false);
+    setResultSaveFailed(false);
   }
 
   function returnToTitle(): void {
@@ -446,7 +562,9 @@ export function AppRoot({
 
   function openRanking(): void {
     if (controller === null) return;
-    setRankingDifficulty(controller.progress.selectedDifficulty);
+    const difficulty = controller.progress.selectedDifficulty;
+    setRankingDifficulty(difficulty);
+    void leaderboard.load(difficulty);
     dispatchRoute({ type: 'open-ranking' });
   }
 
@@ -515,6 +633,7 @@ export function AppRoot({
               dispatchRoute({ type: 'start-run', hasProfile });
             }}
             progress={controller.progress}
+            syncPending={Object.values(leaderboard.pendingDifficulties).some(Boolean)}
           />
         );
         break;
@@ -577,15 +696,40 @@ export function AppRoot({
         break;
       case 'ranking': {
         const localBest = controller.progress.localBestScores[rankingDifficulty];
+        let entries: readonly RankingEntry[];
+        let status: RankingStatus;
+        if (leaderboardRepository.kind === 'local') {
+          status = 'local';
+          entries = localBest === null ? [] : [toRankingEntry(localBest, '?', 'LOCAL')];
+        } else if (
+          leaderboard.read.difficulty !== rankingDifficulty
+          || leaderboard.read.status === 'idle'
+          || leaderboard.read.status === 'loading'
+        ) {
+          status = 'loading';
+          entries = [];
+        } else if (leaderboard.read.status === 'unavailable') {
+          status = 'unavailable';
+          entries = localBest === null ? [] : [toRankingEntry(localBest, '?', 'LOCAL')];
+        } else {
+          status = 'ready';
+          entries = mergeRankingEntries(
+            leaderboard.read.entries,
+            leaderboard.read.currentUserId,
+            localBest,
+          );
+        }
         content = (
           <RankingScreen
             difficulty={rankingDifficulty}
-            entries={localBest === null ? [] : [localBest]}
+            entries={entries}
             onBack={returnToTitle}
-            onSelectDifficulty={setRankingDifficulty}
-            status="local"
-            syncPending={controller.progress.pendingLeaderboardSubmissions[rankingDifficulty]
-              !== undefined}
+            onSelectDifficulty={(difficulty) => {
+              setRankingDifficulty(difficulty);
+              void leaderboard.load(difficulty);
+            }}
+            status={status}
+            syncPending={leaderboard.pendingDifficulties[rankingDifficulty]}
             unlockedDifficulties={controller.progress.unlockedDifficulties}
           />
         );
@@ -667,7 +811,7 @@ export function AppRoot({
             player={selectedPlayer}
             playerAssets={selectedPlayerAssets}
             result={route.result}
-            saveFailed={controller.saveError === 'SAVE_FAILED'}
+            saveFailed={resultSaveFailed}
             savePending={resultSavePending || saveRetrying}
             saveRetrying={saveRetrying}
             score={scoreRunSnapshot?.score ?? 0}
@@ -738,7 +882,7 @@ export function AppRoot({
             floor={route.floor}
             progress={controller.progress}
             result={route.result}
-            saveFailed={controller.saveError === 'SAVE_FAILED'}
+            saveFailed={resultSaveFailed}
             savePending={resultSavePending || saveRetrying}
             saveRetrying={saveRetrying}
             score={scoreRunSnapshot?.score ?? 0}

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
 import { TitleScreen } from './TitleScreen';
+
+afterEach(cleanup);
 
 describe('TitleScreen', () => {
   it('shows brand, owl, player summary, and exactly three primary actions', async () => {
@@ -70,5 +72,36 @@ describe('TitleScreen', () => {
     expect(screen.getByText('NEW PLAYER')).toBeInTheDocument();
     expect(screen.getByText('NO LOCAL SCORE')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Offline progress loaded.');
+  });
+
+  it('announces the exact online sync warning only when remote work is pending', () => {
+    const view = render(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={() => undefined}
+        onOpenRanking={() => undefined}
+        onStartRun={() => undefined}
+        progress={DEFAULT_PROGRESS}
+        syncPending
+      />,
+    );
+
+    expect(within(view.container).getByRole('status')).toHaveTextContent(
+      'ONLINE RANKING SYNC PENDING',
+    );
+
+    view.rerender(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={() => undefined}
+        onOpenRanking={() => undefined}
+        onStartRun={() => undefined}
+        progress={DEFAULT_PROGRESS}
+        syncPending={false}
+      />,
+    );
+    expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
   });
 });

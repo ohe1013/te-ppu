@@ -11,6 +11,7 @@ export interface TitleScreenProps {
   readonly onOpenRanking: () => void;
   readonly onChangePlayer: () => void;
   readonly progress: ProgressState;
+  readonly syncPending?: boolean;
 }
 
 const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
@@ -28,6 +29,7 @@ export function TitleScreen({
   onOpenRanking,
   onStartRun,
   progress,
+  syncPending = false,
 }: TitleScreenProps) {
   const profile = progress.profile;
   const localBest = progress.localBestScores[progress.selectedDifficulty];
@@ -62,6 +64,9 @@ export function TitleScreen({
       </div>
 
       {notice !== null && <p className="notice" role="status">{notice}</p>}
+      {syncPending && (
+        <p className="notice" role="status">ONLINE RANKING SYNC PENDING</p>
+      )}
 
       <section aria-label="Player summary" className="title-screen__summary">
         <div className="title-screen__player">

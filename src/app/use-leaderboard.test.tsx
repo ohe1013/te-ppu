@@ -1,0 +1,367 @@
+// @vitest-environment jsdom
+
+import { act, renderHook } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import type {
+  LeaderboardEntry,
+  LeaderboardReadResult,
+  LeaderboardRepository,
+  LeaderboardWriteResult,
+} from '../leaderboard';
+import {
+  cloneProgressState,
+  DEFAULT_PROGRESS,
+  type Difficulty,
+  type ProgressState,
+  type ScoreRecord,
+} from '../progression';
+import { useLeaderboard } from './use-leaderboard';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function scoreRecord(
+  difficulty: Difficulty,
+  overrides: Partial<ScoreRecord> = {},
+): ScoreRecord {
+  return {
+    schemaVersion: 1,
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+    difficulty,
+    score: 5_000,
+    durationTicks: 1_500,
+    reachedFloor: 1,
+    encountersWon: 3,
+    owlDefeated: false,
+    achievedAt: '2026-08-09T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function leaderboardEntry(
+  difficulty: Difficulty,
+  userId: string,
+  overrides: Partial<LeaderboardEntry> = {},
+): LeaderboardEntry {
+  const { achievedAt: _achievedAt, ...score } = scoreRecord(difficulty, overrides);
+  return {
+    ...score,
+    userId,
+    updatedAt: '2026-08-10T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function progressWithPending(...records: readonly ScoreRecord[]): ProgressState {
+  const progress = cloneProgressState(DEFAULT_PROGRESS);
+  for (const record of records) {
+    progress.pendingLeaderboardSubmissions[record.difficulty] = { ...record };
+  }
+  return progress;
+}
+
+function repository(
+  overrides: Partial<LeaderboardRepository> = {},
+): LeaderboardRepository {
+  return {
+    kind: 'firestore',
+    getTop: vi.fn(async (): Promise<LeaderboardReadResult> => ({
+      ok: true,
+      source: 'firestore',
+      currentUserId: 'firebase-user',
+      entries: [],
+    })),
+    submitBest: vi.fn(async (): Promise<LeaderboardWriteResult> => ({
+      ok: true,
+      source: 'firestore',
+    })),
+    ...overrides,
+  };
+}
+
+describe('useLeaderboard reads', () => {
+  it('keeps local mode local without reading, submitting, clearing, or surfacing migration pending state', async () => {
+    const getTop = vi.fn<LeaderboardRepository['getTop']>();
+    const submitBest = vi.fn<LeaderboardRepository['submitBest']>();
+    const localRepository: LeaderboardRepository = {
+      kind: 'local',
+      getTop,
+      submitBest,
+    };
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const progress = progressWithPending(scoreRecord('easy'));
+    const { result } = renderHook(() => useLeaderboard({
+      repository: localRepository,
+      progress,
+      onClearPending,
+    }));
+
+    await act(async () => {
+      await result.current.load('easy');
+      await result.current.retryPending();
+    });
+
+    expect(result.current.read).toEqual({
+      status: 'local',
+      difficulty: 'easy',
+      source: 'local',
+      currentUserId: null,
+      entries: [],
+    });
+    expect(result.current.pendingDifficulties).toEqual({
+      easy: false,
+      normal: false,
+      hard: false,
+    });
+    expect(getTop).not.toHaveBeenCalled();
+    expect(submitBest).not.toHaveBeenCalled();
+    expect(onClearPending).not.toHaveBeenCalled();
+  });
+
+  it('lets only the latest difficulty publish success or failure and detaches repository entries', async () => {
+    const requests = new Map<Difficulty, ReturnType<typeof deferred<LeaderboardReadResult>>>();
+    const getTop = vi.fn((difficulty: Difficulty) => {
+      const request = deferred<LeaderboardReadResult>();
+      requests.set(difficulty, request);
+      return request.promise;
+    });
+    const remote = repository({ getTop });
+    const { result } = renderHook(() => useLeaderboard({
+      repository: remote,
+      progress: DEFAULT_PROGRESS,
+      onClearPending: async () => ({ ok: true }),
+    }));
+
+    let easyLoad!: Promise<void>;
+    let normalLoad!: Promise<void>;
+    act(() => {
+      easyLoad = result.current.load('easy');
+      normalLoad = result.current.load('normal');
+    });
+    expect(result.current.read).toMatchObject({ status: 'loading', difficulty: 'normal' });
+
+    await act(async () => {
+      requests.get('normal')?.resolve({ ok: false, reason: 'READ_FAILED', entries: [] });
+      await normalLoad;
+    });
+    expect(result.current.read).toMatchObject({ status: 'unavailable', difficulty: 'normal' });
+
+    const staleEasyEntry = leaderboardEntry('easy', 'stale-user', { score: 99_000 });
+    await act(async () => {
+      requests.get('easy')?.resolve({
+        ok: true,
+        source: 'firestore',
+        currentUserId: 'stale-user',
+        entries: [staleEasyEntry],
+      });
+      await easyLoad;
+    });
+    expect(result.current.read).toMatchObject({ status: 'unavailable', difficulty: 'normal' });
+
+    let secondEasyLoad!: Promise<void>;
+    let hardLoad!: Promise<void>;
+    act(() => {
+      secondEasyLoad = result.current.load('easy');
+      hardLoad = result.current.load('hard');
+    });
+    const hardEntry = leaderboardEntry('hard', 'hard-user', { score: 88_000 });
+    await act(async () => {
+      requests.get('hard')?.resolve({
+        ok: true,
+        source: 'firestore',
+        currentUserId: 'hard-user',
+        entries: [hardEntry],
+      });
+      await hardLoad;
+    });
+    (hardEntry as { score: number }).score = 1;
+    expect(result.current.read).toEqual({
+      status: 'ready',
+      difficulty: 'hard',
+      source: 'firestore',
+      currentUserId: 'hard-user',
+      entries: [leaderboardEntry('hard', 'hard-user', { score: 88_000 })],
+    });
+
+    await act(async () => {
+      requests.get('easy')?.resolve({ ok: false, reason: 'AUTH_FAILED', entries: [] });
+      await secondEasyLoad;
+    });
+    expect(result.current.read).toMatchObject({
+      status: 'ready',
+      difficulty: 'hard',
+      currentUserId: 'hard-user',
+    });
+  });
+});
+
+describe('useLeaderboard pending submission queue', () => {
+  it('submits detached easy, normal, and hard snapshots in order and clears each exact candidate', async () => {
+    const candidates = [
+      scoreRecord('easy', { score: 1_000 }),
+      scoreRecord('normal', { score: 2_000 }),
+      scoreRecord('hard', { score: 3_000 }),
+    ] as const;
+    const submitted: Array<{ difficulty: Difficulty; score: number }> = [];
+    const submitBest = vi.fn(async (record: ScoreRecord): Promise<LeaderboardWriteResult> => {
+      submitted.push({ difficulty: record.difficulty, score: record.score });
+      (record as { score: number }).score = -1;
+      return { ok: true, source: 'firestore' };
+    });
+    const cleared: Array<{ difficulty: Difficulty; score: number }> = [];
+    const onClearPending = vi.fn(async (difficulty: Difficulty, candidate: ScoreRecord) => {
+      cleared.push({ difficulty, score: candidate.score });
+      (candidate as { score: number }).score = -2;
+      return { ok: true as const };
+    });
+    const progress = progressWithPending(...candidates);
+    const { result } = renderHook(() => useLeaderboard({
+      repository: repository({ submitBest }),
+      progress,
+      onClearPending,
+    }));
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(submitted).toEqual([
+      { difficulty: 'easy', score: 1_000 },
+      { difficulty: 'normal', score: 2_000 },
+      { difficulty: 'hard', score: 3_000 },
+    ]);
+    expect(cleared).toEqual(submitted);
+    expect(progress.pendingLeaderboardSubmissions).toEqual({
+      easy: candidates[0],
+      normal: candidates[1],
+      hard: candidates[2],
+    });
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    expect(submitted).toHaveLength(3);
+    expect(cleared).toHaveLength(3);
+  });
+
+  it.each(['AUTH_FAILED', 'WRITE_FAILED'] as const)(
+    'keeps the candidate pending after %s without clearing it',
+    async (reason) => {
+      const candidate = scoreRecord('easy');
+      const onClearPending = vi.fn(async () => ({ ok: true as const }));
+      const { result } = renderHook(() => useLeaderboard({
+        repository: repository({
+          submitBest: vi.fn(async () => ({ ok: false as const, reason })),
+        }),
+        progress: progressWithPending(candidate),
+        onClearPending,
+      }));
+
+      await act(async () => {
+        await result.current.retryPending();
+      });
+
+      expect(onClearPending).not.toHaveBeenCalled();
+      expect(result.current.pendingDifficulties.easy).toBe(true);
+    },
+  );
+
+  it('coalesces duplicate retries while serializing a newer exact candidate behind the in-flight write', async () => {
+    const firstWrite = deferred<LeaderboardWriteResult>();
+    const oldCandidate = scoreRecord('easy', { score: 5_000 });
+    const newerCandidate = scoreRecord('easy', {
+      score: 8_000,
+      achievedAt: '2026-08-10T00:00:00.000Z',
+    });
+    const submitBest = vi.fn((record: ScoreRecord) => (
+      record.score === oldCandidate.score
+        ? firstWrite.promise
+        : Promise.resolve({ ok: true as const, source: 'firestore' as const })
+    ));
+    const onClearPending = vi.fn(async (
+      _difficulty: Difficulty,
+      _candidate: ScoreRecord,
+    ) => ({ ok: true as const }));
+    const initialProgress = progressWithPending(oldCandidate);
+    const { result, rerender } = renderHook(
+      ({ progress }: { progress: ProgressState }) => useLeaderboard({
+        repository: repository({ submitBest }),
+        progress,
+        onClearPending,
+      }),
+      { initialProps: { progress: initialProgress } },
+    );
+
+    let firstRetry!: Promise<void>;
+    let duplicateRetry!: Promise<void>;
+    act(() => {
+      firstRetry = result.current.retryPending();
+      duplicateRetry = result.current.retryPending();
+    });
+    expect(submitBest).toHaveBeenCalledTimes(1);
+
+    const updatedProgress = progressWithPending(newerCandidate);
+    rerender({ progress: updatedProgress });
+    let newerRetry!: Promise<void>;
+    act(() => {
+      newerRetry = result.current.retryPending();
+    });
+    expect(submitBest).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstWrite.resolve({ ok: true, source: 'firestore' });
+      await Promise.all([firstRetry, duplicateRetry, newerRetry]);
+    });
+
+    expect(vi.mocked(submitBest).mock.calls.map(([candidate]) => candidate.score)).toEqual([
+      5_000,
+      8_000,
+    ]);
+    expect(vi.mocked(onClearPending).mock.calls.map(([, candidate]) => candidate.score)).toEqual([
+      5_000,
+      8_000,
+    ]);
+  });
+
+  it('retains a remotely written candidate until its local clear saves successfully', async () => {
+    const candidate = scoreRecord('easy');
+    const submitBest = vi.fn(async () => ({ ok: true as const, source: 'firestore' as const }));
+    const onClearPending = vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true });
+    const initialProgress = progressWithPending(candidate);
+    const { result, rerender } = renderHook(
+      ({ progress }: { progress: ProgressState }) => useLeaderboard({
+        repository: repository({ submitBest }),
+        progress,
+        onClearPending,
+      }),
+      { initialProps: { progress: initialProgress } },
+    );
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    rerender({ progress: cloneProgressState(DEFAULT_PROGRESS) });
+    expect(result.current.pendingDifficulties.easy).toBe(true);
+
+    await act(async () => {
+      await result.current.retryPending();
+    });
+
+    expect(submitBest).toHaveBeenCalledTimes(2);
+    expect(onClearPending).toHaveBeenCalledTimes(2);
+    expect(result.current.pendingDifficulties.easy).toBe(false);
+  });
+});

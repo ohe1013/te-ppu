@@ -2,6 +2,8 @@ import { PLAYER_CHARACTERS, type PlayerCharacterId } from '../../player';
 import { DIFFICULTIES, type Difficulty, type Floor } from '../../progression';
 
 export interface RankingEntry {
+  readonly rank: number | '?';
+  readonly badge?: 'LOCAL';
   readonly initials: string;
   readonly characterId: PlayerCharacterId;
   readonly score: number;
@@ -43,7 +45,9 @@ export function RankingScreen({
   syncPending,
   unlockedDifficulties,
 }: RankingScreenProps) {
-  const showTable = status === 'ready' || status === 'local';
+  const showTable = status === 'ready'
+    || status === 'local'
+    || (status === 'unavailable' && entries.length > 0);
 
   return (
     <section
@@ -80,17 +84,17 @@ export function RankingScreen({
       </div>
 
       {status === 'local' && (
-        <p className="ranking-screen__state ranking-screen__state--local">LOCAL RESULTS</p>
+        <p className="ranking-screen__state ranking-screen__state--local">LOCAL RECORDS</p>
       )}
       {syncPending && (
-        <p className="ranking-screen__sync" role="status">SCORE SYNC PENDING</p>
+        <p className="ranking-screen__sync" role="status">ONLINE RANKING SYNC PENDING</p>
       )}
       {status === 'loading' && (
         <p className="ranking-screen__state" role="status">LOADING RANKING</p>
       )}
       {status === 'unavailable' && (
         <p className="ranking-screen__state ranking-screen__state--error" role="alert">
-          RANKING UNAVAILABLE
+          ONLINE RANKING UNAVAILABLE
         </p>
       )}
 
@@ -111,10 +115,13 @@ export function RankingScreen({
                 <tr>
                   <td className="ranking-table__empty" colSpan={5}>NO SCORES YET</td>
                 </tr>
-              ) : entries.slice(0, 20).map((entry, index) => (
-                <tr data-character-id={entry.characterId} key={`${entry.initials}-${entry.score}-${index}`}>
-                  <td>{index + 1}</td>
-                  <td><strong>{entry.initials}</strong></td>
+              ) : entries.map((entry, index) => (
+                <tr data-character-id={entry.characterId} key={`${entry.rank}-${entry.initials}-${entry.score}-${index}`}>
+                  <td>{entry.rank}</td>
+                  <td>
+                    <strong>{entry.initials}</strong>
+                    {entry.badge !== undefined && <small>{entry.badge}</small>}
+                  </td>
                   <td>{PLAYER_CHARACTERS[entry.characterId].name}</td>
                   <td>{SCORE_FORMATTER.format(entry.score)}</td>
                   <td>

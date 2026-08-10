@@ -27,6 +27,13 @@ import type { PlatformPort } from '../platform/platform-port';
 import type { PlayerCharacterId } from '../player';
 import type { GameEvent } from '../core';
 import {
+  createLocalLeaderboardRepository,
+  type LeaderboardEntry,
+  type LeaderboardReadResult,
+  type LeaderboardRepository,
+  type LeaderboardWriteResult,
+} from '../leaderboard';
+import {
   AppRoot,
   type MatchRouteViewProps,
 } from './AppRoot';
@@ -61,8 +68,64 @@ const floorThreeProgress = progressFor(3, { 1: true, 2: true, 3: false, 4: false
 const floorFourProgress = progressFor(4, { 1: true, 2: true, 3: true, 4: false, 5: false });
 const floorFiveProgress = progressFor(5, { 1: true, 2: true, 3: true, 4: true, 5: false });
 
+function scoreRecord(
+  overrides: Partial<NonNullable<ProgressState['localBestScores']['easy']>> = {},
+): NonNullable<ProgressState['localBestScores']['easy']> {
+  return {
+    schemaVersion: 1,
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+    difficulty: 'easy',
+    score: 43_210,
+    durationTicks: 2_400,
+    reachedFloor: 4,
+    encountersWon: 9,
+    owlDefeated: false,
+    achievedAt: '2026-08-10T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function remoteEntry(
+  userId: string,
+  overrides: Partial<LeaderboardEntry> = {},
+): LeaderboardEntry {
+  const { achievedAt: _achievedAt, ...record } = scoreRecord(overrides);
+  return {
+    ...record,
+    userId,
+    updatedAt: '2026-08-10T01:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function leaderboardRepository(
+  kind: LeaderboardRepository['kind'],
+  overrides: Partial<LeaderboardRepository> = {},
+): LeaderboardRepository {
+  return {
+    kind,
+    getTop: vi.fn(async (): Promise<LeaderboardReadResult> => ({
+      ok: true,
+      source: kind,
+      currentUserId: kind === 'firestore' ? 'firebase-user' : null,
+      entries: [],
+    })),
+    submitBest: vi.fn(async (): Promise<LeaderboardWriteResult> => ({ ok: true, source: kind })),
+    ...overrides,
+  };
+}
+
 function cloneProgress(state: ProgressState): ProgressState {
   return cloneProgressState(state);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 class TestProgressRepository implements ProgressRepository {
@@ -283,6 +346,7 @@ function renderGame(
   audioPort: AudioPort = createAudioPort(),
   nowIso: () => string = () => '2026-08-10T12:34:56.000Z',
   onRenderMatch: (props: MatchRouteViewProps) => void = () => undefined,
+  leaderboard: LeaderboardRepository = createLocalLeaderboardRepository(),
 ) {
   let seed = 100;
   const services: AppServices = {
@@ -290,6 +354,7 @@ function renderGame(
     platform,
     progressRepositoryFactory: factoryFor(repository),
     assetManager,
+    leaderboardRepository: leaderboard,
   };
   return render(
     <AppRoot
@@ -550,35 +615,201 @@ describe('AppRoot', () => {
     expect(await screen.findByTestId('tower-screen')).toBeVisible();
   });
 
-  it('renders local ranking props without using a leaderboard service', async () => {
+  it('renders local records without reading, submitting, or exposing stored migration candidates', async () => {
     const user = userEvent.setup();
     const progress = cloneProgressState(floorOneProgress);
-    progress.localBestScores.easy = {
-      schemaVersion: 1,
-      initials: 'RVT',
-      characterId: 'hero-engineer',
-      difficulty: 'easy',
-      score: 43_210,
-      durationTicks: 2_400,
-      reachedFloor: 4,
-      encountersWon: 9,
-      owlDefeated: false,
-      achievedAt: '2026-08-10T00:00:00.000Z',
-    };
+    progress.localBestScores.easy = scoreRecord();
     progress.pendingLeaderboardSubmissions.easy = progress.localBestScores.easy;
     const repository = new TestProgressRepository(progress);
-    renderGame(repository);
+    const localLeaderboard = leaderboardRepository('local');
+    renderGame(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      localLeaderboard,
+    );
 
     await screen.findByTestId('title-screen');
     await user.click(screen.getByRole('button', { name: 'RANKING' }));
 
     expect(await screen.findByTestId('ranking-screen')).toBeVisible();
     expect(screen.getByText('43,210')).toBeInTheDocument();
-    expect(screen.getByText('LOCAL RESULTS')).toBeInTheDocument();
-    expect(screen.getByText('SCORE SYNC PENDING')).toBeInTheDocument();
+    expect(screen.getByText('LOCAL RECORDS')).toBeInTheDocument();
+    expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /NORMAL/ })).toBeDisabled();
+    expect(localLeaderboard.getTop).not.toHaveBeenCalled();
+    expect(localLeaderboard.submitBest).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'BACK' }));
     expect(await screen.findByTestId('title-screen')).toBeVisible();
+    expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
+  });
+
+  it('preserves remote ranks, removes a stale current-user row, and appends one unknown-rank local fallback', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord();
+    const remote = leaderboardRepository('firestore', {
+      getTop: vi.fn(async () => ({
+        ok: true as const,
+        source: 'firestore' as const,
+        currentUserId: 'current-user',
+        entries: [
+          remoteEntry('current-user', { score: 40_000, durationTicks: 2_000 }),
+          remoteEntry('other-user', {
+            initials: 'RVT',
+            characterId: 'cloud-courier',
+          }),
+        ],
+      })),
+    });
+    renderGame(
+      new TestProgressRepository(progress),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
+
+    expect(within(table).queryByText('40,000')).not.toBeInTheDocument();
+    expect(within(table).getAllByText('43,210')).toHaveLength(2);
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]!).getByText('2')).toBeInTheDocument();
+    expect(within(rows[0]!).queryByText('LOCAL')).not.toBeInTheDocument();
+    expect(within(rows[1]!).getByText('?')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('LOCAL')).toBeInTheDocument();
+  });
+
+  it('does not append a local duplicate when the current-user remote row is score-equivalent', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord();
+    const remote = leaderboardRepository('firestore', {
+      getTop: vi.fn(async () => ({
+        ok: true as const,
+        source: 'firestore' as const,
+        currentUserId: 'current-user',
+        entries: [remoteEntry('current-user', {
+          initials: 'REM',
+          characterId: 'cloud-courier',
+        })],
+      })),
+    });
+    renderGame(
+      new TestProgressRepository(progress),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
+
+    expect(within(table).getAllByText('43,210')).toHaveLength(1);
+    expect(within(table).getByText('REM')).toBeInTheDocument();
+    expect(within(table).queryByText('RVT')).not.toBeInTheDocument();
+    expect(within(table).queryByText('LOCAL')).not.toBeInTheDocument();
+    expect(within(table).getByText('1')).toBeInTheDocument();
+  });
+
+  it('keeps the selected local best visible when the online ranking read fails', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord();
+    const remote = leaderboardRepository('firestore', {
+      getTop: vi.fn(async (): Promise<LeaderboardReadResult> => ({
+        ok: false as const,
+        reason: 'READ_FAILED' as const,
+        entries: [],
+      })),
+    });
+    renderGame(
+      new TestProgressRepository(progress),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('ONLINE RANKING UNAVAILABLE');
+    expect(screen.getByText('43,210')).toBeInTheDocument();
+    expect(screen.getByText('LOCAL')).toBeInTheDocument();
+    expect(screen.getByText('?')).toBeInTheDocument();
+  });
+
+  it('offers one pending retry per title or ranking entry without StrictMode or failure rerender loops', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord();
+    progress.pendingLeaderboardSubmissions.easy = scoreRecord();
+    const submitBest = vi.fn(async () => ({
+      ok: false as const,
+      reason: 'WRITE_FAILED' as const,
+    }));
+    const getTop = vi.fn(async () => ({
+      ok: true as const,
+      source: 'firestore' as const,
+      currentUserId: 'current-user',
+      entries: [],
+    }));
+    const services: AppServices = {
+      audioPort: createAudioPort(),
+      platform: createTestPlatform(),
+      progressRepositoryFactory: factoryFor(new TestProgressRepository(progress)),
+      assetManager: createAssetManager(),
+      leaderboardRepository: leaderboardRepository('firestore', { getTop, submitBest }),
+    };
+    render(
+      <StrictMode>
+        <AppRoot
+          services={services}
+          createMatchSeed={() => 1}
+          renderMatch={(props) => <TestMatch {...props} />}
+        />
+      </StrictMode>,
+    );
+
+    await screen.findByTestId('title-screen');
+    await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('status')).toHaveTextContent('ONLINE RANKING SYNC PENDING');
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(submitBest).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getTop).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(submitBest).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+    await screen.findByTestId('title-screen');
+    await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(3));
+    expect(getTop).toHaveBeenCalledTimes(1);
   });
 
   it('persists match progress through the exact repository selected during boot', async () => {
@@ -593,6 +824,7 @@ describe('AppRoot', () => {
       platform: createTestPlatform(),
       progressRepositoryFactory,
       assetManager: createAssetManager(),
+      leaderboardRepository: createLocalLeaderboardRepository(),
     } satisfies AppServices;
     render(
       <AppRoot
@@ -637,6 +869,7 @@ describe('AppRoot', () => {
       platform: createTestPlatform(),
       progressRepositoryFactory: factoryFor(repository),
       assetManager: createAssetManager(),
+      leaderboardRepository: createLocalLeaderboardRepository(),
     };
     render(
       <AppRoot
@@ -782,6 +1015,7 @@ describe('AppRoot', () => {
       platform: createTestPlatform(),
       progressRepositoryFactory: factoryFor(repository),
       assetManager: createAssetManager(),
+      leaderboardRepository: createLocalLeaderboardRepository(),
     };
     render(
       <AppRoot
@@ -1121,6 +1355,154 @@ describe('AppRoot', () => {
       encountersWon: 0,
       achievedAt: '2026-08-10T12:34:56.000Z',
     });
+  });
+
+  it('submits an accepted final score only after its local save succeeds and does not await the remote write', async () => {
+    const user = userEvent.setup();
+    const progressRepository = new DeferredSaveRepository(floorOneProgress);
+    const remoteWrite = deferred<LeaderboardWriteResult>();
+    const submitBest = vi.fn(() => remoteWrite.promise);
+    const remote = leaderboardRepository('firestore', { submitBest });
+    renderGame(
+      progressRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await enterMatch(user, 1, 0);
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+    const result = await screen.findByTestId('result-screen');
+    const endRun = within(result).getByRole('button');
+
+    expect(submitBest).not.toHaveBeenCalled();
+    expect(endRun).toBeDisabled();
+
+    await act(async () => progressRepository.settle({ ok: true }));
+    await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(1));
+    expect(submitBest).toHaveBeenCalledWith(expect.objectContaining({
+      difficulty: 'easy',
+      score: 0,
+      durationTicks: 300,
+      achievedAt: '2026-08-10T12:34:56.000Z',
+    }));
+    expect(endRun).toBeEnabled();
+
+    await act(async () => {
+      remoteWrite.resolve({ ok: false, reason: 'WRITE_FAILED' });
+      await remoteWrite.promise;
+    });
+    expect(screen.getByTestId('result-screen')).toBeInTheDocument();
+  });
+
+  it('keeps a failed pending-clear save out of the local result blocker and retries it from title', async () => {
+    const user = userEvent.setup();
+    const progressRepository = new TestProgressRepository(floorOneProgress, [
+      { ok: true },
+      {
+        ok: false,
+        error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+      },
+      { ok: true },
+    ]);
+    const secondWrite = deferred<LeaderboardWriteResult>();
+    let writes = 0;
+    const submitBest = vi.fn(() => {
+      writes += 1;
+      return writes === 1
+        ? Promise.resolve({ ok: true as const, source: 'firestore' as const })
+        : secondWrite.promise;
+    });
+    const remote = leaderboardRepository('firestore', { submitBest });
+    renderGame(
+      progressRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await enterMatch(user, 1, 0);
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+    const result = await screen.findByTestId('result-screen');
+    await waitFor(() => expect(progressRepository.saves).toHaveLength(2));
+
+    expect(progressRepository.saves[0]?.pendingLeaderboardSubmissions.easy).toBeDefined();
+    expect(progressRepository.saves[1]?.pendingLeaderboardSubmissions.easy).toBeUndefined();
+    expect(within(result).queryByRole('alert')).not.toBeInTheDocument();
+    const resultActions = result.querySelector<HTMLElement>('.screen-actions');
+    if (resultActions === null) throw new Error('result actions should be present');
+    const endRun = within(resultActions).getByRole('button');
+    expect(endRun).toBeEnabled();
+    await user.click(endRun);
+
+    await screen.findByTestId('title-screen');
+    await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
+
+    await act(async () => {
+      secondWrite.resolve({ ok: true, source: 'firestore' });
+      await secondWrite.promise;
+    });
+    await waitFor(() => expect(progressRepository.saves).toHaveLength(3));
+    expect(progressRepository.saves[2]).toEqual(progressRepository.saves[1]);
+    await waitFor(() => {
+      expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
+    });
+  });
+
+  it('does not submit when the final local score save fails', async () => {
+    const user = userEvent.setup();
+    const progressRepository = new TestProgressRepository(floorOneProgress, [{
+      ok: false,
+      error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' },
+    }]);
+    const remote = leaderboardRepository('firestore');
+    renderGame(
+      progressRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await enterMatch(user, 1, 0);
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(remote.submitBest).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a non-accepted final score merely because recordScore returns ok', async () => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord({ score: 1_000, durationTicks: 5_000 });
+    const progressRepository = new TestProgressRepository(progress);
+    const remote = leaderboardRepository('firestore');
+    renderGame(
+      progressRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await enterMatch(user, 1, 0);
+    await user.click(screen.getByRole('button', { name: 'finish loss' }));
+    const result = await screen.findByTestId('result-screen');
+    await waitFor(() => expect(within(result).getByRole('button')).toBeEnabled());
+
+    expect(progressRepository.saves).toEqual([]);
+    expect(remote.submitBest).not.toHaveBeenCalled();
   });
 
   it('retries a failed final score save without recording the run twice', async () => {
@@ -1488,6 +1870,7 @@ describe('AppRoot', () => {
       platform: createTestPlatform(),
       progressRepositoryFactory: factoryFor(new TestProgressRepository(floorOneProgress)),
       assetManager,
+      leaderboardRepository: createLocalLeaderboardRepository(),
     });
     const renderRoot = (assetManager: AssetManager, audioPort: AudioPort) => render(
       <StrictMode>
@@ -1532,6 +1915,7 @@ describe('AppRoot', () => {
       platform: createTestPlatform(),
       progressRepositoryFactory: factoryFor(new TestProgressRepository(floorOneProgress)),
       assetManager: manager,
+      leaderboardRepository: createLocalLeaderboardRepository(),
     };
     const renderRoot = () => render(
       <AppRoot

@@ -3,6 +3,10 @@ import {
   type ProgressRepositoryFactory,
 } from '../progression';
 import { createAssetManager, type AssetManager } from '../assets';
+import {
+  createLeaderboardRepository,
+  type LeaderboardRepository,
+} from '../leaderboard';
 import { createPlatform } from '../platform/create-platform';
 import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
@@ -14,6 +18,7 @@ export interface AppServices {
   readonly platform: PlatformPort;
   readonly progressRepositoryFactory: ProgressRepositoryFactory;
   readonly assetManager: AssetManager;
+  readonly leaderboardRepository?: LeaderboardRepository;
 }
 
 export interface AppServiceOverrides {
@@ -21,6 +26,8 @@ export interface AppServiceOverrides {
   readonly platform?: PlatformPort;
   readonly progressRepositoryFactory?: ProgressRepositoryFactory;
   readonly assetManager?: AssetManager;
+  readonly leaderboardRepository?: LeaderboardRepository;
+  readonly firebaseEnv?: Record<string, string | boolean | undefined>;
 }
 
 async function fetchAssetJson(url: string): Promise<unknown> {
@@ -43,7 +50,7 @@ export function createAppServices(
   runtimeMode: RuntimeMode,
   storage: Storage = window.localStorage,
   overrides: AppServiceOverrides = {},
-): AppServices {
+): AppServices & { readonly leaderboardRepository: LeaderboardRepository } {
   const assetManager = overrides.assetManager ?? createAssetManager({
     fetchManifest: fetchAssetJson,
     loadImage: loadAssetImage,
@@ -58,5 +65,7 @@ export function createAppServices(
     progressRepositoryFactory:
       overrides.progressRepositoryFactory ?? createLocalProgressRepositoryFactory(storage),
     assetManager,
+    leaderboardRepository: overrides.leaderboardRepository
+      ?? createLeaderboardRepository(overrides.firebaseEnv ?? import.meta.env),
   };
 }

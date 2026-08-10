@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RankingScreen, type RankingEntry } from './RankingScreen';
+
+afterEach(cleanup);
 
 const entries: readonly RankingEntry[] = [
   {
+    rank: 1,
     initials: 'RVT',
     characterId: 'hero-engineer',
     score: 98_765,
@@ -15,6 +18,7 @@ const entries: readonly RankingEntry[] = [
     owlDefeated: true,
   },
   {
+    rank: 2,
     initials: 'LUM',
     characterId: 'cloud-courier',
     score: 54_321,
@@ -78,8 +82,8 @@ describe('RankingScreen', () => {
       />,
     );
 
-    expect(screen.getByText('LOCAL RESULTS')).toBeInTheDocument();
-    expect(screen.getByText('SCORE SYNC PENDING')).toBeInTheDocument();
+    expect(screen.getByText('LOCAL RECORDS')).toBeInTheDocument();
+    expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
 
     view.rerender(
       <RankingScreen
@@ -97,7 +101,11 @@ describe('RankingScreen', () => {
     view.rerender(
       <RankingScreen
         difficulty="easy"
-        entries={[]}
+        entries={[{
+          ...entries[0]!,
+          rank: '?',
+          badge: 'LOCAL',
+        }]}
         onBack={() => undefined}
         onSelectDifficulty={() => undefined}
         status="unavailable"
@@ -105,7 +113,9 @@ describe('RankingScreen', () => {
         unlockedDifficulties={unlockedDifficulties}
       />,
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('RANKING UNAVAILABLE');
+    expect(screen.getByRole('alert')).toHaveTextContent('ONLINE RANKING UNAVAILABLE');
+    expect(screen.getByRole('table', { name: 'TOP 20 ranking' })).toBeInTheDocument();
+    expect(screen.getByText('LOCAL')).toBeInTheDocument();
 
     view.rerender(
       <RankingScreen
@@ -119,5 +129,28 @@ describe('RankingScreen', () => {
       />,
     );
     expect(screen.getByText('NO SCORES YET')).toBeInTheDocument();
+  });
+
+  it('renders server ranks verbatim and a local fallback with unknown rank without renumbering', () => {
+    render(
+      <RankingScreen
+        difficulty="easy"
+        entries={[
+          { ...entries[1]!, rank: 7 },
+          { ...entries[0]!, rank: '?', badge: 'LOCAL' },
+        ]}
+        onBack={() => undefined}
+        onSelectDifficulty={() => undefined}
+        status="ready"
+        syncPending={false}
+        unlockedDifficulties={unlockedDifficulties}
+      />,
+    );
+
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(within(rows[0]!).getByText('7')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('?')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('LOCAL')).toBeInTheDocument();
+    expect(within(rows[1]!).queryByText('2')).not.toBeInTheDocument();
   });
 });
