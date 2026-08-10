@@ -6,22 +6,24 @@ import { AssetImage } from '../match/AssetImage';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface EndingScreenProps {
-  readonly onReturnToTower: () => void;
+  readonly onReturnToTitle: () => void;
   readonly difficulty?: Difficulty;
   readonly unlockedDifficulties: ProgressState['unlockedDifficulties'];
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
   readonly player: PlayerCharacterDefinition;
   readonly playerAssets?: PlayerCharacterAssets;
+  readonly score: number;
 }
 
 export function EndingScreen({
   commonAssets,
   difficulty = 'easy',
   floorAssets,
-  onReturnToTower,
+  onReturnToTitle,
   player,
   playerAssets,
+  score,
   unlockedDifficulties,
 }: EndingScreenProps) {
   const next = nextDifficulty(difficulty);
@@ -58,9 +60,12 @@ export function EndingScreen({
             ? 'HARD 최종 난이도 정복 완료'
             : `${unlockedNext.toUpperCase()} 난이도 해금`}
         </p>
+        <p className="ending-screen__score" data-testid="ending-score">
+          FINAL SCORE {String(score).padStart(6, '0')}
+        </p>
       </div>
-      <button type="button" onClick={onReturnToTower}>
-        {unlockedNext === null ? '타워로 돌아가기' : `${unlockedNext.toUpperCase()} 선택하러 가기`}
+      <button type="button" onClick={onReturnToTitle}>
+        타이틀로 돌아가기
       </button>
     </section>
   );

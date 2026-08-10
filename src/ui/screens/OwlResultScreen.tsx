@@ -14,18 +14,28 @@ export interface OwlResultScreenProps {
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
   readonly onContinue: () => void;
+  readonly onRetrySave: () => void;
   readonly player: PlayerCharacterDefinition;
   readonly playerAssets?: PlayerCharacterAssets;
   readonly result: MatchResult;
+  readonly saveFailed: boolean;
+  readonly savePending: boolean;
+  readonly saveRetrying: boolean;
+  readonly score: number;
 }
 
 export function OwlResultScreen({
   commonAssets,
   floorAssets,
   onContinue,
+  onRetrySave,
   player,
   playerAssets,
   result,
+  saveFailed,
+  savePending,
+  saveRetrying,
+  score,
 }: OwlResultScreenProps) {
   const won = result === 'win';
   const playerPortraitState: HeroPortraitState = result === 'win'
@@ -54,10 +64,26 @@ export function OwlResultScreen({
           player={player}
           portraitState={playerPortraitState}
         />
+        <p className="owl-result-screen__score" data-testid="owl-result-score">
+          RUN SCORE {String(score).padStart(6, '0')}
+        </p>
       </div>
+      {savePending && <p className="notice" role="status">최종 점수 저장 중</p>}
+      {saveFailed && (
+        <div className="notice" role="alert">
+          <p>최종 점수를 저장하지 못했습니다.</p>
+          <button disabled={saveRetrying} type="button" onClick={onRetrySave}>
+            {saveRetrying ? '저장 중' : '저장 다시 시도'}
+          </button>
+        </div>
+      )}
       <div className="screen-actions">
-        <button type="button" onClick={onContinue}>
-          {won ? '엔딩 보기' : '부엉이와 다시 대결'}
+        <button
+          disabled={savePending || saveFailed || saveRetrying}
+          type="button"
+          onClick={onContinue}
+        >
+          {won ? '엔딩 보기' : '도전 종료'}
         </button>
       </div>
     </section>

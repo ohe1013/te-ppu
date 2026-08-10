@@ -27,41 +27,44 @@ describe('EndingScreen', () => {
     render(
       <EndingScreen
         difficulty="easy"
-        onReturnToTower={vi.fn()}
+        onReturnToTitle={vi.fn()}
         player={player}
         playerAssets={playerAssets}
+        score={31_000}
         unlockedDifficulties={{ easy: true, normal: true, hard: false }}
       />,
     );
 
     expect(screen.getByTestId('ending-screen')).toHaveAttribute('data-next-difficulty', 'normal');
     expect(screen.getByText('NORMAL 난이도 해금')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'NORMAL 선택하러 가기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '타이틀로 돌아가기' })).toBeInTheDocument();
+    expect(screen.getByTestId('ending-score')).toHaveTextContent('FINAL SCORE 031000');
   });
 
   it('does not offer a fourth difficulty after hard', () => {
     render(
       <EndingScreen
         difficulty="hard"
-        onReturnToTower={vi.fn()}
+        onReturnToTitle={vi.fn()}
         player={player}
         playerAssets={playerAssets}
+        score={31_000}
         unlockedDifficulties={{ easy: true, normal: true, hard: true }}
       />,
     );
 
     expect(screen.getByTestId('ending-screen')).toHaveAttribute('data-next-difficulty', 'none');
-    expect(screen.queryByText(/선택하러 가기/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '타워로 돌아가기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '타이틀로 돌아가기' })).toBeInTheDocument();
   });
 
   it('uses the selected player full art, identity, and win portrait', () => {
     render(
       <EndingScreen
         difficulty="easy"
-        onReturnToTower={vi.fn()}
+        onReturnToTitle={vi.fn()}
         player={player}
         playerAssets={playerAssets}
+        score={31_000}
         unlockedDifficulties={{ easy: true, normal: true, hard: false }}
       />,
     );

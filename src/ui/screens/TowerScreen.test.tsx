@@ -34,6 +34,9 @@ describe('TowerScreen', () => {
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
       />,
     );
 
@@ -55,6 +58,9 @@ describe('TowerScreen', () => {
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
       />,
     );
 
@@ -71,6 +77,9 @@ describe('TowerScreen', () => {
         onSelectDifficulty={() => undefined}
         onSelectFloor={() => undefined}
         progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
       />,
     );
 
@@ -90,6 +99,9 @@ describe('TowerScreen', () => {
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
         progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
       />,
     );
 
@@ -108,9 +120,68 @@ describe('TowerScreen', () => {
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
         progress={unlockedNormal}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
     expect(onSelectDifficulty).toHaveBeenCalledWith('normal');
+  });
+
+  it('allows only the required floor during an active run despite historical unlocks', () => {
+    const historicallyUnlocked = cloneProgressState(progress);
+    historicallyUnlocked.difficultyProgress.easy.highestUnlockedFloor = 5;
+    historicallyUnlocked.difficultyProgress.easy.clearedFloors = {
+      1: true,
+      2: true,
+      3: true,
+      4: true,
+      5: false,
+    };
+
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={historicallyUnlocked}
+        requiredFloor={1}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+    );
+  });
+
+  it('disables difficulty controls and exposes a notice after run progress exists', () => {
+    const unlockedNormal = cloneProgressState(progress);
+    unlockedNormal.unlockedDifficulties.normal = true;
+
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        difficultySelectionLocked
+        notice={null}
+        onSelectDifficulty={vi.fn()}
+        onSelectFloor={() => undefined}
+        progress={unlockedNormal}
+        requiredFloor={2}
+        runActive
+        runScore={5_000}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'EASY' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('RUN DIFFICULTY LOCKED');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+    );
   });
 });

@@ -44,9 +44,14 @@ describe('OwlResultScreen', () => {
       <OwlResultScreen
         commonAssets={commonAssets}
         onContinue={vi.fn()}
+        onRetrySave={vi.fn()}
         player={player}
         playerAssets={playerAssets}
         result={result}
+        saveFailed={false}
+        savePending={false}
+        saveRetrying={false}
+        score={result === 'win' ? 31_000 : 25_000}
       />,
     );
 
@@ -61,5 +66,48 @@ describe('OwlResultScreen', () => {
       'src',
       portraitUrl,
     );
+  });
+
+  it.each(['loss', 'draw'] as const)(
+    'ends the owl run after a %s instead of offering a rematch',
+    (result) => {
+      render(
+        <OwlResultScreen
+          commonAssets={commonAssets}
+          onContinue={vi.fn()}
+          onRetrySave={vi.fn()}
+          player={player}
+          playerAssets={playerAssets}
+          result={result}
+          saveFailed={false}
+          savePending={false}
+          saveRetrying={false}
+          score={25_000}
+        />,
+      );
+
+      expect(screen.getByTestId('owl-result-score')).toHaveTextContent('RUN SCORE 025000');
+      expect(screen.getByRole('button', { name: '도전 종료' })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: /다시 대결/ })).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps owl-result navigation locked until a failed final save is retried', () => {
+    render(
+      <OwlResultScreen
+        commonAssets={commonAssets}
+        onContinue={vi.fn()}
+        onRetrySave={vi.fn()}
+        player={player}
+        result="win"
+        saveFailed
+        savePending={false}
+        saveRetrying={false}
+        score={31_000}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '엔딩 보기' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '저장 다시 시도' })).toBeEnabled();
   });
 });

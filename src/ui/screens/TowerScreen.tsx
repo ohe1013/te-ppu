@@ -18,6 +18,10 @@ export interface TowerScreenProps {
   readonly onSelectFloor: (floor: Floor) => void;
   readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
   readonly commonAssets?: CommonAssets | null;
+  readonly difficultySelectionLocked?: boolean;
+  readonly requiredFloor: Floor;
+  readonly runActive: boolean;
+  readonly runScore: number;
 }
 
 const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
@@ -28,10 +32,14 @@ const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
 
 export function TowerScreen({
   commonAssets,
+  difficultySelectionLocked = false,
   notice,
   onSelectDifficulty = () => undefined,
   onSelectFloor,
   progress,
+  requiredFloor,
+  runActive,
+  runScore,
 }: TowerScreenProps) {
   const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
   return (
@@ -61,6 +69,14 @@ export function TowerScreen({
         <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
       </div>
       {notice !== null && <p className="notice" role="status">{notice}</p>}
+      {runActive && (
+        <p className="tower-run-status" data-testid="tower-run-status">
+          RUN ACTIVE · NEXT {requiredFloor}F · SCORE {String(runScore).padStart(6, '0')}
+        </p>
+      )}
+      {difficultySelectionLocked && (
+        <p className="tower-run-lock-notice" role="status">RUN DIFFICULTY LOCKED</p>
+      )}
       <fieldset aria-label="난이도 선택" className="difficulty-selector">
         <legend>난이도</legend>
         <div className="difficulty-selector__options">
@@ -72,7 +88,7 @@ export function TowerScreen({
                 aria-pressed={progress.selectedDifficulty === difficulty}
                 className={`difficulty-selector__option difficulty-selector__option--${difficulty}`}
                 data-difficulty={difficulty}
-                disabled={!unlocked}
+                disabled={!unlocked || difficultySelectionLocked}
                 key={difficulty}
                 onClick={() => onSelectDifficulty(difficulty)}
                 type="button"
@@ -95,9 +111,12 @@ export function TowerScreen({
         />
         <span aria-hidden="true" className="tower-route__shaft" />
         {FLOORS.map((floor, index) => {
-          const unlocked = floor <= activeProgress.highestUnlockedFloor;
+          const historicallyUnlocked = floor <= activeProgress.highestUnlockedFloor;
+          const unlocked = historicallyUnlocked && (!runActive || floor === requiredFloor);
           const cleared = activeProgress.clearedFloors[floor];
-          const status = cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
+          const status = runActive
+            ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
+            : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
           const statusId = `floor-${floor}-status`;
           return (
             <div

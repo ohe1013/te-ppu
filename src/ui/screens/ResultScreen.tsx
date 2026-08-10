@@ -35,8 +35,8 @@ export interface ResultScreenProps {
   readonly saveFailed: boolean;
   readonly savePending: boolean;
   readonly saveRetrying: boolean;
+  readonly score: number;
   readonly onContinue: () => void;
-  readonly onRetry: () => void;
   readonly onRetrySave: () => void;
   readonly player: PlayerCharacterDefinition;
   readonly playerAssets?: PlayerCharacterAssets;
@@ -47,7 +47,6 @@ export function ResultScreen({
   encounter,
   floor,
   onContinue,
-  onRetry,
   onRetrySave,
   player,
   playerAssets,
@@ -56,6 +55,7 @@ export function ResultScreen({
   saveFailed,
   savePending,
   saveRetrying,
+  score,
   series,
   seriesComplete,
   rival,
@@ -69,8 +69,9 @@ export function ResultScreen({
     ? 'win'
     : result === 'loss' ? 'loss' : 'idle';
   const continueLabel = result !== 'win'
-    ? '계속'
+    ? '도전 종료'
     : seriesComplete ? (floor === 5 ? '탑으로' : '다음 층') : '다음 상대';
+  const navigationLocked = savePending || saveFailed || saveRetrying;
 
   return (
     <section
@@ -104,6 +105,9 @@ export function ResultScreen({
         <p className="result-screen__progress">
           층 승리 {completedWins}/3 · 최고 해금 {activeProgress.highestUnlockedFloor}층
         </p>
+        <p className="result-screen__score" data-testid="result-score">
+          RUN SCORE {String(score).padStart(6, '0')}
+        </p>
       </div>
       {savePending && <p className="notice" role="status">진행 상황 저장 중…</p>}
       {saveFailed && (
@@ -115,15 +119,9 @@ export function ResultScreen({
         </div>
       )}
       <div className="screen-actions">
-        <button
-          className="secondary-button"
-          disabled={savePending}
-          type="button"
-          onClick={onRetry}
-        >
-          다시 대전
+        <button disabled={navigationLocked} type="button" onClick={onContinue}>
+          {continueLabel}
         </button>
-        <button disabled={savePending} type="button" onClick={onContinue}>{continueLabel}</button>
       </div>
     </section>
   );

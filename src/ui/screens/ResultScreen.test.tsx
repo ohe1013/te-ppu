@@ -48,7 +48,6 @@ function renderResult(floor: 1 | 5, seriesComplete: boolean) {
       encounter={getFloorEncounter(floor, 2)}
       floor={floor}
       onContinue={vi.fn()}
-      onRetry={vi.fn()}
       onRetrySave={vi.fn()}
       player={player}
       playerAssets={playerAssets}
@@ -58,6 +57,7 @@ function renderResult(floor: 1 | 5, seriesComplete: boolean) {
       saveFailed={false}
       savePending={false}
       saveRetrying={false}
+      score={5_000}
       series={{ floor, encounterIndex: 2, wins: 2 }}
       seriesComplete={seriesComplete}
     />,
@@ -94,7 +94,6 @@ describe('ResultScreen', () => {
         encounter={getFloorEncounter(1, 0)}
         floor={1}
         onContinue={vi.fn()}
-        onRetry={vi.fn()}
         onRetrySave={vi.fn()}
         player={player}
         playerAssets={playerAssets}
@@ -104,6 +103,7 @@ describe('ResultScreen', () => {
         saveFailed={false}
         savePending={false}
         saveRetrying={false}
+        score={1_250}
         series={{ floor: 1, encounterIndex: 0, wins: 0 }}
         seriesComplete={false}
       />,
@@ -120,5 +120,58 @@ describe('ResultScreen', () => {
       'src',
       portraitUrl,
     );
+  });
+
+  it.each(['loss', 'draw'] as const)(
+    'ends a ranked run after a %s, shows its score, and removes same-run retry',
+    (result) => {
+      render(
+        <ResultScreen
+          encounter={getFloorEncounter(1, 0)}
+          floor={1}
+          onContinue={vi.fn()}
+          onRetrySave={vi.fn()}
+          player={player}
+          playerAssets={playerAssets}
+          progress={progress}
+          result={result}
+          rival={rival}
+          saveFailed={false}
+          savePending={false}
+          saveRetrying={false}
+          score={1_250}
+          series={{ floor: 1, encounterIndex: 0, wins: 0 }}
+          seriesComplete={false}
+        />,
+      );
+
+      expect(screen.getByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
+      expect(screen.getByRole('button', { name: '도전 종료' })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: '다시 대전' })).not.toBeInTheDocument();
+    },
+  );
+
+  it('blocks result navigation while the final score still needs a successful save', () => {
+    render(
+      <ResultScreen
+        encounter={getFloorEncounter(1, 0)}
+        floor={1}
+        onContinue={vi.fn()}
+        onRetrySave={vi.fn()}
+        player={player}
+        progress={progress}
+        result="loss"
+        rival={rival}
+        saveFailed
+        savePending={false}
+        saveRetrying={false}
+        score={0}
+        series={{ floor: 1, encounterIndex: 0, wins: 0 }}
+        seriesComplete={false}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '도전 종료' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '저장 다시 시도' })).toBeEnabled();
   });
 });

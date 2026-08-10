@@ -199,6 +199,28 @@
   line-height: 1.45;
 }
 
+.tower-run-status,
+.tower-run-lock-notice,
+.result-screen__score,
+.owl-result-screen__score,
+.ending-screen__score {
+  justify-self: center;
+  margin: 0;
+  padding: 0.32rem 0.65rem;
+  border: 2px solid var(--arcade-cyan);
+  border-radius: 999px;
+  color: var(--arcade-yellow);
+  background: rgb(23 18 57 / 86%);
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.tower-run-lock-notice {
+  border-color: var(--arcade-pink);
+  color: var(--arcade-cream);
+}
+
 .floor-list,
 .screen-actions {
   display: grid;

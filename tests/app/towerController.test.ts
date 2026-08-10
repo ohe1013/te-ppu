@@ -10,6 +10,7 @@ import {
   type ProgressRepository,
   type ProgressSaveResult,
   type ProgressState,
+  type ScoreRecord,
 } from '../../src/progression/index';
 
 class RecordingRepository implements ProgressRepository {
@@ -85,7 +86,159 @@ function activeProgress(progress: ProgressState) {
   return getDifficultyProgress(progress, 'easy');
 }
 
+function scoreRecord(overrides: Partial<ScoreRecord> = {}): ScoreRecord {
+  return {
+    schemaVersion: 1,
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+    difficulty: 'easy',
+    score: 5_000,
+    durationTicks: 1_500,
+    reachedFloor: 1,
+    encountersWon: 3,
+    owlDefeated: false,
+    achievedAt: '2026-08-09T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('tower controller', () => {
+  it('stores only a better local record and queues a detached candidate by difficulty', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    const candidate = scoreRecord();
+
+    await controller.recordScore(candidate, true);
+    (candidate as { score: number }).score = 99_999;
+
+    expect(controller.progress.localBestScores.easy).toEqual(scoreRecord());
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toEqual(scoreRecord());
+    expect(repository.saved).toHaveLength(1);
+
+    const exposed = controller.progress;
+    (exposed.localBestScores.easy as { score: number }).score = 1;
+    (exposed.pendingLeaderboardSubmissions.easy as { score: number }).score = 2;
+    expect(controller.progress.localBestScores.easy?.score).toBe(5_000);
+    expect(controller.progress.pendingLeaderboardSubmissions.easy?.score).toBe(5_000);
+
+    await controller.recordScore(scoreRecord({ score: 4_999, durationTicks: 1 }), true);
+    await controller.recordScore(scoreRecord(), true);
+    expect(repository.saved).toHaveLength(1);
+    expect(controller.progress.localBestScores.easy).toEqual(scoreRecord());
+  });
+
+  it('uses shorter duration as the local-best tie break without disturbing pending when offline', async () => {
+    const initial = cloneProgressState(DEFAULT_PROGRESS);
+    initial.localBestScores.easy = scoreRecord({ durationTicks: 1_600 });
+    initial.pendingLeaderboardSubmissions.easy = scoreRecord({
+      score: 6_000,
+      durationTicks: 2_000,
+      achievedAt: '2026-08-09T01:00:00.000Z',
+    });
+    const repository = new RecordingRepository();
+    const controller = new TowerController(initial, repository);
+    const faster = scoreRecord({ durationTicks: 1_500 });
+
+    await controller.recordScore(faster, false);
+
+    expect(controller.progress.localBestScores.easy).toEqual(faster);
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toEqual(
+      initial.pendingLeaderboardSubmissions.easy,
+    );
+    expect(repository.saved).toHaveLength(1);
+  });
+
+  it('keeps a better pending candidate when an accepted local score is stale for online sync', async () => {
+    const initial = cloneProgressState(DEFAULT_PROGRESS);
+    initial.localBestScores.easy = scoreRecord({ score: 4_000 });
+    initial.pendingLeaderboardSubmissions.easy = scoreRecord({
+      score: 7_000,
+      achievedAt: '2026-08-09T02:00:00.000Z',
+    });
+    const repository = new RecordingRepository();
+    const controller = new TowerController(initial, repository);
+
+    await controller.recordScore(scoreRecord({ score: 6_000 }), true);
+
+    expect(controller.progress.localBestScores.easy?.score).toBe(6_000);
+    expect(controller.progress.pendingLeaderboardSubmissions.easy?.score).toBe(7_000);
+    expect(repository.saved[0]?.pendingLeaderboardSubmissions.easy?.score).toBe(7_000);
+  });
+
+  it('clears only the exact current pending submission and treats stale responses as no-ops', async () => {
+    const current = scoreRecord();
+    const initial = cloneProgressState(DEFAULT_PROGRESS);
+    initial.localBestScores.easy = current;
+    initial.pendingLeaderboardSubmissions.easy = current;
+    const repository = new RecordingRepository();
+    const controller = new TowerController(initial, repository);
+
+    await controller.clearPendingSubmission('easy', scoreRecord({ score: 4_999 }));
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toEqual(current);
+    expect(repository.saved).toHaveLength(0);
+
+    const expected = scoreRecord();
+    const clearing = controller.clearPendingSubmission('easy', expected);
+    (expected as { score: number }).score = 1;
+    await clearing;
+
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toBeUndefined();
+    expect(controller.progress.localBestScores.easy).toEqual(current);
+    expect(repository.saved).toHaveLength(1);
+  });
+
+  it('does not let an overlapping stale clear erase a newer pending score', async () => {
+    const initial = cloneProgressState(DEFAULT_PROGRESS);
+    const firstScore = scoreRecord();
+    initial.localBestScores.easy = firstScore;
+    initial.pendingLeaderboardSubmissions.easy = firstScore;
+    const repository = new DeferredRepository();
+    const controller = new TowerController(initial, repository);
+
+    const clear = controller.clearPendingSubmission('easy', firstScore);
+    const newer = scoreRecord({
+      score: 8_000,
+      achievedAt: '2026-08-09T03:00:00.000Z',
+    });
+    const update = controller.recordScore(newer, true);
+    await flushSaveQueue();
+    expect(repository.saved).toHaveLength(1);
+    expect(repository.saved[0]?.pendingLeaderboardSubmissions.easy).toBeUndefined();
+
+    repository.resolveSave(0, { ok: true });
+    await clear;
+    await flushSaveQueue();
+    expect(repository.saved).toHaveLength(2);
+    expect(repository.saved[1]?.pendingLeaderboardSubmissions.easy).toEqual(newer);
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toEqual(newer);
+
+    repository.resolveSave(1, { ok: true });
+    await update;
+    expect(controller.progress.pendingLeaderboardSubmissions.easy).toEqual(newer);
+  });
+
+  it('retries the exact detached score snapshot after persistence fails', async () => {
+    const repository = new RecordingRepository([
+      { ok: false, error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' } },
+      { ok: true },
+    ]);
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    const candidate = scoreRecord();
+
+    expect(await controller.recordScore(candidate, true)).toEqual({
+      ok: false,
+      reason: 'SAVE_FAILED',
+      route: 'TOWER',
+    });
+    (candidate as { initials: string }).initials = 'BAD';
+    expect(await controller.retrySave()).toEqual({ ok: true, route: 'TOWER' });
+
+    expect(repository.saved).toHaveLength(2);
+    expect(repository.saved[1]).toEqual(repository.saved[0]);
+    expect(repository.saved[1]?.localBestScores.easy).toEqual(scoreRecord());
+    expect(repository.saved[1]?.pendingLeaderboardSubmissions.easy).toEqual(scoreRecord());
+  });
+
   it('updates a profile through a cloned persisted snapshot', async () => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);

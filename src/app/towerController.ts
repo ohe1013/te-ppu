@@ -22,8 +22,10 @@ import {
   type FloorSeriesState,
   type ProgressRepository,
   type ProgressState,
+  type ScoreRecord,
 } from '../progression/index';
 import type { PlayerProfile } from '../player';
+import { isBetterScore } from '../scoring';
 
 export type TowerRoute =
   | 'TOWER'
@@ -78,6 +80,19 @@ export type TowerSaveResult =
 
 function cloneProgress(state: ProgressState): ProgressState {
   return cloneProgressState(state);
+}
+
+function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
+  return left.schemaVersion === right.schemaVersion
+    && left.initials === right.initials
+    && left.characterId === right.characterId
+    && left.difficulty === right.difficulty
+    && left.score === right.score
+    && left.durationTicks === right.durationTicks
+    && left.reachedFloor === right.reachedFloor
+    && left.encountersWon === right.encountersWon
+    && left.owlDefeated === right.owlDefeated
+    && left.achievedAt === right.achievedAt;
 }
 
 export type CompleteEncounterResult =
@@ -366,6 +381,42 @@ export class TowerController {
       initials: profile.initials,
       characterId: profile.characterId,
     };
+    this.currentProgress = next;
+    return this.persistCurrentProgress();
+  }
+
+  async recordScore(
+    record: ScoreRecord,
+    queueForOnline: boolean,
+  ): Promise<TowerSaveResult> {
+    const candidate = { ...record };
+    const current = this.currentProgress.localBestScores[candidate.difficulty];
+    if (!isBetterScore(candidate, current)) {
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    next.localBestScores[candidate.difficulty] = { ...candidate };
+    const pending = next.pendingLeaderboardSubmissions[candidate.difficulty] ?? null;
+    if (queueForOnline && isBetterScore(candidate, pending)) {
+      next.pendingLeaderboardSubmissions[candidate.difficulty] = { ...candidate };
+    }
+    this.currentProgress = next;
+    return this.persistCurrentProgress();
+  }
+
+  async clearPendingSubmission(
+    difficulty: ProgressState['selectedDifficulty'],
+    expectedRecord: ScoreRecord,
+  ): Promise<TowerSaveResult> {
+    const expected = { ...expectedRecord };
+    const current = this.currentProgress.pendingLeaderboardSubmissions[difficulty];
+    if (current === undefined || !sameScoreRecord(current, expected)) {
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    delete next.pendingLeaderboardSubmissions[difficulty];
     this.currentProgress = next;
     return this.persistCurrentProgress();
   }

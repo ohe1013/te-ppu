@@ -7,7 +7,7 @@ export interface OwlRevealScreenProps {
   readonly commonAssets?: CommonAssets | null;
   readonly difficulty: Difficulty;
   readonly floorAssets?: FloorAssetBundle | null;
-  readonly onBack: () => void;
+  readonly onBack?: () => void;
   readonly onStart: () => void;
 }
 
@@ -43,7 +43,9 @@ export function OwlRevealScreen({
         </p>
       </div>
       <div className="screen-actions">
-        <button className="secondary-button" type="button" onClick={onBack}>탑으로</button>
+        {onBack === undefined ? null : (
+          <button className="secondary-button" type="button" onClick={onBack}>탑으로</button>
+        )}
         <button type="button" onClick={onStart}>부엉이와 대결</button>
       </div>
     </section>

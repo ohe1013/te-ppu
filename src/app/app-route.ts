@@ -64,6 +64,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     && route.name !== 'name-entry'
     && route.name !== 'character-select'
     && route.name !== 'ranking'
+    && route.name !== 'ending'
   ) {
     return route.name === 'tower' ? route : { name: 'tower' };
   }
@@ -121,17 +122,8 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
           }
         : route;
     case 'result':
-      if (event.type === 'retry') {
-        return {
-          name: 'match',
-          floor: route.floor,
-          encounterIndex: 0,
-          wins: 0,
-          seed: event.seed,
-        };
-      }
       if (event.type === 'continue') {
-        if (route.result !== 'win') return { name: 'tower' };
+        if (route.result !== 'win') return { name: 'title' };
         if (!route.seriesComplete) {
           return {
             name: 'floor-intro',
@@ -155,10 +147,10 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
       if (event.type === 'continue') {
         return route.result === 'win'
           ? { name: 'ending' }
-          : { name: 'owl-reveal' };
+          : { name: 'title' };
       }
       return route;
     case 'ending':
-      return route;
+      return event.type === 'return-to-title' ? { name: 'title' } : route;
   }
 }

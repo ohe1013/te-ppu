@@ -14,6 +14,10 @@ const taskFiveEvents = [
   { type: 'return-to-title' },
 ] satisfies readonly AppRouteEvent[];
 
+const taskFiveEventsWithoutReturnToTitle = taskFiveEvents.filter(
+  (event) => event.type !== 'return-to-title',
+);
+
 const invalidEventCases: ReadonlyArray<readonly [
   string,
   AppRoute,
@@ -61,15 +65,17 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
+    { type: 'retry', seed: 2 },
   ]],
   ['ending', { name: 'ending' }, [
-    ...taskFiveEvents,
+    ...taskFiveEventsWithoutReturnToTitle,
     { type: 'boot-ready' },
     { type: 'select-floor', floor: 1 },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
+    { type: 'return-to-tower' },
   ]],
   ['owl reveal', { name: 'owl-reveal' }, [
     ...taskFiveEvents,
@@ -102,6 +108,7 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'owl-match-finished', result: 'win' },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
+    { type: 'return-to-tower' },
     { type: 'return-to-tower' },
   ]],
   ['name entry', { name: 'name-entry', intent: 'start-run' }, [
@@ -251,13 +258,13 @@ describe('reduceRoute', () => {
     );
     const match = reduceRoute(reveal, { type: 'start-owl-match', seed: 77 });
     const loss = reduceRoute(match, { type: 'owl-match-finished', result: 'loss' });
-    const retry = reduceRoute(loss, { type: 'continue' });
+    const ended = reduceRoute(loss, { type: 'continue' });
     const win = reduceRoute(match, { type: 'owl-match-finished', result: 'win' });
 
     expect(reveal).toEqual({ name: 'owl-reveal' });
     expect(match).toEqual({ name: 'owl-match', seed: 77 });
     expect(loss).toEqual({ name: 'owl-result', result: 'loss' });
-    expect(retry).toEqual({ name: 'owl-reveal' });
+    expect(ended).toEqual({ name: 'title' });
     expect(win).toEqual({ name: 'owl-result', result: 'win' });
     expect(reduceRoute(win, { type: 'continue' })).toEqual({ name: 'ending' });
   });
@@ -281,22 +288,18 @@ describe('reduceRoute', () => {
     });
   });
 
-  it('retries the same floor with a fresh seed', () => {
-    expect(reduceRoute(
-      {
-        name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
-      },
-      { type: 'retry', seed: 91 },
-    )).toEqual({
-      name: 'match', floor: 2, encounterIndex: 0, wins: 0, seed: 91,
-    });
+  it('rejects same-run retry after a ranked match resolves', () => {
+    const result: AppRoute = {
+      name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
+    };
+    expect(reduceRoute(result, { type: 'retry', seed: 91 })).toBe(result);
   });
 
-  it.each(['loss', 'draw'] as const)('returns to the tower after a floor-two %s', (result) => {
+  it.each(['loss', 'draw'] as const)('returns to title after a floor-two %s ends the run', (result) => {
     expect(reduceRoute(
       { name: 'result', floor: 2, encounterIndex: 0, wins: 0, result, seriesComplete: false },
       { type: 'continue' },
-    )).toEqual({ name: 'tower' });
+    )).toEqual({ name: 'title' });
   });
 
   it('returns to the tower after continuing from floor-three and floor-four victories', () => {
@@ -317,11 +320,18 @@ describe('reduceRoute', () => {
     )).toEqual({ name: 'owl-reveal' });
   });
 
-  it('returns to the tower from non-boot routes', () => {
+  it('returns to the tower from an active floor route', () => {
     expect(reduceRoute(
-      { name: 'ending' },
+      { name: 'floor-intro', floor: 1, encounterIndex: 0, wins: 0 },
       { type: 'return-to-tower' },
     )).toEqual({ name: 'tower' });
+  });
+
+  it('returns to title after the completed ending', () => {
+    expect(reduceRoute(
+      { name: 'ending' },
+      { type: 'return-to-title' },
+    )).toEqual({ name: 'title' });
   });
 
   it.each(invalidEventCases)(
