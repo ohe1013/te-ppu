@@ -1,4 +1,5 @@
 import type { Floor } from '../progression/index';
+import type { Difficulty } from '../progression/index';
 import type { AiFloorProfile } from './types';
 
 export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
@@ -104,8 +105,32 @@ export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
   },
 ];
 
-export function getAiFloorProfile(floor: Floor): AiFloorProfile {
+function scaledReactionTicks(base: number, difficulty: Difficulty): number {
+  if (difficulty === 'easy') return base;
+  const multiplier = difficulty === 'normal' ? 0.84 : 0.68;
+  return Math.max(4, Math.round(base * multiplier));
+}
+
+function scaledLookahead(base: 0 | 1 | 2, difficulty: Difficulty): 0 | 1 | 2 {
+  if (difficulty === 'easy') return base;
+  const bonus = difficulty === 'normal' ? 1 : 2;
+  return Math.min(2, base + bonus) as 0 | 1 | 2;
+}
+
+function scaledTopK(base: 1 | 2 | 3 | 4 | 5, difficulty: Difficulty): 1 | 2 | 3 | 4 | 5 {
+  if (difficulty === 'easy') return base;
+  const reduction = difficulty === 'normal' ? 1 : 2;
+  return Math.max(1, base - reduction) as 1 | 2 | 3 | 4 | 5;
+}
+
+export function getAiFloorProfile(floor: Floor, difficulty: Difficulty = 'easy'): AiFloorProfile {
   const profile = AI_FLOOR_PROFILES.find((candidate) => candidate.floor === floor);
   if (profile === undefined) throw new RangeError(`Missing AI profile for floor ${floor}`);
-  return profile;
+  if (difficulty === 'easy') return profile;
+  return {
+    ...profile,
+    reactionTicks: scaledReactionTicks(profile.reactionTicks, difficulty),
+    lookahead: scaledLookahead(profile.lookahead, difficulty),
+    topK: scaledTopK(profile.topK, difficulty),
+  };
 }

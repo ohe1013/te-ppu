@@ -1,4 +1,4 @@
-import type { MatchResult } from '../app/app-route';
+import type { MatchOutcome, MatchResult } from '../app/app-route';
 import type { GameCommand } from '../core/index';
 import type { EncounterIndex } from '../progression/index';
 import type { Floor } from '../progression/index';
@@ -16,7 +16,7 @@ export interface TePpuE2EDriver {
   readonly dispatchedCommands: readonly GameCommand[];
   readonly closeCount: number;
   readonly currentMatch: E2EMatchMetadata | null;
-  finish(result: MatchResult): Promise<void>;
+  finish(result: MatchResult, durationTicks?: number): Promise<void>;
   setCloseMode(mode: E2ECloseMode): void;
   setLifecycle(state: E2ELifecycleState): void;
 }
@@ -27,7 +27,7 @@ declare global {
   }
 }
 
-type FinishHandler = (result: MatchResult) => void | Promise<void>;
+type FinishHandler = (outcome: MatchOutcome) => void | Promise<void>;
 
 interface FinishBinding {
   readonly handler: FinishHandler;
@@ -57,12 +57,12 @@ export class E2EDriverController {
       get dispatchedCommands() {
         return controller.#commands.map((command) => ({ ...command }));
       },
-      async finish(result) {
+      async finish(result, durationTicks = 600) {
         const binding = controller.#finishBinding;
         if (binding === null) {
           throw new Error('No E2E match is currently active.');
         }
-        await binding.handler(result);
+        await binding.handler({ result, durationTicks });
       },
       setCloseMode(mode) {
         controller.#setCloseMode(mode);

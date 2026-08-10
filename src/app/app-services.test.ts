@@ -3,9 +3,49 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManager } from '../assets';
 import { COMPLETE_ASSET_MANIFEST } from '../assets/test-fixtures/complete-manifest';
-import type { ProgressRepository, ProgressRepositoryFactory } from '../progression';
+import type { LeaderboardRepository } from '../leaderboard';
+import { DEFAULT_PROGRESS, type ProgressRepository, type ProgressRepositoryFactory } from '../progression';
 import type { PlatformPort } from '../platform/platform-port';
 import { createAppServices } from './app-services';
+
+const firebaseCalls = vi.hoisted(() => ({
+  initializeApp: vi.fn(),
+  getAuth: vi.fn(),
+  signInAnonymously: vi.fn(),
+  collection: vi.fn(),
+  doc: vi.fn(),
+  getDocs: vi.fn(),
+  getFirestore: vi.fn(),
+  limit: vi.fn(),
+  orderBy: vi.fn(),
+  query: vi.fn(),
+  runTransaction: vi.fn(),
+  serverTimestamp: vi.fn(),
+}));
+
+vi.mock('firebase/app', () => ({ initializeApp: firebaseCalls.initializeApp }));
+vi.mock('firebase/auth', () => ({
+  getAuth: firebaseCalls.getAuth,
+  signInAnonymously: firebaseCalls.signInAnonymously,
+}));
+vi.mock('firebase/firestore', () => ({
+  collection: firebaseCalls.collection,
+  doc: firebaseCalls.doc,
+  getDocs: firebaseCalls.getDocs,
+  getFirestore: firebaseCalls.getFirestore,
+  limit: firebaseCalls.limit,
+  orderBy: firebaseCalls.orderBy,
+  query: firebaseCalls.query,
+  runTransaction: firebaseCalls.runTransaction,
+  serverTimestamp: firebaseCalls.serverTimestamp,
+}));
+
+const COMPLETE_FIREBASE_ENV = {
+  VITE_FIREBASE_API_KEY: 'api-key',
+  VITE_FIREBASE_AUTH_DOMAIN: 'example.firebaseapp.com',
+  VITE_FIREBASE_PROJECT_ID: 'example-project',
+  VITE_FIREBASE_APP_ID: '1:123:web:abc',
+};
 
 function validAtlasJson() {
   return {
@@ -35,12 +75,7 @@ function repository(): ProgressRepository {
   return {
     load: async () => ({
       ok: true,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 1,
-        clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-        settings: { soundEnabled: true, hapticsEnabled: true },
-      },
+      state: structuredClone(DEFAULT_PROGRESS),
       recoveredFromCorruption: false,
     }),
     save: async () => ({ ok: true }),
@@ -52,6 +87,53 @@ afterEach(() => {
 });
 
 describe('createAppServices asset boundary', () => {
+  it('selects local leaderboards when Firebase env is empty or invalid', () => {
+    const empty = createAppServices('browser', window.localStorage, {
+      platform: platform(),
+      firebaseEnv: {},
+    });
+    const partial = createAppServices('browser', window.localStorage, {
+      platform: platform(),
+      firebaseEnv: { VITE_FIREBASE_API_KEY: 'partial-only' },
+    });
+
+    expect(empty.leaderboardRepository.kind).toBe('local');
+    expect(partial.leaderboardRepository.kind).toBe('local');
+  });
+
+  it('selects a lazy Firestore leaderboard without authenticating or creating Firebase services', () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    const services = createAppServices('browser', window.localStorage, {
+      platform: platform(),
+      firebaseEnv: COMPLETE_FIREBASE_ENV,
+    });
+
+    expect(services.leaderboardRepository.kind).toBe('firestore');
+    expect(firebaseCalls.initializeApp).not.toHaveBeenCalled();
+    expect(firebaseCalls.getAuth).not.toHaveBeenCalled();
+    expect(firebaseCalls.getFirestore).not.toHaveBeenCalled();
+    expect(firebaseCalls.signInAnonymously).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicit leaderboard override without consulting Firebase env', () => {
+    const leaderboardRepository: LeaderboardRepository = {
+      kind: 'firestore',
+      getTop: vi.fn(),
+      submitBest: vi.fn(),
+    };
+    const services = createAppServices('browser', window.localStorage, {
+      platform: platform(),
+      firebaseEnv: { VITE_FIREBASE_API_KEY: 'invalid-partial-config' },
+      leaderboardRepository,
+    });
+
+    expect(services.leaderboardRepository).toBe(leaderboardRepository);
+    expect(firebaseCalls.initializeApp).not.toHaveBeenCalled();
+  });
+
   it('exposes an injected lazy progress repository factory without selecting a repository', () => {
     const progressRepositoryFactory = {
       forIdentity: vi.fn(() => repository()),

@@ -11,6 +11,7 @@ import type {
 import { createMatch, createPublicMatchView } from '../../core/index';
 import type { AudioPort } from '../../platform/audio-port';
 import type { PlatformPort } from '../../platform/platform-port';
+import { PLAYER_CHARACTERS } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import { MatchScreen } from '../screens/MatchScreen';
 import { ExitConfirmation } from './ExitConfirmation';
@@ -44,6 +45,8 @@ const enabledSettings: ProgressState['settings'] = {
   hapticsEnabled: true,
   soundEnabled: true,
 };
+
+const defaultPlayer = PLAYER_CHARACTERS['hero-engineer'];
 
 function createAudio(): AudioPort {
   return {
@@ -105,9 +108,31 @@ describe('lifecycle UI', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
     result.rerender(<ResumeCountdown count={3} />);
-    expect(screen.getByRole('status')).toHaveTextContent('3');
+    const countdown = screen.getByRole('status');
+    expect(countdown).toHaveTextContent('3');
+    expect(countdown).toHaveClass('modal-overlay');
+    expect(countdown.querySelector('.modal-overlay__surface')).toBeInTheDocument();
     result.rerender(<ResumeCountdown count={1} />);
     expect(screen.getByRole('status')).toHaveTextContent('1');
+  });
+
+  it('renders settings in a centered modal overlay', async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+
+    await user.click(screen.getByRole('button'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveClass('modal-overlay__surface');
+    expect(dialog.parentElement).toHaveClass('modal-overlay');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
   });
 
   it('traps focus, cancels with Escape, restores focus, and confirms only once', async () => {
@@ -192,10 +217,10 @@ describe('lifecycle UI', () => {
       />,
     );
 
-    expect(screen.queryByRole('region', { name: '게임 설정' }))
+    expect(screen.queryByRole('dialog', { name: '게임 설정' }))
       .not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '설정' }));
-    expect(screen.getByRole('region', { name: '게임 설정' })).toBeVisible();
+    expect(screen.getByRole('dialog', { name: '게임 설정' })).toBeVisible();
     await user.click(screen.getByRole('checkbox', { name: '효과음' }));
     await user.click(screen.getByRole('checkbox', { name: '진동' }));
     expect(onSettingsChange).toHaveBeenNthCalledWith(1, { soundEnabled: false });
@@ -231,6 +256,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -287,6 +313,7 @@ describe('lifecycle UI', () => {
           onRetrySettingsSave={vi.fn(async () => true)}
           onSettingsChange={vi.fn(async () => true)}
           platform={createPlatform()}
+          player={defaultPlayer}
           seed={91}
           settings={enabledSettings}
           settingsSaveFailed={false}
@@ -337,6 +364,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={createPlatform()}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -375,6 +403,7 @@ describe('lifecycle UI', () => {
       onRetrySettingsSave: vi.fn(async () => true),
       onSettingsChange: vi.fn(async () => true),
       platform,
+      player: defaultPlayer,
       seed: 91,
       settingsSaveFailed: false,
     };
@@ -455,6 +484,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}
@@ -493,6 +523,7 @@ describe('lifecycle UI', () => {
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
         platform={platform}
+        player={defaultPlayer}
         seed={91}
         settings={enabledSettings}
         settingsSaveFailed={false}

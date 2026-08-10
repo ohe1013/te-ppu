@@ -7,9 +7,13 @@ import {
 } from '../core/index';
 import {
   applyFloorResult,
+  canSelectDifficulty,
   canSelectFloor,
+  cloneProgressState,
   getFloorEncounter,
   isFinalFloor,
+  isDifficulty,
+  nextDifficulty,
   resolveEncounter,
   startFloorSeries,
   type Floor,
@@ -18,7 +22,10 @@ import {
   type FloorSeriesState,
   type ProgressRepository,
   type ProgressState,
+  type ScoreRecord,
 } from '../progression/index';
+import type { PlayerProfile } from '../player';
+import { isBetterScore } from '../scoring';
 
 export type TowerRoute =
   | 'TOWER'
@@ -27,6 +34,9 @@ export type TowerRoute =
   | 'RESULT_WIN'
   | 'RESULT_LOSS'
   | 'RESULT_DRAW'
+  | 'OWL_REVEAL'
+  | 'OWL_MATCH'
+  | 'OWL_RESULT'
   | 'ENDING';
 
 export type StartFloorResult =
@@ -48,7 +58,11 @@ export type StartEncounterResult =
   | {
       readonly ok: false;
       readonly reason: 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
-    };
+  };
+
+export type StartOwlMatchResult =
+  | { readonly ok: true; readonly match: MatchState }
+  | { readonly ok: false; readonly reason: 'NO_OWL_REVEAL' };
 
 export type TowerSaveResult =
   | { readonly ok: true; readonly route: TowerRoute }
@@ -59,17 +73,26 @@ export type TowerSaveResult =
         | 'NO_PENDING_SAVE'
         | 'NO_SELECTED_FLOOR'
         | 'NO_ACTIVE_MATCH'
+        | 'LOCKED_DIFFICULTY'
         | 'INVALID_SETTINGS';
       readonly route: TowerRoute;
     };
 
 function cloneProgress(state: ProgressState): ProgressState {
-  return {
-    schemaVersion: state.schemaVersion,
-    highestUnlockedFloor: state.highestUnlockedFloor,
-    clearedFloors: { ...state.clearedFloors },
-    settings: { ...state.settings },
-  };
+  return cloneProgressState(state);
+}
+
+function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
+  return left.schemaVersion === right.schemaVersion
+    && left.initials === right.initials
+    && left.characterId === right.characterId
+    && left.difficulty === right.difficulty
+    && left.score === right.score
+    && left.durationTicks === right.durationTicks
+    && left.reachedFloor === right.reachedFloor
+    && left.encountersWon === right.encountersWon
+    && left.owlDefeated === right.owlDefeated
+    && left.achievedAt === right.achievedAt;
 }
 
 export type CompleteEncounterResult =
@@ -181,7 +204,7 @@ export class TowerController {
 
     this.currentMatch = createMatch({ matchSeed });
     this.currentAi = createAiController(
-      getAiFloorProfile(floor),
+      getAiFloorProfile(floor, this.currentProgress.selectedDifficulty),
       deriveAiSeed(matchSeed),
       'opponent',
     );
@@ -199,6 +222,20 @@ export class TowerController {
       return { ok: false, reason: 'NO_SELECTED_FLOOR' };
     }
     return this.startFloor(this.currentSelectedFloor, matchSeed);
+  }
+
+  startOwlMatch(matchSeed: number): StartOwlMatchResult {
+    if (this.currentRoute !== 'OWL_REVEAL' && this.currentRoute !== 'OWL_RESULT') {
+      return { ok: false, reason: 'NO_OWL_REVEAL' };
+    }
+    this.currentMatch = createMatch({ matchSeed });
+    this.currentAi = createAiController(
+      getAiFloorProfile(5, this.currentProgress.selectedDifficulty),
+      deriveAiSeed(matchSeed),
+      'opponent',
+    );
+    this.currentRoute = 'OWL_MATCH';
+    return { ok: true, match: this.currentMatch };
   }
 
   async completeEncounter(result: FloorResult): Promise<CompleteEncounterResult> {
@@ -248,8 +285,8 @@ export class TowerController {
     }
 
     this.currentSeriesState = null;
-    this.currentRoute = routeFor(floor, result);
     if (resolution.kind === 'series-loss') {
+      this.currentRoute = routeFor(floor, result);
       return {
         ok: true,
         route: this.currentRoute,
@@ -260,8 +297,38 @@ export class TowerController {
     }
 
     this.currentProgress = applyFloorResult(this.currentProgress, floor, 'WIN');
+    this.currentRoute = isFinalFloor(floor) ? 'OWL_REVEAL' : 'RESULT_WIN';
     const save = await this.persistCurrentProgress();
     return { ...save, encounter, series: null, floorCompleted: true };
+  }
+
+  async completeOwlMatch(result: FloorResult): Promise<TowerSaveResult> {
+    if (
+      this.currentRoute !== 'OWL_MATCH'
+      || this.currentMatch === null
+      || this.currentAi === null
+    ) {
+      return { ok: false, reason: 'NO_ACTIVE_MATCH', route: this.currentRoute };
+    }
+
+    this.currentMatch = null;
+    this.currentAi = null;
+    if (result !== 'WIN') {
+      this.currentRoute = 'OWL_RESULT';
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const difficulty = this.currentProgress.selectedDifficulty;
+    const next = cloneProgress(this.currentProgress);
+    const run = next.difficultyProgress[difficulty];
+    next.difficultyProgress[difficulty] = { ...run, owlDefeated: true };
+    const nextDifficultyValue = nextDifficulty(difficulty);
+    if (nextDifficultyValue !== null) {
+      next.unlockedDifficulties[nextDifficultyValue] = true;
+    }
+    this.currentProgress = next;
+    this.currentRoute = 'ENDING';
+    return this.persistCurrentProgress();
   }
 
   /** @deprecated Use completeEncounter for the three-opponent floor gauntlet. */
@@ -292,6 +359,68 @@ export class TowerController {
     this.currentRoute = 'FLOOR_INTRO';
   }
 
+  async selectDifficulty(difficulty: ProgressState['selectedDifficulty']): Promise<TowerSaveResult> {
+    if (!isDifficulty(difficulty) || !canSelectDifficulty(this.currentProgress, difficulty)) {
+      return { ok: false, reason: 'LOCKED_DIFFICULTY', route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    next.selectedDifficulty = difficulty;
+    this.currentProgress = next;
+    this.currentSelectedFloor = null;
+    this.currentSeriesState = null;
+    this.currentMatch = null;
+    this.currentAi = null;
+    this.currentRoute = 'TOWER';
+    return this.persistCurrentProgress();
+  }
+
+  async updateProfile(profile: PlayerProfile): Promise<TowerSaveResult> {
+    const next = cloneProgress(this.currentProgress);
+    next.profile = {
+      initials: profile.initials,
+      characterId: profile.characterId,
+    };
+    this.currentProgress = next;
+    return this.persistCurrentProgress();
+  }
+
+  async recordScore(
+    record: ScoreRecord,
+    queueForOnline: boolean,
+  ): Promise<TowerSaveResult> {
+    const candidate = { ...record };
+    const current = this.currentProgress.localBestScores[candidate.difficulty];
+    if (!isBetterScore(candidate, current)) {
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    next.localBestScores[candidate.difficulty] = { ...candidate };
+    const pending = next.pendingLeaderboardSubmissions[candidate.difficulty] ?? null;
+    if (queueForOnline && isBetterScore(candidate, pending)) {
+      next.pendingLeaderboardSubmissions[candidate.difficulty] = { ...candidate };
+    }
+    this.currentProgress = next;
+    return this.persistCurrentProgress();
+  }
+
+  async clearPendingSubmission(
+    difficulty: ProgressState['selectedDifficulty'],
+    expectedRecord: ScoreRecord,
+  ): Promise<TowerSaveResult> {
+    const expected = { ...expectedRecord };
+    const current = this.currentProgress.pendingLeaderboardSubmissions[difficulty];
+    if (current === undefined || !sameScoreRecord(current, expected)) {
+      return { ok: true, route: this.currentRoute };
+    }
+
+    const next = cloneProgress(this.currentProgress);
+    delete next.pendingLeaderboardSubmissions[difficulty];
+    this.currentProgress = next;
+    return this.persistCurrentProgress();
+  }
+
   async updateSettings(
     settings: Partial<ProgressState['settings']>,
   ): Promise<TowerSaveResult> {
@@ -299,11 +428,9 @@ export class TowerController {
       return { ok: false, reason: 'INVALID_SETTINGS', route: this.currentRoute };
     }
 
-    this.currentProgress = {
-      ...this.currentProgress,
-      clearedFloors: { ...this.currentProgress.clearedFloors },
-      settings: { ...this.currentProgress.settings, ...settings },
-    };
+    const next = cloneProgress(this.currentProgress);
+    next.settings = { ...next.settings, ...settings };
+    this.currentProgress = next;
     return this.persistCurrentProgress();
   }
 

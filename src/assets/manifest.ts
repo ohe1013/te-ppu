@@ -3,6 +3,7 @@ import type {
   FloorOpponentId,
   ManifestRef,
 } from './types';
+import { PLAYER_CHARACTER_IDS } from '../player';
 import type { MusicTrack } from '../platform/audio-port';
 
 const RUNTIME_ASSET_PATH =
@@ -119,7 +120,7 @@ export function parseAssetManifest(value: unknown): AssetManifest {
     if (manifest.schemaVersion !== 1) invalid();
     return { schemaVersion: 1, mode: 'procedural-fallback' };
   }
-  if (manifest.schemaVersion !== 2 || manifest.mode !== 'assets') invalid();
+  if (manifest.schemaVersion !== 3 || manifest.mode !== 'assets') invalid();
 
   const authored = exactObject(value, ['schemaVersion', 'mode', 'brand', 'common', 'floors']);
   const brand = exactObject(authored.brand, ['logo']);
@@ -128,20 +129,23 @@ export function parseAssetManifest(value: unknown): AssetManifest {
   ]);
   const backgrounds = exactObject(common.backgrounds, ['tower']);
   const characters = exactObject(common.characters, [
-    'hero-engineer', 'owl-companion', ...RIVAL_IDS,
+    ...PLAYER_CHARACTER_IDS, 'owl-companion', ...RIVAL_IDS,
   ]);
   const atlas = exactObject(common.atlas, ['image', 'data']);
   const audio = exactObject(common.audio, ['sfx', 'bgm']);
   const floors = exactObject(authored.floors, ['1', '2', '3', '4', '5']);
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     mode: 'assets',
     brand: { logo: parseRef(brand.logo) },
     common: {
       backgrounds: { tower: parseRef(backgrounds.tower) },
       characters: {
-        'hero-engineer': parseCharacter(characters['hero-engineer'], HERO_PORTRAITS),
+        ...Object.fromEntries(PLAYER_CHARACTER_IDS.map((characterId) => [
+          characterId,
+          parseCharacter(characters[characterId], HERO_PORTRAITS),
+        ])),
         'owl-companion': parseCharacter(characters['owl-companion'], OWL_PORTRAITS),
         quartermaster: parseCharacter(characters.quartermaster, LIEUTENANT_PORTRAITS),
         alchemist: parseCharacter(characters.alchemist, LIEUTENANT_PORTRAITS),

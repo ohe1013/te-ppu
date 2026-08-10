@@ -23,6 +23,12 @@ const ATLAS_GROUPS = [
   ['freeze-overlay', 8, 64, 64],
   ['combo-pop', 6, 256, 128],
 ];
+const PLAYER_PORTRAITS = ['idle', 'focus', 'attack', 'hit', 'win', 'loss'];
+const NEW_PLAYER_IDS = ['cloud-courier', 'star-alchemist'];
+const NEW_PLAYER_SLOTS = NEW_PLAYER_IDS.flatMap((characterId) => [
+  [characterId, 'full'],
+  ...PLAYER_PORTRAITS.map((state) => [characterId, state]),
+]);
 
 function withWorkspace(run) {
   const root = mkdtempSync(join(tmpdir(), 'te-ppu-assets-'));
@@ -138,7 +144,7 @@ function completeManifest() {
     portraits: portraits(character, lieutenant),
   });
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     mode: 'assets',
     brand: { logo: ref('brand/app-logo.png') },
     common: {
@@ -146,7 +152,15 @@ function completeManifest() {
       characters: {
         'hero-engineer': {
           fullArt: ref('characters/hero-engineer/full.webp'),
-          portraits: portraits('hero-engineer', ['idle', 'focus', 'attack', 'hit', 'win', 'loss']),
+          portraits: portraits('hero-engineer', PLAYER_PORTRAITS),
+        },
+        'cloud-courier': {
+          fullArt: ref('characters/cloud-courier/full.webp'),
+          portraits: portraits('cloud-courier', PLAYER_PORTRAITS),
+        },
+        'star-alchemist': {
+          fullArt: ref('characters/star-alchemist/full.webp'),
+          portraits: portraits('star-alchemist', PLAYER_PORTRAITS),
         },
         'owl-companion': {
           fullArt: ref('characters/owl-companion/full.webp'),
@@ -342,7 +356,7 @@ test('accepts fallback locally and rejects it when authored assets are required'
   });
 });
 
-test('accepts a complete authored pack with geometry-only SVGs, VP8/VP8L/VP8X WebPs, and MP3 frames', async () => {
+test('accepts a complete schema 3 authored pack with all three playable characters', async () => {
   await withWorkspace(async (root) => {
     writeCompleteAssets(root);
     await assert.doesNotReject(() => validateAssets(root));
@@ -377,14 +391,80 @@ test('rejects a duplicate canonical rival character path', async () => {
   });
 });
 
-test('rejects the old authored schema 1 shape', async () => {
+test('rejects the complete legacy authored schema 2 player shape', async () => {
   await withWorkspace(async (root) => {
     const manifest = writeCompleteAssets(root);
-    manifest.schemaVersion = 1;
+    manifest.schemaVersion = 2;
+    delete manifest.common.characters['cloud-courier'];
+    delete manifest.common.characters['star-alchemist'];
     writeManifest(root, manifest);
     await assert.rejects(() => validateAssets(root), /asset manifest/i);
   });
 });
+
+for (const [label, mutate] of [
+  ['a missing playable character', (manifest) => {
+    delete manifest.common.characters['cloud-courier'];
+  }],
+  ['an extra playable character', (manifest) => {
+    manifest.common.characters['guest-player'] = manifest.common.characters['hero-engineer'];
+  }],
+]) {
+  test('rejects schema 3 with ' + label, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      mutate(manifest);
+      writeManifest(root, manifest);
+      await assert.rejects(() => validateAssets(root), /asset manifest/i);
+    });
+  });
+}
+
+for (const [characterId, state] of NEW_PLAYER_SLOTS) {
+  const canonicalPath = state === 'full'
+    ? 'characters/' + characterId + '/full.webp'
+    : 'characters/' + characterId + '/portrait-' + state + '.webp';
+
+  test('enforces the canonical path for new player asset ' + canonicalPath, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      const character = manifest.common.characters[characterId];
+      const slot = state === 'full' ? character.fullArt : character.portraits[state];
+      slot.path = 'characters/' + characterId + '/wrong.webp';
+      writeManifest(root, manifest);
+
+      await assert.rejects(() => validateAssets(root), /canonical asset path/i);
+    });
+  });
+}
+
+for (const characterId of NEW_PLAYER_IDS) {
+  test('checks full-art dimensions and alpha for ' + characterId, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/full.webp', vp8xWebp(1023, 1024));
+      await assert.rejects(() => validateAssets(root), /1024x1024/i);
+    });
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/full.webp', vp8xWebp(1024, 1024, false));
+      await assert.rejects(() => validateAssets(root), /alpha/i);
+    });
+  });
+
+  test('checks portrait dimensions and alpha for ' + characterId, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/portrait-hit.webp', vp8xWebp(255, 256));
+      await assert.rejects(() => validateAssets(root), /256x256/i);
+    });
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/portrait-hit.webp', vp8xWebp(256, 256, false));
+      await assert.rejects(() => validateAssets(root), /alpha/i);
+    });
+  });
+}
 
 test('accepts an ID3-skipped complete MPEG audio frame', async () => {
   await withWorkspace(async (root) => {

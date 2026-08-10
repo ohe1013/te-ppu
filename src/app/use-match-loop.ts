@@ -19,7 +19,7 @@ import {
   type SideId,
   type TimedCommand,
 } from '../core/index';
-import type { MatchResult } from './app-route';
+import type { MatchOutcome, MatchResult } from './app-route';
 
 const STEP_MS = 1000 / 60;
 const STEP_EPSILON_MS = 0.000_001;
@@ -71,7 +71,7 @@ export interface UseMatchLoopOptions {
   ) => void;
   readonly onEventBatches?: (batches: readonly GameEventBatch[]) => void;
   readonly onCommandFeedback?: (feedback: CommandFeedback) => void;
-  readonly onFinished: (result: MatchResult) => void | Promise<void>;
+  readonly onFinished: (outcome: MatchOutcome) => void | Promise<void>;
 }
 
 interface PublishedMatch {
@@ -87,7 +87,7 @@ interface AdvancedTick {
   readonly events: readonly GameEvent[];
   readonly commandFeedback: readonly CommandFeedback[];
   readonly commandFeedbackView: PublicMatchView;
-  readonly result: MatchResult | null;
+  readonly outcome: MatchOutcome | null;
 }
 
 function resultFor(status: PublicMatchView['status']): MatchResult | null {
@@ -106,7 +106,11 @@ export function useMatchLoop({
   onFinished,
 }: UseMatchLoopOptions): MatchLoopView {
   const stateRef = useRef<MatchState | null>(null);
-  if (stateRef.current === null) stateRef.current = createMatch(config);
+  const initialCountdownTicksRef = useRef<number | null>(null);
+  if (stateRef.current === null) {
+    stateRef.current = createMatch(config);
+    initialCountdownTicksRef.current = stateRef.current.countdownTicks;
+  }
 
   const [published, setPublished] = useState<PublishedMatch>(() => ({
     eventBatches: [],
@@ -210,11 +214,17 @@ export function useMatchLoop({
       } satisfies GameEventBatch;
 
       const result = resultFor(view.status);
-      let completion: MatchResult | null = null;
+      let completion: MatchOutcome | null = null;
       if (result !== null) {
         if (!finishedRef.current) {
           finishedRef.current = true;
-          completion = result;
+          completion = {
+            result,
+            durationTicks: Math.max(
+              0,
+              view.tick - (initialCountdownTicksRef.current ?? 0),
+            ),
+          };
         }
         runningRef.current = false;
         commandQueueRef.current = [];
@@ -227,7 +237,7 @@ export function useMatchLoop({
         view,
         eventBatch,
         events: step.events,
-        result: completion,
+        outcome: completion,
       };
     }
 
@@ -255,7 +265,7 @@ export function useMatchLoop({
       accumulatorRef.current += Math.max(0, timestamp - previousTimestamp);
       let steps = 0;
       let latestView: PublicMatchView | null = null;
-      let terminalResult: MatchResult | null = null;
+      let terminalOutcome: MatchOutcome | null = null;
       const frameEvents: GameEvent[] = [];
       const frameEventBatches: GameEventBatch[] = [];
       const frameCommandFeedback: CommandFeedback[] = [];
@@ -274,7 +284,7 @@ export function useMatchLoop({
         }
         frameEvents.push(...advanced.events);
         if (advanced.eventBatch !== null) frameEventBatches.push(advanced.eventBatch);
-        terminalResult = advanced.result;
+        terminalOutcome = advanced.outcome;
         steps += 1;
       }
       if (latestView !== null) {
@@ -300,7 +310,7 @@ export function useMatchLoop({
           }
         }
       }
-      if (terminalResult !== null) void onFinishedRef.current(terminalResult);
+      if (terminalOutcome !== null) void onFinishedRef.current(terminalOutcome);
       scheduleNextFrame();
     }
 

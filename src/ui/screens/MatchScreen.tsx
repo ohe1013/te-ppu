@@ -9,7 +9,7 @@ import {
   createAiController,
   getAiFloorProfile,
 } from '../../ai/index';
-import type { Floor, MatchResult } from '../../app/app-route';
+import type { Floor, MatchOutcome } from '../../app/app-route';
 import {
   useMatchLoop,
   type MatchLoopView,
@@ -20,6 +20,7 @@ import type {
   CommonAssets,
   FloorAssetBundle,
   LoadedImageRef,
+  PlayerCharacterAssets,
   PortraitState,
 } from '../../assets/index';
 import type {
@@ -31,14 +32,22 @@ import type {
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort, SoundCue } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
+import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
-import { getFloorEncounter, type EncounterIndex, type FloorEncounter } from '../../progression/index';
+import {
+  getFloorEncounter,
+  type Difficulty,
+  type EncounterIndex,
+  type FloorEncounter,
+  type OwlEncounter,
+} from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
 import { AssetIcon } from '../match/AssetIcon';
 import {
   createPortraitMemory,
   createPortraitPresentation,
+  mapOwlPortraitUrls,
   reducePortraitBatches,
   resolvePortraitState,
   type PortraitMemory,
@@ -60,13 +69,18 @@ export interface MatchScreenProps {
   readonly floor: Floor;
   readonly encounterIndex?: EncounterIndex;
   readonly wins?: 0 | 1 | 2;
+  readonly difficulty?: Difficulty;
+  readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
-  readonly onFinished: (result: MatchResult) => void | Promise<void>;
+  readonly onFinished: (outcome: MatchOutcome) => void | Promise<void>;
+  readonly onScoreEvents?: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
   readonly onSettingsChange: (
     settings: Partial<ProgressState['settings']>,
   ) => Promise<boolean>;
   readonly platform: PlatformPort;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
   readonly portraitSources?: {
@@ -76,6 +90,7 @@ export interface MatchScreenProps {
   /** Resolved by AppRoot; this screen never starts asset work. */
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
+  readonly runScore?: number;
   readonly useMatchLoopImpl?: MatchLoopHook;
 }
 
@@ -130,6 +145,7 @@ function ignoreEffect(operation: () => Promise<void>): void {
 
 function portraitRoleFor(side: 'player' | 'opponent', characterId: CharacterId): PortraitRole {
   if (side === 'player') return 'hero';
+  if (characterId === 'owl-companion') return 'owl';
   return characterId === 'demon-king' ? 'demon-king' : 'lieutenant';
 }
 
@@ -151,7 +167,7 @@ function presentationFor(
 ): PortraitPresentation {
   const state = resolvePortraitState({
     ...memory,
-    dangerState: role === 'demon-king' ? 'rage' : 'panic',
+    dangerState: role === 'demon-king' || role === 'owl' ? 'rage' : 'panic',
     tick: view.tick,
   });
   return createPortraitPresentation(
@@ -163,27 +179,31 @@ function presentationFor(
 
 function usePortraitPresentations(
   floor: Floor,
-  characterId: CharacterId,
+  opponentCharacterId: CharacterId,
+  playerCharacterId: CharacterId,
   match: Pick<MatchLoopView, 'eventBatches' | 'view'>,
   sources: MatchScreenProps['portraitSources'],
 ): { readonly player: PortraitPresentation; readonly opponent: PortraitPresentation } {
   const memoriesRef = useRef<{
     readonly floor: Floor;
-    readonly characterId: CharacterId;
+    readonly opponentCharacterId: CharacterId;
+    readonly playerCharacterId: CharacterId;
     readonly player: PortraitMemory;
     readonly opponent: PortraitMemory;
   } | null>(null);
   const previous = memoriesRef.current?.floor === floor
-    && memoriesRef.current.characterId === characterId
+    && memoriesRef.current.opponentCharacterId === opponentCharacterId
+    && memoriesRef.current.playerCharacterId === playerCharacterId
     ? memoriesRef.current
     : {
-      characterId,
       floor,
       opponent: createPortraitMemory(),
+      opponentCharacterId,
       player: createPortraitMemory(),
+      playerCharacterId,
     };
-  const playerRole = portraitRoleFor('player', 'hero-engineer');
-  const opponentRole = portraitRoleFor('opponent', characterId);
+  const playerRole = portraitRoleFor('player', playerCharacterId);
+  const opponentRole = portraitRoleFor('opponent', opponentCharacterId);
   const player = reducePortraitBatches(previous.player, {
     batches: match.eventBatches,
     floor,
@@ -198,7 +218,13 @@ function usePortraitPresentations(
     role: opponentRole,
     side: 'opponent',
   });
-  memoriesRef.current = { characterId, floor, opponent, player };
+  memoriesRef.current = {
+    floor,
+    opponent,
+    opponentCharacterId,
+    player,
+    playerCharacterId,
+  };
   return {
     player: presentationFor(player, {
       floor,
@@ -220,25 +246,28 @@ function usePortraitPresentations(
 export function MatchScreen({
   audioPort,
   commonAssets,
+  difficulty = 'easy',
   encounterIndex = 0,
   floor,
   wins = 0,
   onFinished,
+  onScoreEvents,
   onRetrySettingsSave,
   onSettingsChange,
   platform,
+  player: playerCharacter,
+  playerAssets,
   portraitSources,
+  runScore = 0,
   seed,
   settings,
   settingsSaveFailed,
+  specialEncounter,
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
-  const encounter: FloorEncounter = getFloorEncounter(floor, encounterIndex);
-  const heroCharacter = {
-    id: 'hero-engineer' as const,
-    name: '견습 마도공학자',
-    title: '별빛 수리공',
-  };
+  const encounter: FloorEncounter | OwlEncounter = specialEncounter
+    ?? getFloorEncounter(floor, encounterIndex);
+  const isOwlMatch = specialEncounter !== undefined;
   const rivalCharacter = {
     id: encounter.characterId,
     name: encounter.displayName,
@@ -246,8 +275,8 @@ export function MatchScreen({
   };
   const resetBus = useMemo(() => new InputResetBus(), []);
   const audio = audioPort;
-  const feedbackRef = useRef({ audio, platform, settings });
-  feedbackRef.current = { audio, platform, settings };
+  const feedbackRef = useRef({ audio, onScoreEvents, platform, settings });
+  feedbackRef.current = { audio, onScoreEvents, platform, settings };
   const handleMatchEvents = useCallback((
     events: readonly GameEvent[],
     view: PublicMatchView,
@@ -275,10 +304,11 @@ export function MatchScreen({
         }
       }
     }
+    feedback.onScoreEvents?.(events);
   }, []);
   const ai = useMemo(
-    () => createAiController(getAiFloorProfile(floor), seed),
-    [floor, seed],
+    () => createAiController(getAiFloorProfile(floor, difficulty), seed),
+    [difficulty, floor, seed],
   );
   const match = useMatchLoopImpl({
     ai,
@@ -286,16 +316,34 @@ export function MatchScreen({
     onEvents: handleMatchEvents,
     onFinished,
   });
-  const resolvedPortraitSources = useMemo(() => ({
-    player: { ...portraitUrls(commonAssets?.hero.portraits), ...portraitSources?.player },
-    opponent: {
-      ...portraitUrls(commonAssets?.rivals[encounter.characterId]?.portraits),
+  const resolvedPortraitSources = useMemo(() => {
+    const opponent = {
+      ...portraitUrls(isOwlMatch
+        ? commonAssets?.owl.portraits
+        : commonAssets?.rivals[getFloorEncounter(floor, encounterIndex).characterId]?.portraits),
       ...portraitSources?.opponent,
-    },
-  }), [commonAssets?.hero.portraits, commonAssets?.rivals, encounter.characterId, portraitSources]);
+    };
+    return {
+      player: {
+        ...portraitUrls(playerAssets?.portraits),
+        ...portraitSources?.player,
+      },
+      opponent: isOwlMatch ? mapOwlPortraitUrls(opponent) : opponent,
+    };
+  }, [
+    commonAssets?.owl.portraits,
+    commonAssets?.rivals,
+    encounter.characterId,
+    encounterIndex,
+    floor,
+    isOwlMatch,
+    playerAssets?.portraits,
+    portraitSources,
+  ]);
   const portraits = usePortraitPresentations(
     floor,
     encounter.characterId,
+    playerCharacter.id,
     match,
     resolvedPortraitSources,
   );
@@ -377,13 +425,21 @@ export function MatchScreen({
   return (
     <section
       className="screen-shell match-screen"
+      data-encounter-kind={isOwlMatch ? 'owl' : 'floor'}
       data-floor={floor}
       data-testid="match-screen"
     >
       <header className="match-header">
         <div className="match-header__series">
-          <span className="match-header__series-badge">{floor}F · {encounterIndex + 1}/3</span>
-          <span className="match-header__series-wins">승리 {wins ?? 0}/3</span>
+          <span className="match-header__series-badge">
+            {isOwlMatch ? 'HIDDEN BOSS' : `${floor}F · ${encounterIndex + 1}/3`}
+          </span>
+          <span className="match-header__series-wins">
+            {isOwlMatch ? 'OWL' : `승리 ${wins ?? 0}/3`}
+            <span className="match-header__run-score" data-testid="run-score">
+              SCORE {String(runScore).padStart(6, '0')}
+            </span>
+          </span>
         </div>
         <div className="match-header__actions">
           <div className="match-meta match-meta--live">
@@ -418,7 +474,7 @@ export function MatchScreen({
 
       <div className="battle-hud-pair">
         <BattleHud
-          character={heroCharacter}
+          character={playerCharacter}
           items={commonAssets?.items}
           model={match.view.sides.player}
           portrait={portraits.player}

@@ -13,6 +13,7 @@ const ICON_IDS = ['rotate', 'settings', 'sound-on', 'sound-off', 'haptics-on', '
 const SFX_IDS = ['move', 'rotate', 'land', 'clear', 'attack', 'item', 'win', 'loss'];
 const BGM_IDS = ['tower', 'early-floors', 'late-floors', 'demon-king', 'ending'];
 const HERO_PORTRAITS = ['idle', 'focus', 'attack', 'hit', 'win', 'loss'];
+const PLAYER_IDS = ['hero-engineer', 'cloud-courier', 'star-alchemist'];
 const OWL_PORTRAITS = ['idle', 'worry', 'cheer'];
 const LIEUTENANT_PORTRAITS = ['idle', 'smug', 'attack', 'hit', 'panic', 'defeat'];
 const DEMON_PORTRAITS = ['idle', 'attack', 'hit', 'rage', 'defeat'];
@@ -37,6 +38,20 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.common.characters.hero-engineer.portraits.hit', 'characters/hero-engineer/portrait-hit.webp'],
   ['asset manifest.common.characters.hero-engineer.portraits.win', 'characters/hero-engineer/portrait-win.webp'],
   ['asset manifest.common.characters.hero-engineer.portraits.loss', 'characters/hero-engineer/portrait-loss.webp'],
+  ['asset manifest.common.characters.cloud-courier.fullArt', 'characters/cloud-courier/full.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.idle', 'characters/cloud-courier/portrait-idle.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.focus', 'characters/cloud-courier/portrait-focus.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.attack', 'characters/cloud-courier/portrait-attack.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.hit', 'characters/cloud-courier/portrait-hit.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.win', 'characters/cloud-courier/portrait-win.webp'],
+  ['asset manifest.common.characters.cloud-courier.portraits.loss', 'characters/cloud-courier/portrait-loss.webp'],
+  ['asset manifest.common.characters.star-alchemist.fullArt', 'characters/star-alchemist/full.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.idle', 'characters/star-alchemist/portrait-idle.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.focus', 'characters/star-alchemist/portrait-focus.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.attack', 'characters/star-alchemist/portrait-attack.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.hit', 'characters/star-alchemist/portrait-hit.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.win', 'characters/star-alchemist/portrait-win.webp'],
+  ['asset manifest.common.characters.star-alchemist.portraits.loss', 'characters/star-alchemist/portrait-loss.webp'],
   ['asset manifest.common.characters.owl-companion.fullArt', 'characters/owl-companion/full.webp'],
   ['asset manifest.common.characters.owl-companion.portraits.idle', 'characters/owl-companion/portrait-idle.webp'],
   ['asset manifest.common.characters.owl-companion.portraits.worry', 'characters/owl-companion/portrait-worry.webp'],
@@ -170,7 +185,7 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.floors.5.character.portraits.defeat', 'characters/demon-king/portrait-defeat.webp'],
 ];
 const CANONICAL_PATH_BY_SLOT = new Map(CANONICAL_ASSET_PATHS);
-const REQUIRED_UNIQUE_ASSET_COUNT = 106;
+const REQUIRED_UNIQUE_ASSET_COUNT = 120;
 
 function fail(message) {
   throw new Error(message);
@@ -263,7 +278,7 @@ function parseManifest(value) {
     requireLiteral(value.schemaVersion, 1, 'asset manifest.schemaVersion');
     return { mode: 'procedural-fallback', references: [] };
   }
-  if (value.schemaVersion !== 2 || value.mode !== 'assets') fail('invalid asset manifest');
+  if (value.schemaVersion !== 3 || value.mode !== 'assets') fail('invalid asset manifest');
 
   const manifest = exactObject(value, ['schemaVersion', 'mode', 'brand', 'common', 'floors'], 'asset manifest');
   const references = [];
@@ -279,10 +294,17 @@ function parseManifest(value) {
   collectRef(backgrounds.tower, references, 'asset manifest.common.backgrounds.tower');
   const characters = exactObject(
     common.characters,
-    ['hero-engineer', 'owl-companion', ...RIVAL_IDS],
+    [...PLAYER_IDS, 'owl-companion', ...RIVAL_IDS],
     'asset manifest.common.characters',
   );
-  collectCharacter(characters['hero-engineer'], HERO_PORTRAITS, references, 'asset manifest.common.characters.hero-engineer');
+  for (const player of PLAYER_IDS) {
+    collectCharacter(
+      characters[player],
+      HERO_PORTRAITS,
+      references,
+      'asset manifest.common.characters.' + player,
+    );
+  }
   collectCharacter(characters['owl-companion'], OWL_PORTRAITS, references, 'asset manifest.common.characters.owl-companion');
   for (const rival of RIVAL_IDS) {
     collectCharacter(

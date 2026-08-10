@@ -1,5 +1,6 @@
 import type { ItemType, PieceKind } from '../core';
 import type { MusicTrack, SoundCue } from '../platform/audio-port';
+import { PLAYER_CHARACTER_IDS, type PlayerCharacterId } from '../player';
 import { isFloor, type Floor } from '../progression';
 import { parseAssetManifest } from './manifest';
 import type {
@@ -95,10 +96,10 @@ interface MutableCommonBundle {
   generation: number;
   logo?: LoadedImageRef;
   towerBackdrop?: LoadedImageRef;
-  hero: {
+  players: Record<PlayerCharacterId, {
     fullArt?: LoadedImageRef;
     portraits: Partial<Record<HeroPortraitState, LoadedImageRef>>;
-  };
+  }>;
   owl: {
     fullArt?: LoadedImageRef;
     portraits: Partial<Record<OwlPortraitState, LoadedImageRef>>;
@@ -553,7 +554,11 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     const common = loadedManifest.common;
     const bundle: MutableCommonBundle = {
       generation: attempt.generation,
-      hero: { portraits: {} },
+      players: {
+        'hero-engineer': { portraits: {} },
+        'cloud-courier': { portraits: {} },
+        'star-alchemist': { portraits: {} },
+      },
       owl: { portraits: {} },
       rivals: {},
       tiles: {},
@@ -568,14 +573,19 @@ export function createAssetManager(options: CreateAssetManagerOptions): AssetMan
     const tasks: Promise<void>[] = [
       loadImage(attempt, loadedManifest.brand.logo, (image) => { bundle.logo = image; }),
       loadImage(attempt, common.backgrounds.tower, (image) => { bundle.towerBackdrop = image; }),
-      loadImage(attempt, common.characters['hero-engineer'].fullArt, (image) => { bundle.hero.fullArt = image; }),
       loadImage(attempt, common.characters['owl-companion'].fullArt, (image) => { bundle.owl.fullArt = image; }),
       loadAtlas(attempt, common.atlas.image, common.atlas.data, (atlas) => { bundle.atlas = atlas; }),
     ];
-    for (const [state, ref] of Object.entries(common.characters['hero-engineer'].portraits)) {
-      tasks.push(loadImage(attempt, ref, (image) => {
-        bundle.hero.portraits[state as HeroPortraitState] = image;
+    for (const characterId of PLAYER_CHARACTER_IDS) {
+      const player = bundle.players[characterId];
+      tasks.push(loadImage(attempt, common.characters[characterId].fullArt, (image) => {
+        player.fullArt = image;
       }));
+      for (const [state, ref] of Object.entries(common.characters[characterId].portraits)) {
+        tasks.push(loadImage(attempt, ref, (image) => {
+          player.portraits[state as HeroPortraitState] = image;
+        }));
+      }
     }
     for (const [state, ref] of Object.entries(common.characters['owl-companion'].portraits)) {
       tasks.push(loadImage(attempt, ref, (image) => {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "mode": "assets",
   "brand": { "logo": { "path": "brand/app-logo.png" } },
   "common": {
@@ -14,6 +14,28 @@
           "hit": { "path": "characters/hero-engineer/portrait-hit.webp" },
           "win": { "path": "characters/hero-engineer/portrait-win.webp" },
           "loss": { "path": "characters/hero-engineer/portrait-loss.webp" }
+        }
+      },
+      "cloud-courier": {
+        "fullArt": { "path": "characters/cloud-courier/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/cloud-courier/portrait-idle.webp" },
+          "focus": { "path": "characters/cloud-courier/portrait-focus.webp" },
+          "attack": { "path": "characters/cloud-courier/portrait-attack.webp" },
+          "hit": { "path": "characters/cloud-courier/portrait-hit.webp" },
+          "win": { "path": "characters/cloud-courier/portrait-win.webp" },
+          "loss": { "path": "characters/cloud-courier/portrait-loss.webp" }
+        }
+      },
+      "star-alchemist": {
+        "fullArt": { "path": "characters/star-alchemist/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/star-alchemist/portrait-idle.webp" },
+          "focus": { "path": "characters/star-alchemist/portrait-focus.webp" },
+          "attack": { "path": "characters/star-alchemist/portrait-attack.webp" },
+          "hit": { "path": "characters/star-alchemist/portrait-hit.webp" },
+          "win": { "path": "characters/star-alchemist/portrait-win.webp" },
+          "loss": { "path": "characters/star-alchemist/portrait-loss.webp" }
         }
       },
       "owl-companion": {

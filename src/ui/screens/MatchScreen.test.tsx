@@ -3,9 +3,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMatch, createPublicMatchView } from '../../core/index';
+import type { CommonAssets, PlayerCharacterAssets } from '../../assets';
+import { createMatch, createPublicMatchView, type GameEvent } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
 import type { AudioPort } from '../../platform/audio-port';
+import type { PlayerCharacterDefinition } from '../../player';
 import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
@@ -16,13 +18,18 @@ const lifecycleProps: Pick<
   MatchScreenProps,
   | 'audioPort'
   | 'onRetrySettingsSave'
+  | 'onScoreEvents'
   | 'onSettingsChange'
   | 'platform'
+  | 'player'
+  | 'playerAssets'
   | 'settings'
   | 'settingsSaveFailed'
+  | 'runScore'
 > = {
   audioPort: createAudioPort(),
   onRetrySettingsSave: async () => true,
+  onScoreEvents: vi.fn(),
   onSettingsChange: async () => true,
   platform: {
     close: async () => undefined,
@@ -33,8 +40,18 @@ const lifecycleProps: Pick<
     lockPortrait: async () => undefined,
     subscribeSafeArea: () => () => undefined,
   },
+  player: {
+    id: 'hero-engineer',
+    name: '리벳',
+    role: '견습 마도공학자',
+    title: '별빛 수리공',
+    story: '고장 난 별빛 동력핵을 수리한다.',
+    palette: ['#35c8c2', '#fff4cf', '#b86f3c'],
+  },
+  playerAssets: undefined,
   settings: { hapticsEnabled: true, soundEnabled: true },
   settingsSaveFailed: false,
+  runScore: 0,
 };
 
 function createAudioPort(): AudioPort {
@@ -106,6 +123,99 @@ function activeLoop(): MatchLoopView {
   };
 }
 
+const cloudCourier = {
+  id: 'cloud-courier',
+  name: '루미',
+  role: '구름 우편기사',
+  title: '바람길의 전령',
+  story: '멈춘 바람길을 되찾는다.',
+  palette: ['#4d8fff', '#ffd84d', '#f8fbff'],
+} satisfies PlayerCharacterDefinition;
+
+const cloudCourierAssets = {
+  fullArt: { url: '/cloud-courier/full.webp' },
+  portraits: {
+    idle: { url: '/cloud-courier/portrait-idle.webp' },
+    focus: { url: '/cloud-courier/portrait-focus.webp' },
+    attack: { url: '/cloud-courier/portrait-attack.webp' },
+    hit: { url: '/cloud-courier/portrait-hit.webp' },
+    win: { url: '/cloud-courier/portrait-win.webp' },
+    loss: { url: '/cloud-courier/portrait-loss.webp' },
+  },
+} as PlayerCharacterAssets;
+
+const owlCommonAssets = {
+  audio: { bgm: {}, sfx: {} },
+  generation: 1,
+  icons: {},
+  items: {},
+  owl: {
+    portraits: {
+      cheer: { url: '/owl/portrait-cheer.webp' },
+      idle: { url: '/owl/portrait-idle.webp' },
+      worry: { url: '/owl/portrait-worry.webp' },
+    },
+  },
+  players: {},
+  rivals: {},
+  tiles: {},
+} as unknown as CommonAssets;
+
+function portraitLoop(
+  event: GameEvent | null,
+  status: MatchLoopView['view']['status'] = 'playing',
+): MatchLoopView {
+  const loop = activeLoop();
+  const view = {
+    ...loop.view,
+    status,
+    tick: 10,
+    sides: {
+      ...loop.view.sides,
+      player: {
+        ...loop.view.sides.player,
+        combo: event?.type === 'lines-cleared' ? 2 : loop.view.sides.player.combo,
+      },
+    },
+  };
+  const eventBatches = event === null ? [] : [{ events: [event], tick: 10, view }];
+  return {
+    ...loop,
+    eventBatches,
+    events: event === null ? [] : [event],
+    view,
+  };
+}
+
+function owlPortraitLoop(
+  state: 'idle' | 'attack' | 'hit' | 'rage' | 'defeat',
+): MatchLoopView {
+  const loop = activeLoop();
+  const event = state === 'attack'
+    ? { amount: 2, side: 'opponent' as const, type: 'attack-sent' as const }
+    : state === 'hit'
+      ? { amount: 2, side: 'opponent' as const, type: 'garbage-landed' as const }
+      : null;
+  const view = {
+    ...loop.view,
+    status: state === 'defeat' ? 'player-won' as const : 'playing' as const,
+    tick: 10,
+    sides: {
+      ...loop.view.sides,
+      opponent: {
+        ...loop.view.sides.opponent,
+        incoming: state === 'rage' ? 4 : loop.view.sides.opponent.incoming,
+      },
+    },
+  };
+  return {
+    ...loop,
+    eventBatches: event === null ? [] : [{ events: [event], tick: 10, view }],
+    events: event === null ? [] : [event],
+    view,
+  };
+}
+
 beforeEach(() => {
   const loop: MatchLoopView = {
     dispatch: vi.fn(),
@@ -128,7 +238,7 @@ describe('MatchScreen', () => {
   it('composes two symmetric public HUDs around the single battle canvas', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
-    expect(screen.getByRole('region', { name: '견습 마도공학자 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 battle status' }))
       .toBeInTheDocument();
     expect(screen.getByRole('region', { name: '거품 연금술사 battle status' }))
       .toBeInTheDocument();
@@ -144,6 +254,113 @@ describe('MatchScreen', () => {
     expect(document.querySelector('img')).toBeNull();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
+  });
+
+  it('renders the hidden owl encounter as the opponent instead of a floor rival', () => {
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        difficulty="hard"
+        floor={5}
+        seed={17}
+        specialEncounter={{
+          characterId: 'owl-companion',
+          displayName: 'Owl Architect',
+          title: 'Tower Architect',
+          intro: 'The tower architect reveals the truth.',
+          winLine: 'The tower opens.',
+          lossLine: 'The tower resets.',
+        }}
+        onFinished={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Owl Architect battle status' }))
+      .toHaveAttribute('data-character-id', 'owl-companion');
+    expect(screen.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByText('HIDDEN BOSS')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['idle', '/owl/portrait-idle.webp'],
+    ['attack', '/owl/portrait-cheer.webp'],
+    ['hit', '/owl/portrait-worry.webp'],
+    ['rage', '/owl/portrait-worry.webp'],
+    ['defeat', '/owl/portrait-worry.webp'],
+  ] as const)('renders the owl %s state with its mapped authored portrait URL', (
+    portraitState,
+    expectedUrl,
+  ) => {
+    useMatchLoopMock.mockReturnValue(owlPortraitLoop(portraitState));
+
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        commonAssets={owlCommonAssets}
+        floor={5}
+        onFinished={vi.fn()}
+        seed={17}
+        specialEncounter={{
+          characterId: 'owl-companion',
+          displayName: 'Owl Architect',
+          intro: 'The tower architect reveals the truth.',
+          lossLine: 'The tower resets.',
+          title: 'Tower Architect',
+          winLine: 'The tower opens.',
+        }}
+      />,
+    );
+
+    const opponentHud = screen.getByRole('region', {
+      name: 'Owl Architect battle status',
+    });
+    expect(opponentHud.querySelector('[data-portrait-state]')).toHaveAttribute(
+      'data-portrait-state',
+      portraitState,
+    );
+    expect(screen.getByAltText(`RIVAL ${portraitState} portrait`)).toHaveAttribute(
+      'src',
+      expectedUrl,
+    );
+  });
+
+  it.each([
+    ['idle', null, 'playing', '/cloud-courier/portrait-idle.webp'],
+    ['focus', { type: 'lines-cleared', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-focus.webp'],
+    ['attack', { type: 'attack-sent', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-attack.webp'],
+    ['hit', { type: 'garbage-landed', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-hit.webp'],
+    ['win', null, 'player-won', '/cloud-courier/portrait-win.webp'],
+    ['loss', null, 'opponent-won', '/cloud-courier/portrait-loss.webp'],
+  ] as const)('uses the selected player %s portrait source and identity', (
+    portraitState,
+    event,
+    status,
+    expectedUrl,
+  ) => {
+    useMatchLoopMock.mockReturnValue(portraitLoop(event, status));
+
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        floor={2}
+        onFinished={vi.fn()}
+        player={cloudCourier}
+        playerAssets={cloudCourierAssets}
+        seed={17}
+      />,
+    );
+
+    const playerHud = screen.getByRole('region', { name: '루미 battle status' });
+    expect(playerHud).toHaveAttribute('data-character-id', 'cloud-courier');
+    expect(playerHud).toHaveTextContent('바람길의 전령');
+    expect(playerHud.querySelector('[data-portrait-state]')).toHaveAttribute(
+      'data-portrait-state',
+      portraitState,
+    );
+    expect(screen.getByAltText(`PLAYER ${portraitState} portrait`)).toHaveAttribute(
+      'src',
+      expectedUrl,
+    );
   });
 
   it('connects item actions, row highlighting, joystick, and rotation to the match loop', () => {
@@ -253,6 +470,69 @@ describe('MatchScreen', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
     expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.commandFeedback).toBe(feedback);
+  });
+
+  it('forwards each exact frame event list once after audiovisual feedback without replaying on rerender', () => {
+    const loop = activeLoop();
+    const play = vi.fn();
+    const audioPort = { ...createAudioPort(), play };
+    const onScoreEvents = vi.fn();
+    useMatchLoopMock.mockReturnValue(loop);
+    const rendered = render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        onFinished={vi.fn()}
+        onScoreEvents={onScoreEvents}
+        runScore={12_450}
+        seed={17}
+      />,
+    );
+    const options = useMatchLoopMock.mock.calls.at(-1)?.[0];
+    const events = [
+      { type: 'lines-cleared' as const, side: 'player' as const, amount: 2, rows: [18, 19] },
+    ] as const;
+
+    act(() => options.onEvents(events, loop.view));
+
+    expect(onScoreEvents).toHaveBeenCalledOnce();
+    expect(onScoreEvents.mock.calls[0]?.[0]).toBe(events);
+    expect(play).toHaveBeenCalledWith('clear');
+    expect(play.mock.invocationCallOrder[0])
+      .toBeLessThan(onScoreEvents.mock.invocationCallOrder[0]!);
+
+    rendered.rerender(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        onFinished={vi.fn()}
+        onScoreEvents={onScoreEvents}
+        runScore={12_450}
+        seed={17}
+      />,
+    );
+    expect(onScoreEvents).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [0, 'SCORE 000000'],
+    [12_450, 'SCORE 012450'],
+    [1_234_567, 'SCORE 1234567'],
+  ] as const)('renders score %i in one compact fixed-width header', (runScore, label) => {
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        floor={2}
+        onFinished={vi.fn()}
+        runScore={runScore}
+        seed={17}
+      />,
+    );
+
+    expect(screen.getAllByTestId('run-score')).toHaveLength(1);
+    expect(screen.getByTestId('run-score')).toHaveTextContent(label);
   });
 
   it('keeps borrowed audio cue-only while match lifecycle still pauses and counts down', async () => {

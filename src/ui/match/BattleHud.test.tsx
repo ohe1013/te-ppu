@@ -34,8 +34,13 @@ describe('BattleHud', () => {
     );
     const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
 
-    expect(within(hud).getByTestId('player-next')).toHaveTextContent('T');
-    expect(within(hud).getByTestId('player-next')).toHaveTextContent('I');
+    expect(within(hud).getByTestId('player-next')).toHaveTextContent('');
+    const previews = within(hud).getByTestId('player-next').querySelectorAll(
+      '[data-piece-preview]',
+    );
+    expect(previews).toHaveLength(2);
+    expect(previews[0]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
+    expect(previews[1]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
     expect(within(hud).getByText('견습 마도공학자')).toBeInTheDocument();
     expect(within(hud).getByText('별빛 수리공')).toBeInTheDocument();
     expect(within(hud).getByTestId('player-combo')).toHaveTextContent('3');
@@ -96,5 +101,27 @@ describe('BattleHud', () => {
       'attack',
     );
     expect(hud.querySelector('img')).toHaveAttribute('src', '/assets/hero-attack.webp');
+  });
+
+  it('uses a configurable top-biased portrait crop without changing identity hooks', () => {
+    render(
+      <BattleHud
+        character={{ id: 'cloud-courier', name: '루미', title: '바람길의 전령' }}
+        model={model}
+        portrait={{
+          alt: 'PLAYER focus portrait',
+          state: 'focus',
+          url: '/assets/characters/cloud-courier/portrait-focus.webp',
+        }}
+        portraitPosition="48% 18%"
+        side="player"
+      />,
+    );
+
+    const hud = screen.getByRole('region', { name: '루미 battle status' });
+    const plate = hud.querySelector<HTMLElement>('.battle-hud__portrait--plate');
+    expect(hud).toHaveAttribute('data-character-id', 'cloud-courier');
+    expect(plate).toHaveStyle({ '--portrait-position': '48% 18%' });
+    expect(within(hud).getByAltText('PLAYER focus portrait')).toHaveClass('asset-image');
   });
 });

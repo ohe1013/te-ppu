@@ -11,39 +11,82 @@ import { BootScreen } from '../ui/screens/BootScreen';
 import { MatchScreen } from '../ui/screens/MatchScreen';
 import { ResultScreen } from '../ui/screens/ResultScreen';
 import { TowerScreen } from '../ui/screens/TowerScreen';
+import { OwlRevealScreen } from '../ui/screens/OwlRevealScreen';
+import { OwlResultScreen } from '../ui/screens/OwlResultScreen';
+import { CharacterSelectScreen } from '../ui/screens/CharacterSelectScreen';
+import { NameEntryScreen } from '../ui/screens/NameEntryScreen';
+import {
+  RankingScreen,
+  type RankingEntry,
+  type RankingStatus,
+} from '../ui/screens/RankingScreen';
+import { TitleScreen } from '../ui/screens/TitleScreen';
 import '../ui/screens/screens.css';
 import {
   reduceRoute,
   type AppRoute,
   type Floor,
+  type MatchOutcome,
   type MatchResult,
 } from './app-route';
 import type { AppServices } from './app-services';
-import type { AssetManager } from '../assets';
+import type { AssetManager, PlayerCharacterAssets } from '../assets';
 import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
-import type { ProgressState } from '../progression/index';
-import { FINAL_FLOOR, getFloorEncounter } from '../progression/index';
+import type { ProgressState, ScoreRecord } from '../progression/index';
+import {
+  DEFAULT_PROGRESS,
+  FINAL_FLOOR,
+  getFloorEncounter,
+  OWL_ENCOUNTER,
+  type OwlEncounter,
+} from '../progression/index';
 import type { PlatformPort } from '../platform/platform-port';
 import { musicForRoute } from '../platform/audio-route';
+import {
+  PLAYER_CHARACTERS,
+  isPlayerCharacterId,
+  type PlayerCharacterDefinition,
+  type PlayerCharacterId,
+} from '../player';
+import type { Difficulty } from '../progression';
+import {
+  createLocalLeaderboardRepository,
+  type LeaderboardEntry,
+  type LeaderboardRepository,
+} from '../leaderboard';
 import { TowerController } from './towerController';
 import { useBoot } from './use-boot';
+import { useLeaderboard } from './use-leaderboard';
+import type { GameEvent } from '../core';
+import {
+  createScoreRecord,
+  isBetterScore,
+  ScoreRunController,
+  type ScoreRunSnapshot,
+} from '../scoring';
 
 export interface MatchRouteViewProps {
   readonly audioPort: AudioPort;
   readonly floor: Floor;
   readonly encounterIndex: 0 | 1 | 2;
   readonly wins: 0 | 1 | 2;
+  readonly difficulty: ProgressState['selectedDifficulty'];
+  readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
-  readonly onFinished: (result: MatchResult) => Promise<void>;
+  readonly onFinished: (outcome: MatchOutcome) => Promise<void>;
+  readonly onScoreEvents: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
   readonly onSettingsChange: (
     settings: Partial<ProgressState['settings']>,
   ) => Promise<boolean>;
   readonly platform: PlatformPort;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
   readonly settings: ProgressState['settings'];
   readonly settingsSaveFailed: boolean;
+  readonly runScore: number;
   readonly commonAssets?: ReturnType<AssetManager['getCommonAssets']>;
   readonly floorAssets?: ReturnType<AssetManager['getFloorAssets']>;
 }
@@ -51,6 +94,7 @@ export interface MatchRouteViewProps {
 export interface AppRootProps {
   readonly services: AppServices;
   readonly createMatchSeed?: () => number;
+  readonly nowIso?: () => string;
   readonly renderMatch?: (props: MatchRouteViewProps) => ReactNode;
 }
 
@@ -75,39 +119,179 @@ function toControllerResult(result: MatchResult): 'WIN' | 'LOSS' | 'DRAW' {
   return 'DRAW';
 }
 
+function currentIso(): string {
+  return new Date().toISOString();
+}
+
+function isPristineRun(snapshot: ScoreRunSnapshot): boolean {
+  return snapshot.phase === 'active'
+    && snapshot.score === 0
+    && snapshot.durationTicks === 0
+    && snapshot.encountersWon === 0
+    && snapshot.requiredFloor === 1;
+}
+
+function sameScoreRecord(left: ScoreRecord, right: ScoreRecord): boolean {
+  return left.schemaVersion === right.schemaVersion
+    && left.initials === right.initials
+    && left.characterId === right.characterId
+    && left.difficulty === right.difficulty
+    && left.score === right.score
+    && left.durationTicks === right.durationTicks
+    && left.reachedFloor === right.reachedFloor
+    && left.encountersWon === right.encountersWon
+    && left.owlDefeated === right.owlDefeated
+    && left.achievedAt === right.achievedAt;
+}
+
+function toRankingEntry(
+  record: ScoreRecord | LeaderboardEntry,
+  rank: number | '?',
+  badge?: 'LOCAL',
+): RankingEntry {
+  return {
+    rank,
+    ...(badge === undefined ? {} : { badge }),
+    initials: record.initials,
+    characterId: record.characterId,
+    score: record.score,
+    reachedFloor: record.reachedFloor,
+    encountersWon: record.encountersWon,
+    owlDefeated: record.owlDefeated,
+  };
+}
+
+function leaderboardEntryAsScoreRecord(entry: LeaderboardEntry): ScoreRecord {
+  return {
+    schemaVersion: entry.schemaVersion,
+    initials: entry.initials,
+    characterId: entry.characterId,
+    difficulty: entry.difficulty,
+    score: entry.score,
+    durationTicks: entry.durationTicks,
+    reachedFloor: entry.reachedFloor,
+    encountersWon: entry.encountersWon,
+    owlDefeated: entry.owlDefeated,
+    achievedAt: entry.updatedAt,
+  };
+}
+
+function mergeRankingEntries(
+  remoteEntries: readonly LeaderboardEntry[],
+  currentUserId: string | null,
+  localBest: ScoreRecord | null,
+): readonly RankingEntry[] {
+  const rankedRemote = remoteEntries.map((entry, index) => toRankingEntry(entry, index + 1));
+  if (localBest === null) return rankedRemote;
+  const localEntry = toRankingEntry(localBest, '?', 'LOCAL');
+  if (currentUserId === null) return [...rankedRemote, localEntry];
+
+  const currentUserRemote = remoteEntries.find((entry) => entry.userId === currentUserId);
+  if (currentUserRemote === undefined) return [...rankedRemote, localEntry];
+  if (!isBetterScore(localBest, leaderboardEntryAsScoreRecord(currentUserRemote))) {
+    return rankedRemote;
+  }
+  return [
+    ...rankedRemote.filter((_entry, index) => remoteEntries[index]?.userId !== currentUserId),
+    localEntry,
+  ];
+}
+
+interface RankedMatchIdentity {
+  readonly token: symbol;
+  readonly scoreRun: ScoreRunController;
+  readonly kind: 'floor' | 'owl';
+  readonly floor: Floor;
+  readonly encounterIndex: 0 | 1 | 2;
+  readonly seed: number;
+}
+
 export function AppRoot({
   createMatchSeed = createDefaultMatchSeed,
+  nowIso = currentIso,
   renderMatch = (props) => <MatchScreen {...props} />,
   services,
 }: AppRootProps) {
   const boot = useBoot(services);
   const [route, dispatchRoute] = useReducer(reduceRoute, { name: 'boot' } satisfies AppRoute);
-  const displayedFloor = route.name === 'floor-intro' || route.name === 'match' || route.name === 'result'
+  const displayedFloor = route.name === 'floor-intro'
+    || route.name === 'match'
+    || route.name === 'result'
     ? route.floor
-    : route.name === 'ending' ? FINAL_FLOOR : null;
+    : route.name === 'owl-reveal'
+      || route.name === 'owl-match'
+      || route.name === 'owl-result'
+      || route.name === 'ending'
+      ? FINAL_FLOOR
+      : null;
   const floorAssets = useFloorAssets(services.assetManager, displayedFloor);
   const commonAssets = boot.status === 'ready' ? services.assetManager.getCommonAssets() : null;
   const [, refreshControllerView] = useReducer((value: number) => value + 1, 0);
   const [resultSavePending, setResultSavePending] = useState(false);
+  const [resultSaveFailed, setResultSaveFailed] = useState(false);
   const [saveRetrying, setSaveRetrying] = useState(false);
+  const [profileSaveStatus, setProfileSaveStatus] = useState<'idle' | 'saving' | 'failed'>('idle');
+  const [rankingDifficulty, setRankingDifficulty] = useState<Difficulty>('easy');
   const controllerRef = useRef<TowerController | null>(null);
+  const fallbackLeaderboardRef = useRef<LeaderboardRepository | null>(null);
+  const scoreRunRef = useRef<ScoreRunController | null>(null);
+  const matchIdentityRef = useRef<RankedMatchIdentity | null>(null);
   const completionPendingRef = useRef(false);
   const completionTokenRef = useRef(0);
+  const profileSavePendingRef = useRef(false);
+  const retryProfileButtonRef = useRef<HTMLButtonElement>(null);
   const mountedRef = useRef(false);
 
   if (boot.status === 'ready' && controllerRef.current === null) {
     controllerRef.current = new TowerController(boot.progress, boot.progressRepository);
   }
   const controller = controllerRef.current;
+  if (services.leaderboardRepository === undefined && fallbackLeaderboardRef.current === null) {
+    fallbackLeaderboardRef.current = createLocalLeaderboardRepository();
+  }
+  const leaderboardRepository = services.leaderboardRepository
+    ?? fallbackLeaderboardRef.current!;
+  const leaderboard = useLeaderboard({
+    repository: leaderboardRepository,
+    progress: controller?.progress ?? DEFAULT_PROGRESS,
+    onClearPending: async (difficulty, candidate) => {
+      const activeController = controllerRef.current;
+      if (activeController === null) return { ok: false };
+      const current = activeController.progress.pendingLeaderboardSubmissions[difficulty];
+      const result = current === undefined && activeController.saveError === 'SAVE_FAILED'
+        ? await activeController.retrySave()
+        : await activeController.clearPendingSubmission(difficulty, candidate);
+      if (mountedRef.current) refreshControllerView();
+      return { ok: result.ok };
+    },
+  });
+  const scoreRunSnapshot = scoreRunRef.current?.snapshot ?? null;
+  const profileCharacterId = controller?.progress.profile?.characterId;
+  const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
+    ? profileCharacterId
+    : 'hero-engineer';
+  const selectedPlayer = PLAYER_CHARACTERS[selectedPlayerId];
+  const selectedPlayerAssets = commonAssets?.players[selectedPlayerId];
 
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
   }, [boot.status]);
 
   useEffect(() => {
+    if (controller !== null && (route.name === 'title' || route.name === 'ranking')) {
+      void leaderboard.retryPending();
+    }
+  }, [controller, leaderboard.retryPending, route.name]);
+
+  useEffect(() => {
+    if (profileSaveStatus === 'failed') retryProfileButtonRef.current?.focus();
+  }, [profileSaveStatus]);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      matchIdentityRef.current = null;
       completionTokenRef.current += 1;
     };
   }, []);
@@ -167,37 +351,167 @@ export function AppRoot({
   function startIntro(
     intro: Extract<AppRoute, { name: 'floor-intro' }>,
   ) {
-    if (controller === null) return;
+    const scoreRun = scoreRunRef.current;
+    if (controller === null || scoreRun === null) return;
     const seed = createMatchSeed();
     const started = intro.encounterIndex === 0
       ? controller.startFloor(intro.floor, seed)
       : controller.startEncounter(seed);
-    if (started.ok) dispatchRoute({ type: 'start-match', seed });
+    if (started.ok) {
+      matchIdentityRef.current = {
+        token: Symbol('ranked-floor-match'),
+        scoreRun,
+        kind: 'floor',
+        floor: intro.floor,
+        encounterIndex: intro.encounterIndex,
+        seed,
+      };
+      dispatchRoute({ type: 'start-match', seed });
+    }
   }
 
-  function retryFloor() {
+  function startScoreRun(): void {
     if (controller === null) return;
-    const seed = createMatchSeed();
-    const started = controller.restartFloor(seed);
-    if (started.ok) dispatchRoute({ type: 'retry', seed });
+    matchIdentityRef.current = null;
+    scoreRunRef.current = ScoreRunController.start(controller.progress.selectedDifficulty);
+    completionPendingRef.current = false;
+    completionTokenRef.current += 1;
+    setResultSavePending(false);
+    setResultSaveFailed(false);
+    refreshControllerView();
   }
 
-  async function finishMatch(result: MatchResult): Promise<void> {
-    if (controller === null || completionPendingRef.current) return;
+  function isCurrentMatch(identity: RankedMatchIdentity): boolean {
+    const current = matchIdentityRef.current;
+    return current !== null
+      && current.token === identity.token
+      && current.scoreRun === identity.scoreRun
+      && scoreRunRef.current === identity.scoreRun;
+  }
+
+  function recordScoreEvents(
+    identity: RankedMatchIdentity,
+    events: readonly GameEvent[],
+  ): void {
+    if (!isCurrentMatch(identity) || identity.scoreRun.snapshot.phase !== 'active') return;
+    identity.scoreRun.recordEvents(events);
+    refreshControllerView();
+  }
+
+  async function saveFinalScore(record: ScoreRecord) {
+    if (controller === null) return null;
+    const previousBest = controller.progress.localBestScores[record.difficulty];
+    const accepted = isBetterScore(record, previousBest);
+    if (!accepted) return null;
+    const result = await controller.recordScore(record, true);
+    if (mountedRef.current) refreshControllerView();
+    if (result.ok && leaderboardRepository.kind === 'firestore') {
+      const pending = controller.progress.pendingLeaderboardSubmissions[record.difficulty];
+      if (pending !== undefined && sameScoreRecord(pending, record)) {
+        void leaderboard.submitPending(record.difficulty, pending);
+      }
+    }
+    return result;
+  }
+
+  async function finishMatch(
+    identity: RankedMatchIdentity,
+    { result, durationTicks }: MatchOutcome,
+  ): Promise<void> {
+    if (
+      controller === null
+      || identity.kind !== 'floor'
+      || !isCurrentMatch(identity)
+      || completionPendingRef.current
+    ) return;
+    matchIdentityRef.current = null;
     completionPendingRef.current = true;
     const completionToken = completionTokenRef.current + 1;
     completionTokenRef.current = completionToken;
-    const finalWin = route.name === 'match'
-      && result === 'win'
-      && route.encounterIndex === 2;
-    setResultSavePending(finalWin);
-    const save = controller.completeEncounter(toControllerResult(result));
+    setResultSaveFailed(false);
+    const resolution = identity.scoreRun.completeMatch({
+      floor: identity.floor,
+      encounterIndex: identity.encounterIndex,
+      isOwl: false,
+      result,
+      durationTicks,
+    });
+    const progressSave = controller.completeEncounter(toControllerResult(result));
+    const finalScoreSave = resolution.kind === 'ended' && controller.progress.profile !== null
+      ? saveFinalScore(
+          createScoreRecord(resolution.summary, controller.progress.profile, nowIso()),
+        )
+      : null;
+    setResultSavePending(identity.encounterIndex === 2 || finalScoreSave !== null);
     dispatchRoute({ type: 'match-finished', result });
     refreshControllerView();
-    await save;
+    const [progressSaveResult, finalScoreSaveResult] = await Promise.all([
+      progressSave,
+      finalScoreSave ?? Promise.resolve(null),
+    ]);
     if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
     completionPendingRef.current = false;
     setResultSavePending(false);
+    setResultSaveFailed((finalScoreSaveResult ?? progressSaveResult).ok !== true);
+    refreshControllerView();
+  }
+
+  function startOwlMatch(): void {
+    const scoreRun = scoreRunRef.current;
+    if (controller === null || scoreRun === null) return;
+    const seed = createMatchSeed();
+    const started = controller.startOwlMatch(seed);
+    if (started.ok) {
+      matchIdentityRef.current = {
+        token: Symbol('ranked-owl-match'),
+        scoreRun,
+        kind: 'owl',
+        floor: FINAL_FLOOR,
+        encounterIndex: 2,
+        seed,
+      };
+      dispatchRoute({ type: 'start-owl-match', seed: started.match.matchSeed });
+    }
+  }
+
+  async function finishOwlMatch(
+    identity: RankedMatchIdentity,
+    { result, durationTicks }: MatchOutcome,
+  ): Promise<void> {
+    if (
+      controller === null
+      || identity.kind !== 'owl'
+      || !isCurrentMatch(identity)
+      || completionPendingRef.current
+    ) return;
+    matchIdentityRef.current = null;
+    completionPendingRef.current = true;
+    const completionToken = completionTokenRef.current + 1;
+    completionTokenRef.current = completionToken;
+    setResultSavePending(true);
+    setResultSaveFailed(false);
+    const resolution = identity.scoreRun.completeMatch({
+      floor: identity.floor,
+      encounterIndex: identity.encounterIndex,
+      isOwl: true,
+      result,
+      durationTicks,
+    });
+    const progressSave = controller.completeOwlMatch(toControllerResult(result));
+    const profile = controller.progress.profile;
+    const finalScoreSave = resolution.kind === 'ended' && profile !== null
+      ? saveFinalScore(createScoreRecord(resolution.summary, profile, nowIso()))
+      : null;
+    dispatchRoute({ type: 'owl-match-finished', result });
+    refreshControllerView();
+    const [progressSaveResult, finalScoreSaveResult] = await Promise.all([
+      progressSave,
+      finalScoreSave ?? Promise.resolve(null),
+    ]);
+    if (!mountedRef.current || completionTokenRef.current !== completionToken) return;
+    completionPendingRef.current = false;
+    setResultSavePending(false);
+    setResultSaveFailed((finalScoreSaveResult ?? progressSaveResult).ok !== true);
     refreshControllerView();
   }
 
@@ -207,6 +521,9 @@ export function AppRoot({
     const result = await controller.retrySave();
     if (!mountedRef.current) return result.ok;
     setSaveRetrying(false);
+    if (route.name === 'result' || route.name === 'owl-result') {
+      setResultSaveFailed(!result.ok);
+    }
     refreshControllerView();
     return result.ok;
   }
@@ -222,18 +539,299 @@ export function AppRoot({
     return result.ok;
   }
 
+  async function selectDifficulty(
+    difficulty: ProgressState['selectedDifficulty'],
+  ): Promise<boolean> {
+    if (controller === null) return false;
+    const activeRun = scoreRunRef.current;
+    if (activeRun !== null && !isPristineRun(activeRun.snapshot)) return false;
+    const save = controller.selectDifficulty(difficulty);
+    if (controller.progress.selectedDifficulty === difficulty && activeRun !== null) {
+      scoreRunRef.current = ScoreRunController.start(difficulty);
+    }
+    refreshControllerView();
+    const result = await save;
+    if (mountedRef.current) refreshControllerView();
+    return result.ok;
+  }
+
+  function clearScoreRun(): void {
+    matchIdentityRef.current = null;
+    scoreRunRef.current = null;
+    completionPendingRef.current = false;
+    completionTokenRef.current += 1;
+    setResultSavePending(false);
+    setResultSaveFailed(false);
+  }
+
+  function returnToTitle(): void {
+    setProfileSaveStatus('idle');
+    clearScoreRun();
+    dispatchRoute({ type: 'return-to-title' });
+  }
+
+  function finishEndedRun(): void {
+    clearScoreRun();
+    dispatchRoute({ type: 'continue' });
+  }
+
+  function openRanking(): void {
+    if (controller === null) return;
+    const difficulty = controller.progress.selectedDifficulty;
+    setRankingDifficulty(difficulty);
+    void leaderboard.load(difficulty);
+    dispatchRoute({ type: 'open-ranking' });
+  }
+
+  async function completeProfile(characterId: PlayerCharacterId): Promise<void> {
+    if (
+      controller === null
+      || route.name !== 'character-select'
+      || profileSaveStatus !== 'idle'
+      || profileSavePendingRef.current
+    ) return;
+    const profile = { initials: route.initials, characterId };
+    profileSavePendingRef.current = true;
+    setProfileSaveStatus('saving');
+    const result = await controller.updateProfile(profile);
+    profileSavePendingRef.current = false;
+    if (!mountedRef.current) return;
+    refreshControllerView();
+    if (!result.ok) {
+      setProfileSaveStatus('failed');
+      return;
+    }
+    setProfileSaveStatus('idle');
+    if (route.intent === 'start-run') startScoreRun();
+    dispatchRoute({ type: 'character-selected' });
+  }
+
+  async function retryProfileSave(): Promise<void> {
+    if (
+      controller === null
+      || route.name !== 'character-select'
+      || profileSavePendingRef.current
+    ) return;
+    profileSavePendingRef.current = true;
+    setProfileSaveStatus('saving');
+    const result = await controller.retrySave();
+    profileSavePendingRef.current = false;
+    if (!mountedRef.current) return;
+    refreshControllerView();
+    if (!result.ok) {
+      setProfileSaveStatus('failed');
+      return;
+    }
+    setProfileSaveStatus('idle');
+    if (route.intent === 'start-run') startScoreRun();
+    dispatchRoute({ type: 'character-selected' });
+  }
+
   let content: ReactNode;
   if (boot.status !== 'ready' || controller === null || route.name === 'boot') {
     content = <BootScreen state={boot} />;
   } else {
     switch (route.name) {
+      case 'title':
+        content = (
+          <TitleScreen
+            commonAssets={commonAssets}
+            notice={boot.notice}
+            onChangePlayer={() => {
+              setProfileSaveStatus('idle');
+              dispatchRoute({ type: 'change-player' });
+            }}
+            onOpenRanking={openRanking}
+            onStartRun={() => {
+              const hasProfile = controller.progress.profile !== null;
+              if (hasProfile) startScoreRun();
+              dispatchRoute({ type: 'start-run', hasProfile });
+            }}
+            progress={controller.progress}
+            syncPending={Object.values(leaderboard.pendingDifficulties).some(Boolean)}
+          />
+        );
+        break;
+      case 'name-entry':
+        content = (
+          <NameEntryScreen
+            backdrop={commonAssets?.towerBackdrop}
+            initialValue=""
+            onBack={returnToTitle}
+            onComplete={(initials) => dispatchRoute({ type: 'name-completed', initials })}
+          />
+        );
+        break;
+      case 'character-select':
+        content = (
+          <>
+            <CharacterSelectScreen
+              assets={{
+                'hero-engineer': { fullArt: commonAssets?.players['hero-engineer'].fullArt },
+                'cloud-courier': { fullArt: commonAssets?.players['cloud-courier'].fullArt },
+                'star-alchemist': { fullArt: commonAssets?.players['star-alchemist'].fullArt },
+              }}
+              initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
+              interactionLocked={profileSaveStatus !== 'idle'}
+              onBack={() => {
+                if (profileSaveStatus === 'idle') returnToTitle();
+              }}
+              onComplete={(characterId) => { void completeProfile(characterId); }}
+            />
+            {profileSaveStatus !== 'idle' && (
+              <aside
+                aria-labelledby={profileSaveStatus === 'failed' ? 'profile-save-error-title' : undefined}
+                aria-live="polite"
+                aria-modal={profileSaveStatus === 'failed' ? true : undefined}
+                className={`profile-save-panel profile-save-panel--${profileSaveStatus}`}
+                data-testid="profile-save-panel"
+                onKeyDown={(event) => {
+                  if (profileSaveStatus !== 'failed' || event.key !== 'Tab') return;
+                  event.preventDefault();
+                  retryProfileButtonRef.current?.focus();
+                }}
+                role={profileSaveStatus === 'failed' ? 'dialog' : undefined}
+              >
+                {profileSaveStatus === 'saving' ? (
+                  <p role="status">SAVING PLAYER PROFILE</p>
+                ) : (
+                  <>
+                    <p id="profile-save-error-title" role="alert">PROFILE SAVE FAILED</p>
+                    <button
+                      onClick={() => { void retryProfileSave(); }}
+                      ref={retryProfileButtonRef}
+                      type="button"
+                    >
+                      RETRY SAVE
+                    </button>
+                  </>
+                )}
+              </aside>
+            )}
+          </>
+        );
+        break;
+      case 'ranking': {
+        const localBest = controller.progress.localBestScores[rankingDifficulty];
+        let entries: readonly RankingEntry[];
+        let status: RankingStatus;
+        if (leaderboardRepository.kind === 'local') {
+          status = 'local';
+          entries = localBest === null ? [] : [toRankingEntry(localBest, '?', 'LOCAL')];
+        } else if (
+          leaderboard.read.difficulty !== rankingDifficulty
+          || leaderboard.read.status === 'idle'
+          || leaderboard.read.status === 'loading'
+        ) {
+          status = 'loading';
+          entries = [];
+        } else if (leaderboard.read.status === 'unavailable') {
+          status = 'unavailable';
+          entries = localBest === null ? [] : [toRankingEntry(localBest, '?', 'LOCAL')];
+        } else {
+          status = 'ready';
+          entries = mergeRankingEntries(
+            leaderboard.read.entries,
+            leaderboard.read.currentUserId,
+            localBest,
+          );
+        }
+        content = (
+          <RankingScreen
+            difficulty={rankingDifficulty}
+            entries={entries}
+            onBack={returnToTitle}
+            onSelectDifficulty={(difficulty) => {
+              setRankingDifficulty(difficulty);
+              void leaderboard.load(difficulty);
+            }}
+            status={status}
+            syncPending={leaderboard.pendingDifficulties[rankingDifficulty]}
+            unlockedDifficulties={controller.progress.unlockedDifficulties}
+          />
+        );
+        break;
+      }
       case 'tower':
         content = (
           <TowerScreen
             commonAssets={commonAssets}
+            difficultySelectionLocked={scoreRunSnapshot !== null
+              && !isPristineRun(scoreRunSnapshot)}
             notice={boot.notice}
             progress={controller.progress}
-            onSelectFloor={(floor) => dispatchRoute({ type: 'select-floor', floor })}
+            onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
+            onSelectFloor={(floor) => {
+              if (scoreRunRef.current?.canSelectFloor(floor) !== true) return;
+              dispatchRoute({ type: 'select-floor', floor });
+            }}
+            requiredFloor={scoreRunSnapshot?.requiredFloor ?? 1}
+            runActive={scoreRunSnapshot?.phase === 'active'}
+            runScore={scoreRunSnapshot?.score ?? 0}
+          />
+        );
+        break;
+      case 'owl-reveal':
+        content = (
+          <OwlRevealScreen
+            commonAssets={commonAssets}
+            difficulty={controller.progress.selectedDifficulty}
+            floorAssets={floorAssets}
+            onStart={startOwlMatch}
+          />
+        );
+        break;
+      case 'owl-match': {
+        const identity = matchIdentityRef.current;
+        const matchIdentity = identity !== null
+          && identity.kind === 'owl'
+          && identity.seed === route.seed
+          ? identity
+          : null;
+        content = renderMatch({
+          audioPort: services.audioPort,
+          difficulty: controller.progress.selectedDifficulty,
+          encounterIndex: 2,
+          floor: FINAL_FLOOR,
+          wins: 2,
+          specialEncounter: OWL_ENCOUNTER,
+          commonAssets,
+          floorAssets,
+          player: selectedPlayer,
+          playerAssets: selectedPlayerAssets,
+          seed: route.seed,
+          onFinished: (outcome) => matchIdentity === null
+            ? Promise.resolve()
+            : finishOwlMatch(matchIdentity, outcome),
+          onScoreEvents: (events) => {
+            if (matchIdentity !== null) recordScoreEvents(matchIdentity, events);
+          },
+          onRetrySettingsSave: retrySave,
+          onSettingsChange: updateSettings,
+          platform: services.platform,
+          runScore: scoreRunSnapshot?.score ?? 0,
+          settings: controller.progress.settings,
+          settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
+        });
+        break;
+      }
+      case 'owl-result':
+        content = (
+          <OwlResultScreen
+            commonAssets={commonAssets}
+            floorAssets={floorAssets}
+            onContinue={() => {
+              if (route.result === 'win') dispatchRoute({ type: 'continue' });
+              else finishEndedRun();
+            }}
+            onRetrySave={() => void retrySave()}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
+            result={route.result}
+            saveFailed={resultSaveFailed}
+            savePending={resultSavePending || saveRetrying}
+            saveRetrying={saveRetrying}
+            score={scoreRunSnapshot?.score ?? 0}
           />
         );
         break;
@@ -243,8 +841,12 @@ export function AppRoot({
             background={floorAssets?.background}
             encounter={getFloorEncounter(route.floor, route.encounterIndex)}
             floor={route.floor}
-            onBack={() => dispatchRoute({ type: 'return-to-tower' })}
+            onBack={route.encounterIndex === 0
+              ? () => dispatchRoute({ type: 'return-to-tower' })
+              : undefined}
             onStart={() => startIntro(route)}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
             series={{
               floor: route.floor,
@@ -254,23 +856,41 @@ export function AppRoot({
           />
         );
         break;
-      case 'match':
+      case 'match': {
+        const identity = matchIdentityRef.current;
+        const matchIdentity = identity !== null
+          && identity.kind === 'floor'
+          && identity.floor === route.floor
+          && identity.encounterIndex === route.encounterIndex
+          && identity.seed === route.seed
+          ? identity
+          : null;
         content = renderMatch({
           audioPort: services.audioPort,
+          difficulty: controller.progress.selectedDifficulty,
           floor: route.floor,
           encounterIndex: route.encounterIndex,
           wins: route.wins,
           commonAssets,
           floorAssets,
+          player: selectedPlayer,
+          playerAssets: selectedPlayerAssets,
           seed: route.seed,
-          onFinished: finishMatch,
+          onFinished: (outcome) => matchIdentity === null
+            ? Promise.resolve()
+            : finishMatch(matchIdentity, outcome),
+          onScoreEvents: (events) => {
+            if (matchIdentity !== null) recordScoreEvents(matchIdentity, events);
+          },
           onRetrySettingsSave: retrySave,
           onSettingsChange: updateSettings,
           platform: services.platform,
+          runScore: scoreRunSnapshot?.score ?? 0,
           settings: controller.progress.settings,
           settingsSaveFailed: controller.saveError === 'SAVE_FAILED',
         });
         break;
+      }
       case 'result':
         content = (
           <ResultScreen
@@ -279,12 +899,17 @@ export function AppRoot({
             floor={route.floor}
             progress={controller.progress}
             result={route.result}
-            saveFailed={controller.saveError === 'SAVE_FAILED'}
+            saveFailed={resultSaveFailed}
             savePending={resultSavePending || saveRetrying}
             saveRetrying={saveRetrying}
-            onContinue={() => dispatchRoute({ type: 'continue' })}
-            onRetry={retryFloor}
+            score={scoreRunSnapshot?.score ?? 0}
+            onContinue={() => {
+              if (route.result === 'win') dispatchRoute({ type: 'continue' });
+              else finishEndedRun();
+            }}
             onRetrySave={() => void retrySave()}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
             rival={commonAssets?.rivals[getFloorEncounter(route.floor, route.encounterIndex).characterId]}
             series={{
               floor: route.floor,
@@ -299,8 +924,13 @@ export function AppRoot({
         content = (
           <EndingScreen
             commonAssets={commonAssets}
+            difficulty={controller.progress.selectedDifficulty}
             floorAssets={floorAssets}
-            onReturnToTower={() => dispatchRoute({ type: 'return-to-tower' })}
+            onReturnToTitle={returnToTitle}
+            player={selectedPlayer}
+            playerAssets={selectedPlayerAssets}
+            score={scoreRunSnapshot?.score ?? 0}
+            unlockedDifficulties={controller.progress.unlockedDifficulties}
           />
         );
         break;
@@ -310,6 +940,7 @@ export function AppRoot({
   return (
     <main
       className="app-shell"
+      data-difficulty={controller?.progress.selectedDifficulty ?? 'easy'}
       data-runtime-mode={services.platform.kind}
       data-testid="app-shell"
       id="app-shell"

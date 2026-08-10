@@ -1,10 +1,11 @@
 import type { ProgressState } from './schema';
 import { FINAL_FLOOR, type Floor } from './floors';
+import { getDifficultyProgress } from './difficulty';
 
 export type FloorResult = 'WIN' | 'LOSS' | 'DRAW';
 
 export function canSelectFloor(progress: ProgressState, floor: Floor): boolean {
-  return floor <= progress.highestUnlockedFloor;
+  return floor <= getDifficultyProgress(progress, progress.selectedDifficulty).highestUnlockedFloor;
 }
 
 export function applyFloorResult(
@@ -14,17 +15,24 @@ export function applyFloorResult(
 ): ProgressState {
   if (result !== 'WIN') return progress;
 
-  const unlockedByWin = Math.min(FINAL_FLOOR, floor + 1) as ProgressState['highestUnlockedFloor'];
+  const active = getDifficultyProgress(progress, progress.selectedDifficulty);
+  const unlockedByWin = Math.min(FINAL_FLOOR, floor + 1) as Floor;
   const highestUnlockedFloor = Math.max(
-    progress.highestUnlockedFloor,
+    active.highestUnlockedFloor,
     unlockedByWin,
-  ) as ProgressState['highestUnlockedFloor'];
+  ) as ProgressState['difficultyProgress']['easy']['highestUnlockedFloor'];
   return {
     ...progress,
-    highestUnlockedFloor,
-    clearedFloors: {
-      ...progress.clearedFloors,
-      [floor]: true,
+    difficultyProgress: {
+      ...progress.difficultyProgress,
+      [progress.selectedDifficulty]: {
+        highestUnlockedFloor,
+        clearedFloors: {
+          ...active.clearedFloors,
+          [floor]: true,
+        },
+        owlDefeated: active.owlDefeated,
+      },
     },
     settings: { ...progress.settings },
   };

@@ -4,8 +4,24 @@ export type {
   ProgressLoadResult,
   ProgressSaveResult,
   ProgressRepository,
+  ScoreRecord,
+  LocalBestScores,
+  PendingLeaderboardSubmissions,
 } from './schema';
-export { DEFAULT_PROGRESS } from './schema';
+export { DEFAULT_PROGRESS, cloneProgressState, parsePersistedProgress, parseProgressState } from './schema';
+export {
+  canSelectDifficulty,
+  createDifficultyProgressMap,
+  createDifficultyRunProgress,
+  DIFFICULTIES,
+  getDifficultyProgress,
+  isDifficulty,
+  nextDifficulty,
+  type Difficulty,
+  type DifficultyProgressMap,
+  type DifficultyRunProgress,
+} from './difficulty';
+export { OWL_ENCOUNTER, type OwlEncounter } from './owl';
 export {
   createLocalProgressRepository,
   type LocalProgressRepositoryOptions,

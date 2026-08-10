@@ -1,9 +1,10 @@
 import type { ItemType, PieceKind } from '../core';
 import type { MusicTrack, SoundCue } from '../platform/audio-port';
+import type { PlayerCharacterId } from '../player';
 import type { Floor } from '../progression';
 
-export type CharacterId =
-  | 'hero-engineer' | 'owl-companion' | 'quartermaster' | 'alchemist'
+export type CharacterId = PlayerCharacterId
+  | 'owl-companion' | 'quartermaster' | 'alchemist'
   | 'guard-captain' | 'dark-engineer' | 'clock-moth'
   | 'glass-oracle' | 'moss-golem' | 'demon-king';
 
@@ -36,14 +37,13 @@ interface CharacterManifest<P extends object> {
   readonly portraits: P;
 }
 
-interface AuthoredAssetManifestV2 {
-  readonly schemaVersion: 2;
+interface AuthoredAssetManifestV3 {
+  readonly schemaVersion: 3;
   readonly mode: 'assets';
   readonly brand: { readonly logo: ManifestRef };
   readonly common: {
     readonly backgrounds: { readonly tower: ManifestRef };
-    readonly characters: {
-      readonly 'hero-engineer': CharacterManifest<HeroPortraits>;
+    readonly characters: Readonly<Record<PlayerCharacterId, CharacterManifest<HeroPortraits>>> & {
       readonly 'owl-companion': CharacterManifest<OwlPortraits>;
       readonly quartermaster: CharacterManifest<LieutenantPortraits>;
       readonly alchemist: CharacterManifest<LieutenantPortraits>;
@@ -94,9 +94,9 @@ interface AuthoredAssetManifestV2 {
 
 export type AssetManifest =
   | { readonly schemaVersion: 1; readonly mode: 'procedural-fallback' }
-  | AuthoredAssetManifestV2;
+  | AuthoredAssetManifestV3;
 
-/** @deprecated Kept as a source-compatible name while authored manifests use schema 2. */
+/** @deprecated Kept as a source-compatible name while authored manifests use schema 3. */
 export type AssetManifestV1 = AssetManifest;
 
 export interface LoadedImageRef {
@@ -115,6 +115,11 @@ export interface ResolvedAudioRef {
 export interface RivalCharacterAssets {
   readonly fullArt?: LoadedImageRef;
   readonly portraits: Partial<Record<PortraitState, LoadedImageRef>>;
+}
+
+export interface PlayerCharacterAssets {
+  readonly fullArt?: LoadedImageRef;
+  readonly portraits: Partial<Record<HeroPortraitState, LoadedImageRef>>;
 }
 
 export interface TexturePackerFrame {
@@ -145,10 +150,7 @@ export interface CommonAssets {
   readonly generation: number;
   readonly logo?: LoadedImageRef;
   readonly towerBackdrop?: LoadedImageRef;
-  readonly hero: {
-    readonly fullArt?: LoadedImageRef;
-    readonly portraits: Partial<Record<HeroPortraitState, LoadedImageRef>>;
-  };
+  readonly players: Readonly<Record<PlayerCharacterId, PlayerCharacterAssets>>;
   readonly owl: {
     readonly fullArt?: LoadedImageRef;
     readonly portraits: Partial<Record<OwlPortraitState, LoadedImageRef>>;

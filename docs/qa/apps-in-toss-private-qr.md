@@ -64,6 +64,14 @@ The passing automated config/package proof does not prove URL reachability, cons
 | D12 | Each floor requires three different wins; a loss or draw resets the series, intermediate wins move to the next rival, and the next floor unlocks only after the third win. | `PENDING_EXTERNAL` | `ATTACH_THREE_FIGHT_PROGRESSION_VIDEO` |
 | D13 | A non-resolving native close reports failure after 1,200ms, blocks duplicate confirmation while closing, permits one retry, and a resolving native close completes successfully. | `PENDING_EXTERNAL` | `ATTACH_CLOSE_TIMEOUT_VIDEO_AND_LOG` |
 | D14 | The compact tower and battle layouts remain readable at 360×640 and 430×932 on both Sandbox and real Toss WebViews, including safe areas and the native game X. | `PENDING_EXTERNAL` | `ATTACH_TWO_VIEWPORT_DEVICE_EVIDENCE` |
+| D15 | Empty storage opens the title first; `START RUN` requires exactly three uppercase initials and one of 리벳/루미/세라, then a close and reopen restores the same profile before a new EASY run. | `PENDING_EXTERNAL` | `ATTACH_FIRST_LAUNCH_AND_PROFILE_REOPEN_VIDEO` |
+| D16 | An ended partial run appears under `LOCAL RECORDS` while offline/local mode shows no online-pending claim; with approved Firebase configuration, online submission/read failure and retry states are separately captured without losing the local best. | `PENDING_EXTERNAL` | `ATTACH_LOCAL_AND_OPTIONAL_ONLINE_RANKING_EVIDENCE` |
+
+### Persisted profile and ranking boundary
+
+- The local E2E runtime stores schema-4 progress under the local browser identity and intentionally has no Firebase configuration, anonymous-auth request, leaderboard read, or score submission. Its `LOCAL RECORDS` result is local persistence evidence only.
+- Initials, selected character, local best scores, and pending leaderboard submissions share the persisted player-progress snapshot, but an online rank is never inferred from local storage.
+- `ONLINE RANKING SYNC PENDING` and `ONLINE RANKING UNAVAILABLE` require the optional Firebase path. Their real behavior remains device/console evidence under D16 until approved configuration, anonymous authentication, Firestore Rules, connectivity, and retry behavior are captured.
 
 ## Same-origin account-isolation protocol
 

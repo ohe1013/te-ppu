@@ -1,7 +1,20 @@
 import type { Floor, MatchResult } from '../../app/app-route';
-import type { LoadedImageRef, PortraitState, RivalCharacterAssets } from '../../assets';
-import type { FloorEncounter, FloorSeriesState, ProgressState } from '../../progression/index';
+import type {
+  HeroPortraitState,
+  LoadedImageRef,
+  PlayerCharacterAssets,
+  PortraitState,
+  RivalCharacterAssets,
+} from '../../assets';
+import type { PlayerCharacterDefinition } from '../../player';
+import {
+  getDifficultyProgress,
+  type FloorEncounter,
+  type FloorSeriesState,
+  type ProgressState,
+} from '../../progression/index';
 import { CharacterPortrait } from '../characters/CharacterPortrait';
+import { SelectedPlayerIdentity } from '../characters/SelectedPlayerIdentity';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 const RESULT_LABELS: Record<MatchResult, string> = {
@@ -22,9 +35,11 @@ export interface ResultScreenProps {
   readonly saveFailed: boolean;
   readonly savePending: boolean;
   readonly saveRetrying: boolean;
+  readonly score: number;
   readonly onContinue: () => void;
-  readonly onRetry: () => void;
   readonly onRetrySave: () => void;
+  readonly player: PlayerCharacterDefinition;
+  readonly playerAssets?: PlayerCharacterAssets;
 }
 
 export function ResultScreen({
@@ -32,24 +47,31 @@ export function ResultScreen({
   encounter,
   floor,
   onContinue,
-  onRetry,
   onRetrySave,
+  player,
+  playerAssets,
   progress,
   result,
   saveFailed,
   savePending,
   saveRetrying,
+  score,
   series,
   seriesComplete,
   rival,
 }: ResultScreenProps) {
+  const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
   const completedWins = result === 'win' ? series.wins + 1 : series.wins;
   const portraitState: PortraitState = result === 'win'
     ? 'defeat'
     : result === 'loss' ? 'smug' : 'idle';
+  const playerPortraitState: HeroPortraitState = result === 'win'
+    ? 'win'
+    : result === 'loss' ? 'loss' : 'idle';
   const continueLabel = result !== 'win'
-    ? '계속'
+    ? '도전 종료'
     : seriesComplete ? (floor === 5 ? '탑으로' : '다음 층') : '다음 상대';
+  const navigationLocked = savePending || saveFailed || saveRetrying;
 
   return (
     <section
@@ -71,11 +93,20 @@ export function ResultScreen({
             <p className="result-screen__rival-name">{encounter.displayName}</p>
           </div>
         </div>
+        <SelectedPlayerIdentity
+          assets={playerAssets}
+          context="result"
+          player={player}
+          portraitState={playerPortraitState}
+        />
         <p className="result-screen__line">
           {result === 'win' ? encounter.winLine : encounter.lossLine}
         </p>
         <p className="result-screen__progress">
-          층 승리 {completedWins}/3 · 최고 해금 {progress.highestUnlockedFloor}층
+          층 승리 {completedWins}/3 · 최고 해금 {activeProgress.highestUnlockedFloor}층
+        </p>
+        <p className="result-screen__score" data-testid="result-score">
+          RUN SCORE {String(score).padStart(6, '0')}
         </p>
       </div>
       {savePending && <p className="notice" role="status">진행 상황 저장 중…</p>}
@@ -88,15 +119,9 @@ export function ResultScreen({
         </div>
       )}
       <div className="screen-actions">
-        <button
-          className="secondary-button"
-          disabled={savePending}
-          type="button"
-          onClick={onRetry}
-        >
-          다시 대전
+        <button disabled={navigationLocked} type="button" onClick={onContinue}>
+          {continueLabel}
         </button>
-        <button disabled={savePending} type="button" onClick={onContinue}>{continueLabel}</button>
       </div>
     </section>
   );

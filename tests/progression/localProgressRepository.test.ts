@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  cloneProgressState,
   DEFAULT_PROGRESS,
   createLocalProgressRepository,
   type ProgressError,
@@ -8,6 +9,8 @@ import {
   type ProgressRepository,
   type ProgressSaveResult,
   type ProgressState,
+  type ClearedFloors,
+  type Floor,
 } from '../../src/progression/index';
 
 const SCOPED_KEY = 'te-ppu.progress.identity.local.local-browser';
@@ -45,14 +48,39 @@ class TestStorage {
   }
 }
 
-function validProgress(patch: Partial<ProgressState> = {}): ProgressState {
-  return {
-    schemaVersion: 2,
-    highestUnlockedFloor: 2,
-    clearedFloors: { 1: true, 2: false, 3: false, 4: false, 5: false },
-    settings: { soundEnabled: false, hapticsEnabled: true },
-    ...patch,
+interface ProgressPatch {
+  readonly highestUnlockedFloor?: Floor;
+  readonly clearedFloors?: ClearedFloors;
+  readonly settings?: ProgressState['settings'];
+}
+
+function validProgress(patch: ProgressPatch = {}): ProgressState {
+  const state = cloneProgressState(DEFAULT_PROGRESS);
+  state.difficultyProgress.easy = {
+    highestUnlockedFloor: patch.highestUnlockedFloor ?? 2,
+    clearedFloors: {
+      1: true, 2: false, 3: false, 4: false, 5: false,
+      ...patch.clearedFloors,
+    },
+    owlDefeated: false,
   };
+  state.settings = patch.settings ?? { soundEnabled: false, hapticsEnabled: true };
+  return state;
+}
+
+function migratedProgress(
+  highestUnlockedFloor: Floor,
+  clearedFloors: ClearedFloors,
+  settings: ProgressState['settings'],
+): ProgressState {
+  const state = cloneProgressState(DEFAULT_PROGRESS);
+  state.difficultyProgress.easy = {
+    highestUnlockedFloor,
+    clearedFloors: { ...clearedFloors },
+    owlDefeated: false,
+  };
+  state.settings = { ...settings };
+  return state;
 }
 
 function error(code: ProgressError['code']): ProgressError {
@@ -76,12 +104,8 @@ describe('local progress repository', () => {
     const load: ProgressLoadResult = await repository.load();
     const save: ProgressSaveResult = await repository.save(validProgress());
 
-    expect(DEFAULT_PROGRESS).toEqual({
-      schemaVersion: 2,
-      highestUnlockedFloor: 1,
-      clearedFloors: { 1: false, 2: false, 3: false, 4: false, 5: false },
-      settings: { soundEnabled: true, hapticsEnabled: true },
-    });
+    expect(DEFAULT_PROGRESS.schemaVersion).toBe(4);
+    expect(DEFAULT_PROGRESS.selectedDifficulty).toBe('easy');
     expect(load).toEqual({
       ok: true,
       state: DEFAULT_PROGRESS,
@@ -169,20 +193,19 @@ describe('local progress repository', () => {
       clearedFloors: { 1: true, 2: true, 3: true },
       settings: { soundEnabled: false, hapticsEnabled: true },
     };
-    const migratedV2Progress: ProgressState = {
-      schemaVersion: 2,
-      highestUnlockedFloor: 4,
-      clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-      settings: { soundEnabled: false, hapticsEnabled: true },
-    };
+    const migratedV3Progress = migratedProgress(
+      4,
+      { 1: true, 2: true, 3: true, 4: false, 5: false },
+      { soundEnabled: false, hapticsEnabled: true },
+    );
     const raw = JSON.stringify(legacyV1Progress);
     const storage = new TestStorage();
     storage.values.set(LEGACY_KEY, raw);
 
     const result = await createLocalProgressRepository(storage, options).load();
 
-    expect(result).toMatchObject({ ok: true, state: migratedV2Progress });
-    expect(storage.values.get(SCOPED_KEY)).toBe(JSON.stringify(migratedV2Progress));
+    expect(result).toMatchObject({ ok: true, state: migratedV3Progress });
+    expect(storage.values.get(SCOPED_KEY)).toBe(JSON.stringify(migratedV3Progress));
     expect(storage.values.get(LEGACY_KEY)).toBe(raw);
   });
 
@@ -192,15 +215,20 @@ describe('local progress repository', () => {
       highestUnlockedFloor: 5,
       clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: true },
       settings: { soundEnabled: false, hapticsEnabled: false },
-    } satisfies ProgressState;
+    };
     const raw = JSON.stringify(legacyV2FiveFloor);
     const storage = new TestStorage();
     storage.values.set(LEGACY_KEY, raw);
 
     const result = await createLocalProgressRepository(storage, options).load();
 
-    expect(result).toMatchObject({ ok: true, state: legacyV2FiveFloor });
-    expect(JSON.parse(storage.values.get(SCOPED_KEY)!)).toEqual(legacyV2FiveFloor);
+    const expected = migratedProgress(
+      5,
+      { 1: true, 2: true, 3: true, 4: true, 5: true },
+      { soundEnabled: false, hapticsEnabled: false },
+    );
+    expect(result).toMatchObject({ ok: true, state: expected });
+    expect(JSON.parse(storage.values.get(SCOPED_KEY)!)).toEqual(expected);
     expect(storage.values.get(LEGACY_KEY)).toBe(raw);
   });
 
@@ -235,12 +263,11 @@ describe('local progress repository', () => {
 
     expect(await createLocalProgressRepository(storage, options).load()).toEqual({
       ok: false,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 4,
-        clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-        settings: { soundEnabled: false, hapticsEnabled: true },
-      },
+      state: migratedProgress(
+        4,
+        { 1: true, 2: true, 3: true, 4: false, 5: false },
+        { soundEnabled: false, hapticsEnabled: true },
+      ),
       error: error('WRITE_FAILED'),
     });
     expect(storage.values.get(LEGACY_KEY)).toBe(raw);
@@ -286,12 +313,11 @@ describe('local progress repository', () => {
     expect(result).toEqual({
       ok: true,
       recoveredFromCorruption: false,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 4,
-        clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-        settings: { soundEnabled: false, hapticsEnabled: true },
-      },
+      state: migratedProgress(
+        4,
+        { 1: true, 2: true, 3: true, 4: false, 5: false },
+        { soundEnabled: false, hapticsEnabled: true },
+      ),
     });
     expect(storage.writes).toEqual([{
       key: SCOPED_KEY,
@@ -312,12 +338,11 @@ describe('local progress repository', () => {
     expect(await createLocalProgressRepository(storage, options).load()).toEqual({
       ok: true,
       recoveredFromCorruption: false,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 3,
-        clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
-        settings: { soundEnabled: true, hapticsEnabled: false },
-      },
+      state: migratedProgress(
+        3,
+        { 1: true, 2: true, 3: false, 4: false, 5: false },
+        { soundEnabled: true, hapticsEnabled: false },
+      ),
     });
     expect(storage.writes).toHaveLength(1);
     expect(storage.writes[0]?.key).toBe(SCOPED_KEY);
@@ -336,12 +361,11 @@ describe('local progress repository', () => {
 
     expect(await createLocalProgressRepository(storage, options).load()).toEqual({
       ok: false,
-      state: {
-        schemaVersion: 2,
-        highestUnlockedFloor: 4,
-        clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
-        settings: { soundEnabled: false, hapticsEnabled: true },
-      },
+      state: migratedProgress(
+        4,
+        { 1: true, 2: true, 3: true, 4: false, 5: false },
+        { soundEnabled: false, hapticsEnabled: true },
+      ),
       error: error('WRITE_FAILED'),
     });
     expect(storage.writes).toEqual([]);
@@ -350,7 +374,7 @@ describe('local progress repository', () => {
 
   it.each([
     { label: 'malformed JSON', raw: '{broken' },
-    { label: 'unknown version', raw: JSON.stringify({ ...validProgress(), schemaVersion: 3 }) },
+    { label: 'unknown version', raw: JSON.stringify({ ...validProgress(), schemaVersion: 99 }) },
     { label: 'missing field', raw: JSON.stringify({ ...validProgress(), settings: undefined }) },
     { label: 'invalid nested field', raw: JSON.stringify({
       ...validProgress(),
@@ -369,6 +393,25 @@ describe('local progress repository', () => {
     { label: 'malformed settings', raw: JSON.stringify({
       ...validProgress(),
       settings: { soundEnabled: 'yes', hapticsEnabled: true },
+    }) },
+    { label: 'invalid score initials', raw: JSON.stringify({
+      ...validProgress(),
+      localBestScores: {
+        easy: {
+          schemaVersion: 1,
+          initials: 'rvT',
+          characterId: 'hero-engineer',
+          difficulty: 'easy',
+          score: 1200,
+          durationTicks: 345,
+          reachedFloor: 3,
+          encountersWon: 2,
+          owlDefeated: false,
+          achievedAt: '2026-08-09T12:00:00.000Z',
+        },
+        normal: null,
+        hard: null,
+      },
     }) },
   ])('backs up exact $label input before replacing it with defaults', async ({ raw }) => {
     vi.spyOn(Date, 'now').mockReturnValue(NOW);

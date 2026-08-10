@@ -70,6 +70,23 @@ describe('AI floor profiles', () => {
     }
   });
 
+  it('makes Normal and Hard progressively stronger while preserving Easy', () => {
+    for (const profile of AI_FLOOR_PROFILES) {
+      const easy = getAiFloorProfile(profile.floor, 'easy');
+      const normal = getAiFloorProfile(profile.floor, 'normal');
+      const hard = getAiFloorProfile(profile.floor, 'hard');
+
+      expect(easy).toBe(profile);
+      expect(normal).not.toBe(profile);
+      expect(normal.reactionTicks).toBeLessThanOrEqual(easy.reactionTicks);
+      expect(hard.reactionTicks).toBeLessThanOrEqual(normal.reactionTicks);
+      expect(normal.lookahead).toBeGreaterThanOrEqual(easy.lookahead);
+      expect(hard.lookahead).toBeGreaterThanOrEqual(normal.lookahead);
+      expect(normal.topK).toBeLessThanOrEqual(easy.topK);
+      expect(hard.topK).toBeLessThanOrEqual(normal.topK);
+    }
+  });
+
   it('keeps the opponent observation free of preview and ghost information', () => {
     const observation = createAiObservation(
       createMatch({ matchSeed: 7, countdownTicks: 0 }),
