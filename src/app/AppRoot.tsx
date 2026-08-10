@@ -161,8 +161,19 @@ function toRankingEntry(
   };
 }
 
-function scoreEquivalent(left: LeaderboardEntry, right: ScoreRecord): boolean {
-  return left.score === right.score && left.durationTicks === right.durationTicks;
+function leaderboardEntryAsScoreRecord(entry: LeaderboardEntry): ScoreRecord {
+  return {
+    schemaVersion: entry.schemaVersion,
+    initials: entry.initials,
+    characterId: entry.characterId,
+    difficulty: entry.difficulty,
+    score: entry.score,
+    durationTicks: entry.durationTicks,
+    reachedFloor: entry.reachedFloor,
+    encountersWon: entry.encountersWon,
+    owlDefeated: entry.owlDefeated,
+    achievedAt: entry.updatedAt,
+  };
 }
 
 function mergeRankingEntries(
@@ -175,10 +186,11 @@ function mergeRankingEntries(
   const localEntry = toRankingEntry(localBest, '?', 'LOCAL');
   if (currentUserId === null) return [...rankedRemote, localEntry];
 
-  const equivalentCurrentUserRow = remoteEntries.some(
-    (entry) => entry.userId === currentUserId && scoreEquivalent(entry, localBest),
-  );
-  if (equivalentCurrentUserRow) return rankedRemote;
+  const currentUserRemote = remoteEntries.find((entry) => entry.userId === currentUserId);
+  if (currentUserRemote === undefined) return [...rankedRemote, localEntry];
+  if (!isBetterScore(localBest, leaderboardEntryAsScoreRecord(currentUserRemote))) {
+    return rankedRemote;
+  }
   return [
     ...rankedRemote.filter((_entry, index) => remoteEntries[index]?.userId !== currentUserId),
     localEntry,
@@ -656,6 +668,8 @@ export function AppRoot({
             <CharacterSelectScreen
               assets={{
                 'hero-engineer': { fullArt: commonAssets?.players['hero-engineer'].fullArt },
+                'cloud-courier': { fullArt: commonAssets?.players['cloud-courier'].fullArt },
+                'star-alchemist': { fullArt: commonAssets?.players['star-alchemist'].fullArt },
               }}
               initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
               interactionLocked={profileSaveStatus !== 'idle'}

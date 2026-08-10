@@ -24,7 +24,11 @@ import {
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
 import type { PlatformPort } from '../platform/platform-port';
-import type { PlayerCharacterId } from '../player';
+import {
+  PLAYER_CHARACTER_IDS,
+  PLAYER_CHARACTERS,
+  type PlayerCharacterId,
+} from '../player';
 import type { GameEvent } from '../core';
 import {
   createLocalLeaderboardRepository,
@@ -503,6 +507,35 @@ describe('AppRoot', () => {
     );
   });
 
+  it('passes every manifest-loaded player full art to character selection cards and backdrop', async () => {
+    const user = userEvent.setup();
+    renderGame(
+      new TestProgressRepository(DEFAULT_PROGRESS),
+      createTestPlatform(),
+      createLoadedAssetManager(),
+    );
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await enterInitials(user, 'ART');
+    const selectionScreen = await screen.findByTestId('character-select-screen');
+
+    for (const characterId of PLAYER_CHARACTER_IDS) {
+      const player = PLAYER_CHARACTERS[characterId];
+      const expectedUrl = `/assets/characters/${characterId}/full.webp`;
+      const card = selectionScreen.querySelector<HTMLButtonElement>(
+        `[data-character-id="${characterId}"]`,
+      );
+      if (card === null) throw new Error(`missing character card ${characterId}`);
+
+      expect(within(card).getByRole('img', { name: `${player.name} 전신 일러스트` }))
+        .toHaveAttribute('src', expectedUrl);
+      await user.click(card);
+      expect(selectionScreen.querySelector('img.screen-backdrop--art'))
+        .toHaveAttribute('src', expectedUrl);
+    }
+  });
+
   it('sends a returning player from title directly to the tower without another save', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);
@@ -691,6 +724,64 @@ describe('AppRoot', () => {
     expect(within(rows[0]!).queryByText('LOCAL')).not.toBeInTheDocument();
     expect(within(rows[1]!).getByText('?')).toBeInTheDocument();
     expect(within(rows[1]!).getByText('LOCAL')).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      label: 'higher score',
+      local: { score: 1_000, durationTicks: 100 },
+      remote: { score: 50_000, durationTicks: 5_000 },
+      visibleScore: '50,000',
+      hiddenScore: '1,000',
+    },
+    {
+      label: 'equal score with a shorter duration',
+      local: { score: 50_000, durationTicks: 5_000 },
+      remote: { score: 50_000, durationTicks: 4_999 },
+      visibleScore: '50,000',
+      hiddenScore: null,
+    },
+  ])('keeps the current-user remote row when it has a $label', async ({
+    local,
+    remote: remoteScore,
+    visibleScore,
+    hiddenScore,
+  }) => {
+    const user = userEvent.setup();
+    const progress = cloneProgressState(floorOneProgress);
+    progress.localBestScores.easy = scoreRecord(local);
+    const remote = leaderboardRepository('firestore', {
+      getTop: vi.fn(async () => ({
+        ok: true as const,
+        source: 'firestore' as const,
+        currentUserId: 'current-user',
+        entries: [remoteEntry('current-user', {
+          initials: 'REM',
+          characterId: 'cloud-courier',
+          ...remoteScore,
+        })],
+      })),
+    });
+    renderGame(
+      new TestProgressRepository(progress),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      remote,
+    );
+
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
+
+    expect(within(table).getByText(visibleScore)).toBeInTheDocument();
+    if (hiddenScore !== null) expect(within(table).queryByText(hiddenScore)).not.toBeInTheDocument();
+    expect(within(table).getByText('REM')).toBeInTheDocument();
+    expect(within(table).queryByText('RVT')).not.toBeInTheDocument();
+    expect(within(table).queryByText('LOCAL')).not.toBeInTheDocument();
+    expect(within(table).getByText('1')).toBeInTheDocument();
   });
 
   it('does not append a local duplicate when the current-user remote row is score-equivalent', async () => {
