@@ -15,6 +15,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCRIPT = PROJECT_ROOT / "scripts" / "generate-authored-assets.py"
 CHARACTER_IDS = ("cloud-courier", "star-alchemist")
 STATES = ("idle", "focus", "attack", "hit", "win", "loss")
+HEAD_EDGE_BUFFER = 14
+PROTECTED_HEAD_BANDS = {
+    "hero-engineer": (40, 210, 170),
+    "cloud-courier": (45, 190, 150),
+    "star-alchemist": (55, 175, 145),
+    "owl-companion": (20, 236, 180),
+    # The backpack may touch the crop; the protected ear/hat/face band starts at x=20.
+    "quartermaster": (20, 170, 165),
+    "alchemist": (10, 210, 170),
+    "guard-captain": (30, 205, 170),
+    "dark-engineer": (25, 200, 170),
+    "clock-moth": (20, 236, 190),
+    "glass-oracle": (45, 205, 180),
+    "moss-golem": (20, 236, 180),
+    "demon-king": (35, 220, 180),
+}
 
 
 def load_generator():
@@ -79,6 +95,44 @@ def run_generator(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class GenerateAuthoredAssetsTest(unittest.TestCase):
+    def test_alpha_content_bbox_ignores_low_alpha_canvas_residue(self) -> None:
+        generator = load_generator()
+        source = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        source.putpixel((0, 0), (255, 0, 255, 12))
+        source.putpixel((99, 99), (255, 0, 255, 32))
+        ImageDraw.Draw(source).rectangle((20, 10, 79, 89), fill=(40, 80, 120, 255))
+
+        self.assertEqual(generator.alpha_content_bbox(source), (20, 10, 80, 90))
+
+    def test_real_idle_portraits_keep_protected_heads_off_crop_edges(self) -> None:
+        self.assertEqual(set(PROTECTED_HEAD_BANDS), set(load_generator().PORTRAITS))
+
+        for character_id, (left, right, bottom) in PROTECTED_HEAD_BANDS.items():
+            path = (
+                PROJECT_ROOT
+                / "public"
+                / "assets"
+                / "characters"
+                / character_id
+                / "portrait-idle.webp"
+            )
+            with self.subTest(character=character_id), Image.open(path).convert("RGBA") as image:
+                visible_alpha = image.getchannel("A").point(
+                    lambda value: 255 if value > 32 else 0,
+                )
+                head_bbox = visible_alpha.crop((left, 0, right, bottom)).getbbox()
+                self.assertIsNotNone(head_bbox)
+                assert head_bbox is not None
+                absolute_head_bbox = (
+                    head_bbox[0] + left,
+                    head_bbox[1],
+                    head_bbox[2] + left,
+                    head_bbox[3],
+                )
+                self.assertGreaterEqual(absolute_head_bbox[0], HEAD_EDGE_BUFFER)
+                self.assertGreaterEqual(absolute_head_bbox[1], HEAD_EDGE_BUFFER)
+                self.assertLessEqual(absolute_head_bbox[2], 256 - HEAD_EDGE_BUFFER)
+
     def test_portrait_frames_cover_every_character_with_normalized_values(self) -> None:
         generator = load_generator()
 

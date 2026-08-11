@@ -21,6 +21,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "public" / "assets"
 CHARACTERS = ASSETS / "characters"
+CONTENT_ALPHA_THRESHOLD = 32
+PORTRAIT_CROP_BUFFER_FRACTION = 0.04
 
 
 def rgba(hex_value: str, alpha: int = 255) -> tuple[int, int, int, int]:
@@ -327,13 +329,13 @@ PORTRAIT_FRAMES = {
     "hero-engineer": (0.50, 0.18, 0.56),
     "cloud-courier": (0.48, 0.18, 0.56),
     "star-alchemist": (0.45, 0.18, 0.56),
-    "owl-companion": (0.50, 0.32, 0.56),
-    "quartermaster": (0.56, 0.26, 0.54),
+    "owl-companion": (0.50, 0.24, 0.56),
+    "quartermaster": (0.47, 0.26, 0.54),
     "alchemist": (0.50, 0.16, 0.50),
     "guard-captain": (0.50, 0.14, 0.48),
     "dark-engineer": (0.46, 0.16, 0.50),
-    "clock-moth": (0.50, 0.32, 0.48),
-    "glass-oracle": (0.49, 0.24, 0.48),
+    "clock-moth": (0.50, 0.24, 0.48),
+    "glass-oracle": (0.49, 0.20, 0.48),
     "moss-golem": (0.52, 0.25, 0.50),
     "demon-king": (0.51, 0.14, 0.45),
 }
@@ -354,6 +356,35 @@ def portrait_crop_box(
     return left, top, left + size, top + size
 
 
+def alpha_content_bbox(
+    image: Image.Image,
+    threshold: int = CONTENT_ALPHA_THRESHOLD,
+) -> tuple[int, int, int, int]:
+    """Return visible content bounds while ignoring faint chroma-key residue.
+
+    Alpha values at or below 32 are visually transparent cleanup residue and
+    must not widen portrait framing to the full master canvas.
+    """
+    alpha = image.convert("RGBA").getchannel("A")
+    visible = alpha.point(lambda value: 255 if value > threshold else 0)
+    return visible.getbbox() or (0, 0, image.width, image.height)
+
+
+def buffered_portrait_crop_box(
+    crop_box: tuple[int, int, int, int],
+    buffer_fraction: float = PORTRAIT_CROP_BUFFER_FRACTION,
+) -> tuple[int, int, int, int]:
+    """Expand a square portrait crop so protected head edges retain air."""
+    size = crop_box[2] - crop_box[0]
+    buffer = max(1, round(size * buffer_fraction))
+    return (
+        crop_box[0] - buffer,
+        crop_box[1] - buffer,
+        crop_box[2] + buffer,
+        crop_box[3] + buffer,
+    )
+
+
 def derive_portraits(
     characters: Iterable[str] | None = None,
     *,
@@ -367,8 +398,9 @@ def derive_portraits(
         if not source_path.exists():
             continue
         source = Image.open(source_path).convert("RGBA")
-        bbox = source.getbbox() or (0, 0, source.width, source.height)
-        crop = source.crop(portrait_crop_box(bbox, PORTRAIT_FRAMES[character]))
+        bbox = alpha_content_bbox(source)
+        crop_box = portrait_crop_box(bbox, PORTRAIT_FRAMES[character])
+        crop = source.crop(buffered_portrait_crop_box(crop_box))
         crop = crop.resize((240, 240), Image.Resampling.LANCZOS)
         portrait_base = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
         portrait_base.alpha_composite(crop, (8, 8))
