@@ -73,7 +73,6 @@ export function BattleHud({
       >
         {model.next.slice(0, 2).map((piece, index) => (
           <li
-            aria-label={`${piece.kind} 블록`}
             data-item={piece.marker?.item ?? 'none'}
             data-kind={piece.kind}
             key={`${piece.kind}-${index}`}

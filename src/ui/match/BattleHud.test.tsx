@@ -36,13 +36,17 @@ describe('BattleHud', () => {
 
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('');
     expect(within(hud).getByText('다음 블록')).toBeInTheDocument();
-    expect(within(hud).getByRole('list', { name: '견습 마도공학자 다음 블록' })).toBeInTheDocument();
-    const previews = within(hud).getByTestId('player-next').querySelectorAll(
-      '[data-piece-preview]',
-    );
+    const queue = within(hud).getByRole('list', { name: '견습 마도공학자 다음 블록' });
+    const previews = queue.querySelectorAll('[data-piece-preview]');
     expect(previews).toHaveLength(2);
     expect(previews[0]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
     expect(previews[1]?.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
+    expect(within(queue).getAllByRole('img', { name: '블록 모양' })).toHaveLength(2);
+    expect(within(queue).queryByRole('img', { name: /^[IJLOSTZ](?:\s|$)/ })).not.toBeInTheDocument();
+    for (const item of within(queue).getAllByRole('listitem')) {
+      expect(item).not.toHaveAttribute('aria-label');
+      expect(item).not.toHaveAccessibleName();
+    }
     expect(within(hud).getByText('견습 마도공학자')).toBeInTheDocument();
     expect(within(hud).getByText('별빛 수리공')).toBeInTheDocument();
     expect(within(hud).getByTestId('player-combo')).toHaveTextContent('3');

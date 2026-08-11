@@ -107,6 +107,8 @@ describe('TowerScreen', () => {
     expect(route.querySelector('.tower-route__shaft')).toBeInTheDocument();
     expect([...route.querySelectorAll<HTMLElement>('[data-floor]')].map((node) => node.dataset.floor))
       .toEqual(['1', '2', '3', '4', '5']);
+    expect([...route.querySelectorAll<HTMLElement>('.tower-node__marker')].map((node) => node.textContent))
+      .toEqual(['01층', '02층', '03층', '04층', '05층']);
   });
 
   it('shows locked difficulty choices and selects an unlocked difficulty', () => {

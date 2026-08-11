@@ -131,7 +131,7 @@ export function TowerScreen({
               data-floor={floor}
               key={floor}
             >
-              <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}</span>
+              <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}층</span>
               <div className="tower-node__card">
                 <div className="tower-node__title">
                   <span>{floor === 5 ? '마왕의 왕좌' : `${floor}층 관문`}</span>

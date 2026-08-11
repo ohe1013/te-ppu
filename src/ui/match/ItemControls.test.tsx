@@ -96,7 +96,9 @@ describe('ItemControls', () => {
         rowSelectionActive
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /취소/ }));
+    const cancel = screen.getByRole('button', { name: '취소' });
+    expect(cancel).toHaveTextContent('취소');
+    fireEvent.click(cancel);
 
     expect(onRowSelectionChange).toHaveBeenLastCalledWith(false);
     expect(dispatch).not.toHaveBeenCalled();
@@ -111,10 +113,12 @@ describe('ItemControls', () => {
     };
     const view = render(<ItemControls {...props} player={playerView()} />);
 
-    const freeze = screen.getByRole('button', { name: /상대 정지/ });
-    const queueSwap = screen.getByRole('button', { name: /다음 교환/ });
+    const freeze = screen.getByRole('button', { name: '빙결 · 2회' });
+    const queueSwap = screen.getByRole('button', { name: '교체 · 3회' });
     expect(freeze).toHaveTextContent('빙결');
     expect(queueSwap).toHaveTextContent('교체');
+    expect(screen.getByRole('img', { name: '빙결 아이템' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '교체 아이템' })).toBeInTheDocument();
     fireEvent.click(freeze);
     fireEvent.click(queueSwap);
 
@@ -133,8 +137,8 @@ describe('ItemControls', () => {
         })}
       />,
     );
-    expect(screen.getByRole('button', { name: /상대 정지/ })).toHaveTextContent('1회');
-    expect(screen.getByRole('button', { name: /다음 교환/ })).toHaveTextContent('2회');
+    expect(screen.getByRole('button', { name: '빙결 · 1회' })).toHaveTextContent('1회');
+    expect(screen.getByRole('button', { name: '교체 · 2회' })).toHaveTextContent('2회');
   });
 
   it('gates every item by active phase and its corresponding inventory', () => {
@@ -148,8 +152,8 @@ describe('ItemControls', () => {
     );
 
     expect(screen.getByRole('button', { name: /행 제거/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /상대 정지/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /다음 교환/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^빙결/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^교체/ })).toBeDisabled();
 
     view.rerender(
       <ItemControls
@@ -160,8 +164,8 @@ describe('ItemControls', () => {
       />,
     );
     expect(screen.getByRole('button', { name: /행 제거/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /상대 정지/ })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /다음 교환/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^빙결/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^교체/ })).toBeDisabled();
   });
 
   it('lets the parent clear controlled row state on explicit cancel', async () => {
@@ -169,7 +173,7 @@ describe('ItemControls', () => {
     render(<ControlledSelectionHarness player={playerView()} />);
 
     expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('5');
-    await user.click(screen.getByRole('button', { name: /행 선택 취소/ }));
+    await user.click(screen.getByRole('button', { name: '취소' }));
 
     expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('none');
   });
@@ -183,7 +187,7 @@ describe('ItemControls', () => {
     );
 
     expect(screen.getByTestId('controlled-selected-row')).toHaveTextContent('none');
-    expect(screen.queryByRole('button', { name: /행 선택 취소/ }))
+    expect(screen.queryByRole('button', { name: '취소' }))
       .not.toBeInTheDocument();
   });
 });

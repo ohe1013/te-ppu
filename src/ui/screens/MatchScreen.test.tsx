@@ -371,8 +371,8 @@ describe('MatchScreen', () => {
     useMatchLoopMock.mockReturnValue(loop);
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '상대 정지 · 1회' }));
-    fireEvent.click(screen.getByRole('button', { name: '다음 교환 · 3회' }));
+    fireEvent.click(screen.getByRole('button', { name: '빙결 · 1회' }));
+    fireEvent.click(screen.getByRole('button', { name: '교체 · 3회' }));
     fireEvent.click(screen.getByRole('button', { name: '행 제거 · 1회' }));
 
     const bottomRow = screen.getByRole('button', {

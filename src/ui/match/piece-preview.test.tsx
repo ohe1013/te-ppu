@@ -45,7 +45,7 @@ describe('PiecePreview', () => {
     const tile = { url: '/tiles/L.webp' } as LoadedImageRef;
     render(<PiecePreview image={tile} kind="L" />);
 
-    const preview = screen.getByRole('img', { name: /^L / });
+    const preview = screen.getByRole('img', { name: '블록 모양' });
     expect(preview).toHaveAttribute('data-piece-kind', 'L');
     expect(preview).toHaveAttribute('data-shape-width', '3');
     expect(preview).toHaveAttribute('data-shape-height', '2');
@@ -63,14 +63,16 @@ describe('PiecePreview', () => {
       expect(cell.querySelector('img')).toHaveAttribute('src', '/tiles/L.webp');
     }
     expect(preview.querySelector(':scope > img')).toBeNull();
+    expect(screen.queryByRole('img', { name: /^[IJLOSTZ](?:\s|$)/ })).not.toBeInTheDocument();
   });
 
   it('keeps four deterministic fallback cells when no tile image is available', () => {
     render(<PiecePreview kind="O" />);
 
-    const preview = screen.getByRole('img', { name: /^O / });
+    const preview = screen.getByRole('img', { name: '블록 모양' });
     expect(preview.querySelectorAll('[data-piece-cell]')).toHaveLength(4);
     expect(preview.querySelector('img')).toBeNull();
     expect(preview).toHaveTextContent('');
+    expect(screen.queryByRole('img', { name: /^[IJLOSTZ](?:\s|$)/ })).not.toBeInTheDocument();
   });
 });
