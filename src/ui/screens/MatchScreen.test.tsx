@@ -513,14 +513,16 @@ describe('MatchScreen', () => {
     );
     const options = useMatchLoopMock.mock.calls.at(-1)?.[0];
     const events = [
-      { type: 'lines-cleared' as const, side: 'player' as const, amount: 2, rows: [18, 19] },
+      { type: 'lines-cleared' as const, side: 'player' as const, amount: 4, rows: [16, 17, 18, 19] },
+      { type: 'attack-sent' as const, side: 'player' as const, amount: 4 },
     ] as const;
 
     act(() => options.onEvents(events, loop.view));
 
     expect(onScoreEvents).toHaveBeenCalledOnce();
     expect(onScoreEvents.mock.calls[0]?.[0]).toBe(events);
-    expect(play).toHaveBeenCalledWith('clear');
+    expect(play).toHaveBeenCalledWith('clear', { intensity: 3, duckMusic: true });
+    expect(play).toHaveBeenCalledWith('attack', { intensity: 3, duckMusic: true });
     expect(play.mock.invocationCallOrder[0])
       .toBeLessThan(onScoreEvents.mock.invocationCallOrder[0]!);
 

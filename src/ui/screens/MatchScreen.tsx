@@ -30,7 +30,7 @@ import type {
   PublicMatchView,
 } from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
-import type { AudioPort, SoundCue } from '../../platform/audio-port';
+import type { AudioPort } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
@@ -62,6 +62,7 @@ import { ResumeCountdown } from '../match/ResumeCountdown';
 import { RotateButton } from '../match/RotateButton';
 import { RowSelector } from '../match/RowSelector';
 import { SettingsPanel } from '../match/SettingsPanel';
+import { soundFeedbackForEvents } from '../match/sound-feedback';
 import '../match/match-layout.css';
 
 const MATCH_STATUS_LABELS: Readonly<Record<MatchStatus, string>> = {
@@ -110,22 +111,6 @@ function portraitUrls(records: object | undefined): Partial<Record<PortraitState
     Object.entries(records as Record<string, LoadedImageRef | undefined>)
       .flatMap(([state, image]) => image === undefined ? [] : [[state, image.url]]),
   ) as Partial<Record<PortraitState, string>>;
-}
-
-function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
-  if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
-  if (event.type === 'lines-cleared') return 'clear';
-  if (event.type === 'attack-sent') return 'attack';
-  if (
-    event.type === 'item-acquired'
-    || event.type === 'item-used'
-    || event.type === 'freeze-applied'
-  ) return 'item';
-  if (event.type === 'match-ended') {
-    if (status === 'player-won') return 'win';
-    if (status === 'opponent-won') return 'loss';
-  }
-  return null;
 }
 
 function hapticForEvent(event: GameEvent, status: MatchStatus): HapticType | null {
@@ -290,20 +275,18 @@ export function MatchScreen({
     view: PublicMatchView,
   ) => {
     const feedback = feedbackRef.current;
-    const playedCues = new Set<SoundCue>();
-    const sentHaptics = new Set<HapticType>();
-    for (const event of events) {
-      if (feedback.settings.soundEnabled) {
-        const cue = cueForEvent(event, view.status);
-        if (cue !== null && !playedCues.has(cue)) {
-          playedCues.add(cue);
-          try {
-            feedback.audio.play(cue);
-          } catch {
-            // Audio ports are optional and isolated from gameplay.
-          }
+    if (feedback.settings.soundEnabled) {
+      for (const sound of soundFeedbackForEvents(events, view)) {
+        try {
+          feedback.audio.play(sound.cue, sound.options);
+        } catch {
+          // Audio ports are optional and isolated from gameplay.
         }
       }
+    }
+
+    const sentHaptics = new Set<HapticType>();
+    for (const event of events) {
       if (feedback.settings.hapticsEnabled) {
         const haptic = hapticForEvent(event, view.status);
         if (haptic !== null && !sentHaptics.has(haptic)) {

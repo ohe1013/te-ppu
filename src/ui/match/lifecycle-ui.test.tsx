@@ -418,8 +418,8 @@ describe('lifecycle UI', () => {
   it('maps game events only when the matching sound and haptic settings are enabled', () => {
     const events: MatchLoopView['events'] = [
       { type: 'piece-locked', side: 'player' },
-      { type: 'lines-cleared', side: 'player', amount: 2, rows: [18, 19] },
-      { type: 'attack-sent', side: 'player', amount: 3 },
+      { type: 'lines-cleared', side: 'player', amount: 1, rows: [19] },
+      { type: 'attack-sent', side: 'player', amount: 1 },
       { type: 'item-used', side: 'player', item: 'freeze' },
     ];
     const loop = createLoop(events);
@@ -444,10 +444,10 @@ describe('lifecycle UI', () => {
 
     const result = render(<MatchScreen {...props} settings={enabledSettings} />);
     act(() => loopOptions?.onEvents?.(events, loop.view));
-    expect(audio.play).toHaveBeenCalledWith('land');
-    expect(audio.play).toHaveBeenCalledWith('clear');
-    expect(audio.play).toHaveBeenCalledWith('attack');
-    expect(audio.play).toHaveBeenCalledWith('item');
+    expect(audio.play).toHaveBeenCalledWith('land', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('clear', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('attack', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('item', { intensity: 0, duckMusic: false });
     expect(platform.haptic).toHaveBeenCalled();
 
     vi.clearAllMocks();
@@ -527,7 +527,10 @@ describe('lifecycle UI', () => {
     act(() => loopOptions?.onEvents?.(events, terminalLoop.view));
 
     expect(audio.play).toHaveBeenCalledTimes(1);
-    expect(audio.play).toHaveBeenCalledWith(expectedCue);
+    expect(audio.play).toHaveBeenCalledWith(expectedCue, {
+      intensity: 0,
+      duckMusic: false,
+    });
     expect(platform.haptic).toHaveBeenCalledTimes(1);
     expect(platform.haptic).toHaveBeenCalledWith(expectedHaptic);
   });
