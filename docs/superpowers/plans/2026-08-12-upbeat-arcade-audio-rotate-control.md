@@ -49,7 +49,6 @@
 - `public/assets/audio/sfx/*.mp3`: eight regenerated original arcade cues.
 - `public/assets/ui/rotate.svg`: transparent two-block orbit icon without an embedded button background.
 - `src/ui/match/controls.css`: option-B button styling and motion-safe active state.
-- `src/ui/match/RotateButton.test.tsx`: loaded icon/fallback/accessibility regression coverage.
 - `tests/e2e/portrait-layout.spec.ts`: mobile size and non-overlap assertions for the new control.
 
 ---
@@ -721,29 +720,13 @@ git commit -m "feat: replace soundtrack with upbeat arcade audio"
 **Files:**
 - Modify: `public/assets/ui/rotate.svg`
 - Modify: `src/ui/match/controls.css`
-- Modify: `src/ui/match/RotateButton.test.tsx`
 - Modify: `tests/e2e/portrait-layout.spec.ts`
 
 **Interfaces:**
 - Consumes: unchanged `RotateButtonProps`, `AssetIcon`, and `rotate.svg` manifest path.
 - Produces: the approved option-B visual with unchanged command and accessibility behavior.
 
-- [ ] **Step 1: Write failing DOM and mobile geometry expectations**
-
-Add a loaded icon test to `RotateButton.test.tsx`:
-
-```tsx
-it('renders the authored orbit icon inside one accessible button shell', () => {
-  render(<RotateButton
-    icon={{ generation: 3, ref: { path: 'ui/rotate.svg' }, url: '/assets/ui/rotate.svg' }}
-    onCommand={vi.fn()}
-  />);
-  const button = screen.getByRole('button', { name: '시계 방향 회전' });
-  expect(button.querySelectorAll('img.asset-icon')).toHaveLength(1);
-  expect(button.querySelector('img')).toHaveAttribute('src', '/assets/ui/rotate.svg');
-  expect(button.querySelector('svg')).toBeNull();
-});
-```
+- [ ] **Step 1: Write failing mobile geometry expectations**
 
 In `tests/e2e/portrait-layout.spec.ts`, after obtaining `rotate`, add:
 
@@ -760,11 +743,10 @@ expect(Math.abs(rotate.width - rotate.height)).toBeLessThanOrEqual(1);
 
 ```powershell
 $env:PATH='C:\Users\USER\AppData\Roaming\nvm\v24.15.0;' + $env:PATH
-npm test -- src/ui/match/RotateButton.test.tsx
 npx playwright test tests/e2e/portrait-layout.spec.ts --project=chromium-360x640
 ```
 
-Expected: the unit test passes structurally, while E2E fails at the exact width assertion because the current `min(22vw, 5.5rem)` is about 79.2px at 360px and 88px at 430px. The approved CSS has not been applied yet.
+Expected: E2E fails at the exact width assertion because the current `min(22vw, 5.5rem)` is about 79.2px at 360px and 88px at 430px. The approved CSS has not been applied yet.
 
 - [ ] **Step 3: Replace the nested-background SVG**
 
@@ -838,7 +820,7 @@ Capture the match screen at 360×640 and 430×932. Confirm the icon has no embed
 - [ ] **Step 7: Commit Task 4**
 
 ```powershell
-git add -- public/assets/ui/rotate.svg src/ui/match/controls.css src/ui/match/RotateButton.test.tsx tests/e2e/portrait-layout.spec.ts
+git add -- public/assets/ui/rotate.svg src/ui/match/controls.css tests/e2e/portrait-layout.spec.ts
 git commit -m "feat: redesign the puzzle rotate control"
 ```
 
