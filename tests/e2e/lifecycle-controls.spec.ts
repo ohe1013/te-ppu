@@ -150,13 +150,21 @@ test('shows a hanging close timeout and allows one retry after failure', async (
   await page.evaluate(() => window.__TE_PPU_E2E__.setCloseMode('hang'));
   await page.getByRole('button', { name: '게임 나가기' }).click();
   const dialog = page.getByRole('dialog');
-  const startedAt = Date.now();
-  await dialog.getByRole('button', { name: '게임 나가기 확인' }).click();
+  const confirm = dialog.getByRole('button', { name: '게임 나가기 확인' });
+  await confirm.evaluate((button) => {
+    button.addEventListener('click', () => {
+      document.documentElement.dataset.closeStartedAt = String(performance.now());
+    }, { capture: true, once: true });
+  });
+  await confirm.click();
   await page.waitForFunction(() => (
     document.querySelector('[role="status"]')?.textContent?.includes('다시 시도')
   ));
   await expect(page.getByRole('status')).toContainText('다시 시도');
-  expect(Date.now() - startedAt).toBeLessThan(800);
+  const closeElapsedMs = await page.evaluate(() => (
+    performance.now() - Number(document.documentElement.dataset.closeStartedAt)
+  ));
+  expect(closeElapsedMs).toBeLessThan(800);
   await expect(dialog.getByRole('status')).toHaveText('게임을 닫지 못했습니다. 다시 시도해 주세요.');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(1);
 
