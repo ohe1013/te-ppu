@@ -152,6 +152,7 @@ export function createWebAudioPort({
   let startedAt = 0;
   let earliestMusicStart = 0;
   let requestGeneration = 0;
+  let cueEpoch = 0;
   let unlocked = false;
   let enabled = initiallyEnabled;
   let backgrounded = false;
@@ -301,10 +302,9 @@ export function createWebAudioPort({
 
   function fadeOutMusicForReplacement(): void {
     const source = activeSource;
-    if (context === null) return;
+    if (context === null || source === null) return;
     const start = context.currentTime;
     cancelMusicGainAutomation(start);
-    if (source === null) return;
     const end = start + MUSIC_FADE_SECONDS;
     const gain = musicGain;
     if (gain !== null) {
@@ -529,6 +529,7 @@ export function createWebAudioPort({
 
     play(cue: SoundCue, options?: SoundPlaybackOptions): void {
       if (!isCuePlayable()) return;
+      const expectedCueEpoch = cueEpoch;
       const profile = profileFor(cue, options);
       const source = catalog()?.sfx[cue];
       if (source === undefined) {
@@ -538,10 +539,14 @@ export function createWebAudioPort({
       const expectedContext = context!;
       void loadBuffer(source, expectedContext)
         .then((buffer) => {
-          if (isCuePlayable(expectedContext)) createSampleCue(buffer, profile);
+          if (cueEpoch === expectedCueEpoch && isCuePlayable(expectedContext)) {
+            createSampleCue(buffer, profile);
+          }
         })
         .catch(() => {
-          if (isCuePlayable(expectedContext)) createOscillatorCue(cue, profile);
+          if (cueEpoch === expectedCueEpoch && isCuePlayable(expectedContext)) {
+            createOscillatorCue(cue, profile);
+          }
         });
     },
 
@@ -577,6 +582,7 @@ export function createWebAudioPort({
       if (destroyed || enabled === nextEnabled) return;
       enabled = nextEnabled;
       if (!enabled) {
+        cueEpoch += 1;
         cancelMusicGainAutomation(context?.currentTime ?? 0);
         stopFadingMusic(context?.currentTime ?? 0, true);
         clearActiveMusic(true, context?.currentTime ?? 0, true);
@@ -588,6 +594,7 @@ export function createWebAudioPort({
 
     async suspend(): Promise<void> {
       if (destroyed) return;
+      cueEpoch += 1;
       backgrounded = true;
       cancelMusicGainAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
@@ -608,6 +615,7 @@ export function createWebAudioPort({
       if (destroyed) return;
       destroyed = true;
       requestGeneration += 1;
+      cueEpoch += 1;
       cancelMusicGainAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(false, context?.currentTime ?? 0, true);

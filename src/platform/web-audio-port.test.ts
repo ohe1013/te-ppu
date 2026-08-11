@@ -380,6 +380,70 @@ describe('createWebAudioPort', () => {
     ]);
   });
 
+  it('drops a deferred decoded cue after disable and re-enable without ducking resumed music', async () => {
+    const catalog = createCatalog();
+    const musicPayload = new ArrayBuffer(8);
+    const cuePayload = new ArrayBuffer(8);
+    const musicBuffer: WebAudioBufferPort = { duration: 5 };
+    const cueDecode = deferred<WebAudioBufferPort>();
+    const fixture = createContext(async (payload) => (
+      payload === cuePayload ? cueDecode.promise : musicBuffer
+    ));
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async (url) => url === catalog.sfx.clear.url ? cuePayload : musicPayload,
+      resolveSources: () => catalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    audio.setEnabled(false);
+    audio.setEnabled(true);
+    await vi.waitFor(() => expect(fixture.bufferSources).toHaveLength(2));
+    const musicGain = fixture.gainNodes[0]!.gain;
+    const callsAfterResume = [...musicGain.calls];
+
+    cueDecode.resolve({ duration: 0.14 });
+    await flushMicrotasks();
+
+    expect(fixture.bufferSources).toHaveLength(2);
+    expect(musicGain.calls).toEqual(callsAfterResume);
+  });
+
+  it('drops a deferred fallback cue after suspend and resume without ducking resumed music', async () => {
+    const catalog = createCatalog();
+    const musicPayload = new ArrayBuffer(8);
+    const cuePayload = new ArrayBuffer(8);
+    const musicBuffer: WebAudioBufferPort = { duration: 5 };
+    const cueDecode = deferred<WebAudioBufferPort>();
+    const fixture = createContext(async (payload) => (
+      payload === cuePayload ? cueDecode.promise : musicBuffer
+    ));
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async (url) => url === catalog.sfx.attack.url ? cuePayload : musicPayload,
+      resolveSources: () => catalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('attack', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    await audio.suspend();
+    await audio.resume();
+    expect(fixture.bufferSources).toHaveLength(2);
+    const musicGain = fixture.gainNodes[0]!.gain;
+    const callsAfterResume = [...musicGain.calls];
+
+    cueDecode.reject(new Error('decode failed'));
+    await flushMicrotasks();
+
+    expect(fixture.oscillators).toHaveLength(0);
+    expect(musicGain.calls).toEqual(callsAfterResume);
+  });
+
   it('does not duck a scheduled replacement before its music is audible', async () => {
     const fixture = createContext();
     const audio = createWebAudioPort({
@@ -571,6 +635,52 @@ describe('createWebAudioPort', () => {
     expect(musicGain.calls.filter(([operation, value]) => (
       operation === 'exponential' && value === 0.0001
     ))).toEqual([['exponential', 0.0001, 10.15]]);
+  });
+
+  it('keeps an existing fade intact when a decoding replacement is superseded', async () => {
+    const catalog = createCatalog();
+    const towerPayload = new ArrayBuffer(8);
+    const earlyPayload = new ArrayBuffer(8);
+    const latePayload = new ArrayBuffer(8);
+    const towerBuffer: WebAudioBufferPort = { duration: 5 };
+    const earlyDecode = deferred<WebAudioBufferPort>();
+    const lateBuffer: WebAudioBufferPort = { duration: 11 };
+    const fixture = createContext(async (payload) => {
+      if (payload === towerPayload) return towerBuffer;
+      if (payload === earlyPayload) return earlyDecode.promise;
+      return lateBuffer;
+    });
+    fixture.context.currentTime = 10;
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async (url) => {
+        if (url === catalog.bgm.tower.url) return towerPayload;
+        if (url === catalog.bgm['early-floors'].url) return earlyPayload;
+        return latePayload;
+      },
+      resolveSources: () => catalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const firstReplacement = audio.setMusic('early-floors');
+    await flushMicrotasks();
+    const towerSource = fixture.bufferSources[0]!;
+    const musicGain = fixture.gainNodes[0]!.gain;
+    const callsDuringFade = musicGain.calls.length;
+    fixture.context.currentTime = 10.05;
+
+    await audio.setMusic('late-floors');
+    earlyDecode.resolve({ duration: 7 });
+    await firstReplacement;
+
+    expect(towerSource.stop).toHaveBeenCalledWith(10.15);
+    expect(fixture.bufferSources[1]!.buffer).toBe(lateBuffer);
+    expect(fixture.bufferSources[1]!.start).toHaveBeenCalledWith(10.15, 0);
+    expect(musicGain.calls.slice(callsDuringFade)).toEqual([
+      ['set', 0.0001, 10.15],
+      ['exponential', 1, 10.162],
+    ]);
   });
 
   it('stops an already-fading source immediately when audio is disabled', async () => {
