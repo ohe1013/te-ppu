@@ -266,6 +266,7 @@ export function AppRoot({
     },
   });
   const scoreRunSnapshot = scoreRunRef.current?.snapshot ?? null;
+  const runActive = scoreRunSnapshot?.phase === 'active';
   const profileCharacterId = controller?.progress.profile?.characterId;
   const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
     ? profileCharacterId
@@ -564,10 +565,14 @@ export function AppRoot({
     setResultSaveFailed(false);
   }
 
-  function returnToTitle(): void {
+  function showTitle(): void {
     setProfileSaveStatus('idle');
-    clearScoreRun();
     dispatchRoute({ type: 'return-to-title' });
+  }
+
+  function finishRunAndShowTitle(): void {
+    clearScoreRun();
+    showTitle();
   }
 
   function finishEndedRun(): void {
@@ -603,6 +608,7 @@ export function AppRoot({
     }
     setProfileSaveStatus('idle');
     if (route.intent === 'start-run') startScoreRun();
+    else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
 
@@ -624,6 +630,7 @@ export function AppRoot({
     }
     setProfileSaveStatus('idle');
     if (route.intent === 'start-run') startScoreRun();
+    else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
 
@@ -643,11 +650,16 @@ export function AppRoot({
             }}
             onOpenRanking={openRanking}
             onStartRun={() => {
+              if (runActive) {
+                dispatchRoute({ type: 'resume-run' });
+                return;
+              }
               const hasProfile = controller.progress.profile !== null;
               if (hasProfile) startScoreRun();
               dispatchRoute({ type: 'start-run', hasProfile });
             }}
             progress={controller.progress}
+            runActive={runActive}
             syncPending={Object.values(leaderboard.pendingDifficulties).some(Boolean)}
           />
         );
@@ -657,7 +669,7 @@ export function AppRoot({
           <NameEntryScreen
             backdrop={commonAssets?.towerBackdrop}
             initialValue=""
-            onBack={returnToTitle}
+            onBack={showTitle}
             onComplete={(initials) => dispatchRoute({ type: 'name-completed', initials })}
           />
         );
@@ -674,7 +686,7 @@ export function AppRoot({
               initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
               interactionLocked={profileSaveStatus !== 'idle'}
               onBack={() => {
-                if (profileSaveStatus === 'idle') returnToTitle();
+                if (profileSaveStatus === 'idle') showTitle();
               }}
               onComplete={(characterId) => { void completeProfile(characterId); }}
             />
@@ -740,7 +752,7 @@ export function AppRoot({
           <RankingScreen
             difficulty={rankingDifficulty}
             entries={entries}
-            onBack={returnToTitle}
+            onBack={showTitle}
             onSelectDifficulty={(difficulty) => {
               setRankingDifficulty(difficulty);
               void leaderboard.load(difficulty);
@@ -759,6 +771,7 @@ export function AppRoot({
             difficultySelectionLocked={scoreRunSnapshot !== null
               && !isPristineRun(scoreRunSnapshot)}
             notice={boot.notice}
+            onBack={showTitle}
             progress={controller.progress}
             onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
             onSelectFloor={(floor) => {
@@ -766,7 +779,7 @@ export function AppRoot({
               dispatchRoute({ type: 'select-floor', floor });
             }}
             requiredFloor={scoreRunSnapshot?.requiredFloor ?? 1}
-            runActive={scoreRunSnapshot?.phase === 'active'}
+            runActive={runActive}
             runScore={scoreRunSnapshot?.score ?? 0}
           />
         );
@@ -926,7 +939,7 @@ export function AppRoot({
             commonAssets={commonAssets}
             difficulty={controller.progress.selectedDifficulty}
             floorAssets={floorAssets}
-            onReturnToTitle={returnToTitle}
+            onReturnToTitle={finishRunAndShowTitle}
             player={selectedPlayer}
             playerAssets={selectedPlayerAssets}
             score={scoreRunSnapshot?.score ?? 0}

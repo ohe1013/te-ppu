@@ -11,6 +11,7 @@ export interface TitleScreenProps {
   readonly onOpenRanking: () => void;
   readonly onChangePlayer: () => void;
   readonly progress: ProgressState;
+  readonly runActive?: boolean;
   readonly syncPending?: boolean;
 }
 
@@ -29,6 +30,7 @@ export function TitleScreen({
   onOpenRanking,
   onStartRun,
   progress,
+  runActive = false,
   syncPending = false,
 }: TitleScreenProps) {
   const profile = progress.profile;
@@ -88,7 +90,7 @@ export function TitleScreen({
 
       <nav aria-label="Primary actions" className="title-screen__actions">
         <button className="title-screen__action title-screen__action--start" onClick={onStartRun} type="button">
-          START RUN
+          {runActive ? '도전 계속' : 'START RUN'}
         </button>
         <button className="title-screen__action" onClick={onOpenRanking} type="button">
           RANKING

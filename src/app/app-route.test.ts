@@ -33,7 +33,8 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'return-to-tower' },
   ]],
   ['tower', { name: 'tower' }, [
-    ...taskFiveEvents,
+    ...taskFiveEventsWithoutReturnToTitle,
+    { type: 'resume-run' },
     { type: 'boot-ready' },
     { type: 'start-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
@@ -199,6 +200,21 @@ describe('reduceRoute', () => {
       { name: 'title' },
       { type: 'start-run', hasProfile: true },
     )).toEqual({ name: 'tower' });
+  });
+
+  it('returns from tower to title', () => {
+    expect(reduceRoute({ name: 'tower' }, { type: 'return-to-title' }))
+      .toEqual({ name: 'title' });
+  });
+
+  it('resumes an active run from title', () => {
+    expect(reduceRoute({ name: 'title' }, { type: 'resume-run' }))
+      .toEqual({ name: 'tower' });
+  });
+
+  it('keeps invalid resume events referentially stable', () => {
+    const route: AppRoute = { name: 'tower' };
+    expect(reduceRoute(route, { type: 'resume-run' })).toBe(route);
   });
 
   it('returns PLAYER CHANGE to title after selection', () => {

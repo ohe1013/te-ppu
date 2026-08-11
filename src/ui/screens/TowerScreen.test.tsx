@@ -69,6 +69,25 @@ describe('TowerScreen', () => {
     expect(screen.getAllByRole('list', { name: '층별 라이벌 순서' })).toHaveLength(5);
   });
 
+  it('returns to title from the compact tower header control', () => {
+    const onBack = vi.fn();
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        notice={null}
+        onBack={onBack}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it('keeps floors in logical order while rendering an upward tower route', () => {
     render(
       <TowerScreen

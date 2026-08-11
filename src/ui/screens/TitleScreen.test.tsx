@@ -74,6 +74,41 @@ describe('TitleScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Offline progress loaded.');
   });
 
+  it('uses the active-run label while keeping the primary action callback', async () => {
+    const user = userEvent.setup();
+    const onStartRun = vi.fn();
+    const progress = cloneProgressState(DEFAULT_PROGRESS);
+    progress.profile = { initials: 'RVT', characterId: 'hero-engineer' };
+    const view = render(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={() => undefined}
+        onOpenRanking={() => undefined}
+        onStartRun={onStartRun}
+        progress={progress}
+        runActive={false}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(onStartRun).toHaveBeenCalledOnce();
+
+    view.rerender(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={() => undefined}
+        onOpenRanking={() => undefined}
+        onStartRun={onStartRun}
+        progress={progress}
+        runActive
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(onStartRun).toHaveBeenCalledTimes(2);
+  });
+
   it('announces the exact online sync warning only when remote work is pending', () => {
     const view = render(
       <TitleScreen

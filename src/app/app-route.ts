@@ -40,6 +40,7 @@ export type AppRouteEvent =
   | { type: 'name-completed'; initials: string }
   | { type: 'character-selected' }
   | { type: 'return-to-title' }
+  | { type: 'resume-run' }
   | { type: 'select-floor'; floor: Floor }
   | { type: 'start-match'; seed: number }
   | { type: 'match-finished'; result: MatchResult }
@@ -61,6 +62,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     case 'boot':
       return event.type === 'boot-ready' ? { name: 'title' } : route;
     case 'title':
+      if (event.type === 'resume-run') return { name: 'tower' };
       if (event.type === 'start-run') {
         return event.hasProfile
           ? { name: 'tower' }
@@ -85,6 +87,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     case 'ranking':
       return route;
     case 'tower':
+      if (event.type === 'return-to-title') return { name: 'title' };
       return event.type === 'select-floor'
         ? { name: 'floor-intro', floor: event.floor, encounterIndex: 0, wins: 0 }
         : route;

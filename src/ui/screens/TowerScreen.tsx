@@ -15,6 +15,7 @@ import { ScreenBackdrop } from './ScreenBackdrop';
 export interface TowerScreenProps {
   readonly progress: ProgressState;
   readonly notice: string | null;
+  readonly onBack?: () => void;
   readonly onSelectFloor: (floor: Floor) => void;
   readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
   readonly commonAssets?: CommonAssets | null;
@@ -34,6 +35,7 @@ export function TowerScreen({
   commonAssets,
   difficultySelectionLocked = false,
   notice,
+  onBack = () => undefined,
   onSelectDifficulty = () => undefined,
   onSelectFloor,
   progress,
@@ -66,6 +68,9 @@ export function TowerScreen({
             <h1>꼭대기까지 올라가자!</h1>
           </div>
         </div>
+        <button className="secondary-button tower-screen__back" onClick={onBack} type="button">
+          처음으로
+        </button>
         <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
       </div>
       {notice !== null && <p className="notice" role="status">{notice}</p>}

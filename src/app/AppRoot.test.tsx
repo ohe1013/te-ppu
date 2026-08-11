@@ -562,6 +562,111 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent('SCORE 000000');
   });
 
+  it('returns to title and resumes the same active score run', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+    );
+
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+    );
+    expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+  });
+
+  it('keeps an active score run when PLAYER CHANGE is cancelled', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+    );
+  });
+
+  it('keeps an active score run after ranking back', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+    );
+  });
+
+  it('clears an active score run after replacing the player profile', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await enterInitials(user, 'LUM');
+    await chooseCharacter(user, 'cloud-courier');
+
+    expect(await screen.findByRole('button', { name: 'START RUN' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+    );
+  });
+
+  it('clears an active score run after retrying player replacement', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress, [
+      { ok: true },
+      { ok: false, error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' } },
+      { ok: true },
+    ]);
+    renderGame(repository);
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await enterInitials(user, 'LUM');
+    await chooseCharacter(user, 'cloud-courier');
+    await user.click(await screen.findByRole('button', { name: 'RETRY SAVE' }));
+
+    expect(await screen.findByRole('button', { name: 'START RUN' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+    );
+  });
+
   it('persists PLAYER CHANGE and returns to title', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);

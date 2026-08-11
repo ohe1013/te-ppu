@@ -103,6 +103,29 @@ test('shows a usable tower screen in under ten seconds', async ({ page }) => {
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
 });
 
+test('resumes the same active run after visiting the title', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (let encounterIndex = 0; encounterIndex < 3; encounterIndex += 1) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  const status = await page.getByTestId('tower-run-status').textContent();
+
+  await page.getByRole('button', { name: '처음으로' }).click();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: '도전 계속' }).click();
+
+  await expect(page.getByTestId('tower-run-status')).toHaveText(status ?? '');
+  await expect(page.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeDisabled();
+});
+
 test('shows the mascot and all three ordered floor-one rivals', async ({ page }) => {
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openTower(page);
