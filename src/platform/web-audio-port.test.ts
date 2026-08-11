@@ -192,6 +192,54 @@ describe('createWebAudioPort', () => {
     ]);
   });
 
+  it('keeps rotate profiles in play order when distinct decodes resolve out of order', async () => {
+    const firstPayload = new ArrayBuffer(8);
+    const secondPayload = new ArrayBuffer(8);
+    const firstBuffer: WebAudioBufferPort = { duration: 5 };
+    const secondBuffer: WebAudioBufferPort = { duration: 7 };
+    const firstDecode = deferred<WebAudioBufferPort>();
+    const secondDecode = deferred<WebAudioBufferPort>();
+    const fixture = createContext(async (payload) => (
+      payload === firstPayload ? firstDecode.promise : secondDecode.promise
+    ));
+    const catalog = createCatalog();
+    const firstRotate = { generation: 2, url: 'https://cdn.example.test/rotate-first.mp3' };
+    const secondRotate = { generation: 3, url: 'https://cdn.example.test/rotate-second.mp3' };
+    let rotateRequest = 0;
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async (url) => url === firstRotate.url ? firstPayload : secondPayload,
+      resolveSources: () => ({
+        ...catalog,
+        sfx: {
+          ...catalog.sfx,
+          rotate: rotateRequest++ === 0 ? firstRotate : secondRotate,
+        },
+      }),
+    });
+
+    await audio.unlock();
+    audio.play('rotate');
+    audio.play('rotate');
+    await flushMicrotasks();
+
+    secondDecode.resolve(secondBuffer);
+    await flushMicrotasks();
+    expect(fixture.bufferSources).toHaveLength(1);
+    expect(fixture.bufferSources[0]!.buffer).toBe(secondBuffer);
+    expect(fixture.bufferSources[0]!.playbackRate.calls).toEqual([[
+      'set',
+      expect.closeTo(1.122462, 6),
+      4,
+    ]]);
+
+    firstDecode.resolve(firstBuffer);
+    await flushMicrotasks();
+    expect(fixture.bufferSources).toHaveLength(2);
+    const firstSource = fixture.bufferSources.find((source) => source.buffer === firstBuffer)!;
+    expect(firstSource.playbackRate.calls).toEqual([['set', 1, 4]]);
+  });
+
   it('applies the highest intensity sample profile to a clear cue', async () => {
     const fixture = createContext();
     const audio = createWebAudioPort({
@@ -304,6 +352,51 @@ describe('createWebAudioPort', () => {
       ['set', 0.65, 4.09],
       ['exponential', 1, 4.27],
     ]);
+  });
+
+  it('cancels the prior duck automation before scheduling a repeated duck', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    fixture.context.currentTime = 4.03;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+
+    expect(musicGain.calls.slice(-5)).toEqual([
+      ['cancel', 0, 4.03],
+      ['set', 1, 4.03],
+      ['exponential', 0.65, 4.05],
+      ['set', 0.65, 4.12],
+      ['exponential', 1, 4.3],
+    ]);
+  });
+
+  it('does not duck a scheduled replacement before its music is audible', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    await audio.setMusic('early-floors');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    const callsBeforeCue = [...musicGain.calls];
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+
+    expect(musicGain.calls).toEqual(callsBeforeCue);
   });
 
   it('does not duck when no music is active', async () => {
