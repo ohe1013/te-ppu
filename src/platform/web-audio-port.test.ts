@@ -11,6 +11,10 @@ import {
 class TestParam implements WebAudioParamPort {
   readonly calls: Array<readonly [string, number, number]> = [];
 
+  cancelScheduledValues(cancelTime: number): void {
+    this.calls.push(['cancel', 0, cancelTime]);
+  }
+
   exponentialRampToValueAtTime(value: number, endTime: number): void {
     this.calls.push(['exponential', value, endTime]);
   }
@@ -82,6 +86,7 @@ function createContext(
     readonly disconnect: ReturnType<typeof vi.fn>;
     loop: boolean;
     onended: ((event: Event) => void) | null;
+    readonly playbackRate: TestParam;
     readonly start: ReturnType<typeof vi.fn>;
     readonly stop: ReturnType<typeof vi.fn>;
   }> = [];
@@ -99,6 +104,7 @@ function createContext(
         disconnect: vi.fn(),
         loop: false,
         onended: null as ((event: Event) => void) | null,
+        playbackRate: new TestParam(),
         start: vi.fn(),
         stop: vi.fn(),
       };
@@ -164,6 +170,63 @@ describe('createWebAudioPort', () => {
     ]);
   });
 
+  it('rotates decoded cue sample rates in deterministic semitone variants', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    audio.play('rotate');
+    audio.play('rotate');
+    audio.play('rotate');
+    await flushMicrotasks();
+
+    expect(fixture.bufferSources).toHaveLength(3);
+    expect(fixture.bufferSources.map((source) => source.playbackRate.calls[0]![1])).toEqual([
+      1,
+      expect.closeTo(1.122462, 6),
+      expect.closeTo(1.259921, 6),
+    ]);
+  });
+
+  it('applies the highest intensity sample profile to a clear cue', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    audio.play('clear', { intensity: 3 });
+    await flushMicrotasks();
+
+    expect(fixture.bufferSources[0]!.playbackRate.calls).toEqual([['set', 1.15, 4]]);
+    expect(fixture.gainNodes[0]!.gain.calls).toEqual([['set', 0.2, 4]]);
+  });
+
+  it('applies the same intensity profile to fallback oscillator cues', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({ createContext: () => fixture.context });
+
+    await audio.unlock();
+    audio.play('clear', { intensity: 3 });
+
+    expect(fixture.oscillators[0]!.frequency.calls).toEqual([[
+      'set',
+      expect.closeTo(759, 10),
+      4,
+    ]]);
+    expect(fixture.gainNodes[0]!.gain.calls).toEqual([
+      ['set', 0.0001, 4],
+      ['exponential', expect.closeTo(0.17142857142857143, 12), 4.012],
+      ['exponential', 0.0001, 4.14],
+    ]);
+  });
+
   it('remembers desired music before unlock and fetches only the supplied resolved URL', async () => {
     const fixture = createContext();
     const baseCatalog = createCatalog();
@@ -218,6 +281,131 @@ describe('createWebAudioPort', () => {
     expect(fetchAudio).toHaveBeenCalledTimes(1);
     expect(fixture.bufferSources).toHaveLength(1);
     expect(fixture.bufferSources[0]!.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('ducks active audible music for an intensity-three cue', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+
+    expect(musicGain.calls.slice(-5)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+      ['exponential', 0.65, 4.02],
+      ['set', 0.65, 4.09],
+      ['exponential', 1, 4.27],
+    ]);
+  });
+
+  it('does not duck when no music is active', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+
+    expect(fixture.gainNodes[0]!.gain.calls).toEqual([['set', 0.2, 4]]);
+  });
+
+  it('cancels duck automation before disabling active music', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    audio.setEnabled(false);
+
+    expect(musicGain.calls.slice(-2)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+    ]);
+  });
+
+  it('cancels duck automation before suspending active music', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    await audio.suspend();
+
+    expect(musicGain.calls.slice(-2)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+    ]);
+  });
+
+  it('cancels duck automation before replacing active music', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    await audio.setMusic('early-floors');
+
+    expect(musicGain.calls.slice(-5)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+      ['exponential', 0.0001, 4.15],
+      ['set', 0.0001, 4.15],
+      ['exponential', 1, 4.162],
+    ]);
+  });
+
+  it('cancels duck automation before destroying active music', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const musicGain = fixture.gainNodes[0]!.gain;
+    audio.play('clear', { intensity: 3, duckMusic: true });
+    await flushMicrotasks();
+    await audio.destroy();
+
+    expect(musicGain.calls.slice(-2)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+    ]);
   });
 
   it('ramps a changed track down for exactly 150ms before replacement', async () => {

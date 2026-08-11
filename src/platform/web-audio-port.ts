@@ -2,11 +2,14 @@ import type {
   AudioPort,
   AudioSourceCatalog,
   AudioSourceRef,
+  CueIntensity,
   MusicTrack,
   SoundCue,
+  SoundPlaybackOptions,
 } from './audio-port';
 
 export interface WebAudioParamPort {
+  cancelScheduledValues(cancelTime: number): void;
   setValueAtTime(value: number, startTime: number): void;
   exponentialRampToValueAtTime(value: number, endTime: number): void;
 }
@@ -29,6 +32,7 @@ export interface WebAudioBufferSourcePort {
   buffer: WebAudioBufferPort | null;
   loop: boolean;
   onended: ((event: Event) => void) | null;
+  playbackRate: WebAudioParamPort;
   connect(destination: unknown): unknown;
   disconnect(): void;
   start(when?: number, offset?: number): void;
@@ -73,6 +77,12 @@ type ActiveCueSource = {
   readonly stop: (when?: number) => void;
 };
 
+type CuePlaybackProfile = {
+  readonly duckMusic: boolean;
+  readonly gain: number;
+  readonly rate: number;
+};
+
 const CUES: Readonly<Record<SoundCue, CueShape>> = {
   move: { duration: 0.045, frequency: 220, gain: 0.045, type: 'square' },
   rotate: { duration: 0.07, frequency: 360, gain: 0.065, type: 'triangle' },
@@ -87,6 +97,13 @@ const CUES: Readonly<Record<SoundCue, CueShape>> = {
 const MUSIC_FADE_SECONDS = 0.15;
 const MIN_GAIN = 0.0001;
 const MUSIC_FADE_IN_SECONDS = 0.012;
+const INTENSITY_RATES = [1, 1.04, 1.09, 1.15] as const;
+const SAMPLE_GAINS = [0.14, 0.16, 0.18, 0.20] as const;
+const ROTATE_RATES = [1, 2 ** (2 / 12), 2 ** (4 / 12)] as const;
+const DUCK_GAIN = 0.65;
+const DUCK_ATTACK_SECONDS = 0.02;
+const DUCK_HOLD_SECONDS = 0.09;
+const DUCK_RELEASE_SECONDS = 0.18;
 
 function defaultCreateContext(): WebAudioContextPort {
   const scope = globalThis as typeof globalThis & {
@@ -142,6 +159,7 @@ export function createWebAudioPort({
   const decodedBuffers = new Map<string, Promise<WebAudioBufferPort>>();
   const fadingMusicSources = new Set<WebAudioBufferSourcePort>();
   const activeCueSources = new Set<ActiveCueSource>();
+  let rotateVariant = 0;
 
   function catalog(): AudioSourceCatalog | null {
     try {
@@ -206,6 +224,53 @@ export function createWebAudioPort({
       && context.currentTime >= startedAt;
   }
 
+  function profileFor(
+    cue: SoundCue,
+    options: SoundPlaybackOptions | undefined,
+  ): CuePlaybackProfile {
+    const intensity = Math.max(0, Math.min(3, options?.intensity ?? 0)) as CueIntensity;
+    const rotateRate = cue === 'rotate'
+      ? ROTATE_RATES[rotateVariant++ % ROTATE_RATES.length]!
+      : 1;
+    return {
+      duckMusic: options?.duckMusic === true,
+      gain: SAMPLE_GAINS[intensity],
+      rate: INTENSITY_RATES[intensity] * rotateRate,
+    };
+  }
+
+  function cancelMusicGainAutomation(now: number): void {
+    if (musicGain === null) return;
+    try {
+      musicGain.gain.cancelScheduledValues(now);
+      musicGain.gain.setValueAtTime(1, now);
+    } catch {
+      // Music cleanup remains non-fatal if automation is unavailable.
+    }
+  }
+
+  function duckActiveMusic(start: number): void {
+    if (
+      musicGain === null
+      || activeSource === null
+      || activeTrack === null
+      || desiredTrack !== activeTrack
+      || !isActiveMusicAudible()
+    ) return;
+    try {
+      musicGain.gain.cancelScheduledValues(start);
+      musicGain.gain.setValueAtTime(1, start);
+      musicGain.gain.exponentialRampToValueAtTime(DUCK_GAIN, start + DUCK_ATTACK_SECONDS);
+      musicGain.gain.setValueAtTime(DUCK_GAIN, start + DUCK_HOLD_SECONDS);
+      musicGain.gain.exponentialRampToValueAtTime(
+        1,
+        start + DUCK_HOLD_SECONDS + DUCK_RELEASE_SECONDS,
+      );
+    } catch {
+      // Ducking is optional and must not interrupt a cue.
+    }
+  }
+
   function disconnectMusicSource(source: WebAudioBufferSourcePort): void {
     try {
       source.disconnect();
@@ -236,13 +301,14 @@ export function createWebAudioPort({
 
   function fadeOutMusicForReplacement(): void {
     const source = activeSource;
-    if (context === null || source === null) return;
+    if (context === null) return;
     const start = context.currentTime;
+    cancelMusicGainAutomation(start);
+    if (source === null) return;
     const end = start + MUSIC_FADE_SECONDS;
     const gain = musicGain;
     if (gain !== null) {
       try {
-        gain.gain.setValueAtTime(1, start);
         gain.gain.exponentialRampToValueAtTime(MIN_GAIN, end);
       } catch {
         // Keep the replacement non-fatal if an audio implementation rejects ramps.
@@ -310,7 +376,7 @@ export function createWebAudioPort({
     return loading;
   }
 
-  function createOscillatorCue(cue: SoundCue): void {
+  function createOscillatorCue(cue: SoundCue, profile: CuePlaybackProfile): void {
     if (!isCuePlayable()) return;
     const expectedContext = context!;
     try {
@@ -331,9 +397,12 @@ export function createWebAudioPort({
         stop: (when) => oscillator.stop(when),
       };
       oscillator.type = shape.type;
-      oscillator.frequency.setValueAtTime(shape.frequency, start);
+      oscillator.frequency.setValueAtTime(shape.frequency * profile.rate, start);
       gain.gain.setValueAtTime(MIN_GAIN, start);
-      gain.gain.exponentialRampToValueAtTime(shape.gain, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(
+        shape.gain * (profile.gain / SAMPLE_GAINS[0]),
+        start + 0.012,
+      );
       gain.gain.exponentialRampToValueAtTime(MIN_GAIN, end);
       oscillator.connect(gain);
       gain.connect(expectedContext.destination);
@@ -342,6 +411,7 @@ export function createWebAudioPort({
         active.disconnect();
       };
       activeCueSources.add(active);
+      if (profile.duckMusic) duckActiveMusic(start);
       oscillator.start(start);
       oscillator.stop(end);
     } catch {
@@ -349,7 +419,7 @@ export function createWebAudioPort({
     }
   }
 
-  function createSampleCue(buffer: WebAudioBufferPort): void {
+  function createSampleCue(buffer: WebAudioBufferPort, profile: CuePlaybackProfile): void {
     if (!isCuePlayable()) return;
     const expectedContext = context!;
     try {
@@ -369,7 +439,8 @@ export function createWebAudioPort({
       };
       source.buffer = buffer;
       source.loop = false;
-      gain.gain.setValueAtTime(0.16, start);
+      source.playbackRate.setValueAtTime(profile.rate, start);
+      gain.gain.setValueAtTime(profile.gain, start);
       source.connect(gain);
       gain.connect(expectedContext.destination);
       source.onended = () => {
@@ -377,6 +448,7 @@ export function createWebAudioPort({
         active.disconnect();
       };
       activeCueSources.add(active);
+      if (profile.duckMusic) duckActiveMusic(start);
       source.start(start);
       if (buffer.duration > 0) source.stop(start + buffer.duration);
     } catch {
@@ -455,20 +527,21 @@ export function createWebAudioPort({
       await resumeMusicIfPossible();
     },
 
-    play(cue: SoundCue): void {
+    play(cue: SoundCue, options?: SoundPlaybackOptions): void {
       if (!isCuePlayable()) return;
+      const profile = profileFor(cue, options);
       const source = catalog()?.sfx[cue];
       if (source === undefined) {
-        createOscillatorCue(cue);
+        createOscillatorCue(cue, profile);
         return;
       }
       const expectedContext = context!;
       void loadBuffer(source, expectedContext)
         .then((buffer) => {
-          if (isCuePlayable(expectedContext)) createSampleCue(buffer);
+          if (isCuePlayable(expectedContext)) createSampleCue(buffer, profile);
         })
         .catch(() => {
-          if (isCuePlayable(expectedContext)) createOscillatorCue(cue);
+          if (isCuePlayable(expectedContext)) createOscillatorCue(cue, profile);
         });
     },
 
@@ -481,6 +554,7 @@ export function createWebAudioPort({
       const changedToTrack = track !== null && track !== desiredTrack;
       desiredTrack = track;
       if (track === null) {
+        cancelMusicGainAutomation(context?.currentTime ?? 0);
         stopFadingMusic(context?.currentTime ?? 0, true);
         clearActiveMusic(false, context?.currentTime ?? 0, true);
         return;
@@ -503,6 +577,7 @@ export function createWebAudioPort({
       if (destroyed || enabled === nextEnabled) return;
       enabled = nextEnabled;
       if (!enabled) {
+        cancelMusicGainAutomation(context?.currentTime ?? 0);
         stopFadingMusic(context?.currentTime ?? 0, true);
         clearActiveMusic(true, context?.currentTime ?? 0, true);
         stopCueSources();
@@ -514,6 +589,7 @@ export function createWebAudioPort({
     async suspend(): Promise<void> {
       if (destroyed) return;
       backgrounded = true;
+      cancelMusicGainAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(true, context?.currentTime ?? 0, true);
       stopCueSources();
@@ -532,6 +608,7 @@ export function createWebAudioPort({
       if (destroyed) return;
       destroyed = true;
       requestGeneration += 1;
+      cancelMusicGainAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(false, context?.currentTime ?? 0, true);
       stopCueSources();
