@@ -1,14 +1,35 @@
 import type { Page } from '@playwright/test';
 import { expect, openMatch, seedReturningProfile, test } from './helpers';
 
-async function expectViewportCenteredOverlay(page: Page): Promise<void> {
+type Insets = {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+};
+
+const ASYMMETRIC_SAFE_AREA: Insets = {
+  top: 47,
+  right: 29,
+  bottom: 21,
+  left: 13,
+};
+
+async function expectViewportCenteredOverlay(page: Page, insets?: Insets): Promise<void> {
   const geometry = await page.locator('.modal-overlay').evaluate((overlay) => {
     const overlayRect = overlay.getBoundingClientRect();
+    const overlayStyle = getComputedStyle(overlay);
     const surface = overlay.querySelector<HTMLElement>('.modal-overlay__surface');
     if (surface === null) throw new Error('missing modal surface');
     const surfaceRect = surface.getBoundingClientRect();
     return {
       position: getComputedStyle(overlay).position,
+      padding: {
+        bottom: overlayStyle.paddingBottom,
+        left: overlayStyle.paddingLeft,
+        right: overlayStyle.paddingRight,
+        top: overlayStyle.paddingTop,
+      },
       overlayRect: {
         left: overlayRect.left,
         top: overlayRect.top,
@@ -21,6 +42,13 @@ async function expectViewportCenteredOverlay(page: Page): Promise<void> {
       centerDeltaY: Math.abs(
         surfaceRect.top + surfaceRect.height / 2 - window.innerHeight / 2,
       ),
+      surfaceRect: {
+        bottom: surfaceRect.bottom,
+        left: surfaceRect.left,
+        right: surfaceRect.right,
+        top: surfaceRect.top,
+      },
+      viewport: { height: window.innerHeight, width: window.innerWidth },
     };
   });
   expect(geometry.position).toBe('fixed');
@@ -28,8 +56,14 @@ async function expectViewportCenteredOverlay(page: Page): Promise<void> {
   expect(geometry.overlayRect.top).toBe(0);
   expect(geometry.overlayRect.right).toBe(page.viewportSize()!.width);
   expect(geometry.overlayRect.bottom).toBe(page.viewportSize()!.height);
-  expect(geometry.centerDeltaX).toBeLessThanOrEqual(1);
-  expect(geometry.centerDeltaY).toBeLessThanOrEqual(1);
+  expect(geometry.centerDeltaX, JSON.stringify(geometry)).toBeLessThanOrEqual(1);
+  expect(geometry.centerDeltaY, JSON.stringify(geometry)).toBeLessThanOrEqual(1);
+  if (insets !== undefined) {
+    expect(geometry.surfaceRect.top).toBeGreaterThanOrEqual(insets.top);
+    expect(geometry.surfaceRect.right).toBeLessThanOrEqual(page.viewportSize()!.width - insets.right);
+    expect(geometry.surfaceRect.bottom).toBeLessThanOrEqual(page.viewportSize()!.height - insets.bottom);
+    expect(geometry.surfaceRect.left).toBeGreaterThanOrEqual(insets.left);
+  }
 }
 
 test.beforeEach(async ({ page }) => {
@@ -173,3 +207,31 @@ test('shows a hanging close timeout and allows one retry after failure', async (
   await expect(dialog).toHaveAttribute('data-close-state', 'closing');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(2);
 });
+
+for (const viewport of [
+  { height: 640, width: 360 },
+  { height: 932, width: 430 },
+] as const) {
+  test(`keeps every overlay viewport-centered with asymmetric safe areas at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.addInitScript((insets: Insets) => {
+      (window as Window & { __TE_PPU_E2E_SAFE_AREA__?: Insets }).__TE_PPU_E2E_SAFE_AREA__ = insets;
+    }, ASYMMETRIC_SAFE_AREA);
+    await page.setViewportSize(viewport);
+    await openMatch(page);
+
+    await page.getByRole('button', { name: '설정' }).click();
+    await expect(page.getByTestId('settings-overlay')).toBeVisible();
+    await expectViewportCenteredOverlay(page, ASYMMETRIC_SAFE_AREA);
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: '게임 나가기' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expectViewportCenteredOverlay(page, ASYMMETRIC_SAFE_AREA);
+    await page.getByRole('button', { name: '계속하기' }).click();
+
+    await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('hidden'));
+    await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('visible'));
+    await expect(page.getByRole('status', { name: '게임 재개 카운트다운' })).toHaveText('3');
+    await expectViewportCenteredOverlay(page, ASYMMETRIC_SAFE_AREA);
+  });
+}

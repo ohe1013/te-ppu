@@ -235,6 +235,25 @@ afterEach(() => {
 });
 
 describe('MatchScreen', () => {
+  it.each([
+    ['countdown', '대전 준비'],
+    ['playing', '대전 진행 중'],
+    ['player-won', '플레이어 승리'],
+    ['opponent-won', '상대 승리'],
+    ['draw', '무승부'],
+  ] as const)('announces the Korean player-facing label for %s', (status, label) => {
+    const loop = activeLoop();
+    useMatchLoopMock.mockReturnValue({
+      ...loop,
+      view: { ...loop.view, status },
+    });
+
+    render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
+
+    expect(screen.getByTestId('match-status')).toHaveTextContent(label);
+    expect(screen.getByTestId('match-status')).not.toHaveTextContent(status);
+  });
+
   it('composes two symmetric public HUDs around the single battle canvas', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
@@ -252,7 +271,7 @@ describe('MatchScreen', () => {
       '',
     );
     expect(document.querySelector('img')).toBeNull();
-    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
     expect(screen.getByText('2층 · 1/3')).toBeInTheDocument();
     expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');

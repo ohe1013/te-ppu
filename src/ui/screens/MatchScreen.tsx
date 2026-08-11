@@ -64,6 +64,14 @@ import { RowSelector } from '../match/RowSelector';
 import { SettingsPanel } from '../match/SettingsPanel';
 import '../match/match-layout.css';
 
+const MATCH_STATUS_LABELS: Readonly<Record<MatchStatus, string>> = {
+  countdown: '대전 준비',
+  playing: '대전 진행 중',
+  'player-won': '플레이어 승리',
+  'opponent-won': '상대 승리',
+  draw: '무승부',
+};
+
 export interface MatchScreenProps {
   readonly audioPort: Pick<AudioPort, 'play'>;
   readonly floor: Floor;
@@ -444,7 +452,7 @@ export function MatchScreen({
         <div className="match-header__actions">
           <div className="match-meta match-meta--live">
             <span aria-live="polite" data-testid="match-status">
-              {match.view.status}
+              {MATCH_STATUS_LABELS[match.view.status]}
             </span>
             <span className="match-meta__telemetry" data-testid="match-tick">{match.view.tick}</span>
           </div>

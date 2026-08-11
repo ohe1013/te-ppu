@@ -9,7 +9,7 @@ import {
   test,
 } from './helpers';
 
-const forbiddenGameCopy = /START RUN|RUN ACTIVE|NEXT \dF|SCORE|EASY|NORMAL|HARD|HIDDEN BOSS|READY|DANGER/;
+const forbiddenGameCopy = /START RUN|RUN ACTIVE|NEXT \dF|SCORE|EASY|NORMAL|HARD|HIDDEN BOSS|READY|DANGER|countdown|playing|player-won|opponent-won|draw/i;
 
 const RETURNING_PROFILE = {
   initials: 'RVT',
