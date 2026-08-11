@@ -32,9 +32,11 @@ describe('BattleHud', () => {
         side="player"
       />,
     );
-    const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
+    const hud = screen.getByRole('region', { name: '견습 마도공학자 대전 상태' });
 
     expect(within(hud).getByTestId('player-next')).toHaveTextContent('');
+    expect(within(hud).getByText('다음 블록')).toBeInTheDocument();
+    expect(within(hud).getByRole('list', { name: '견습 마도공학자 다음 블록' })).toBeInTheDocument();
     const previews = within(hud).getByTestId('player-next').querySelectorAll(
       '[data-piece-preview]',
     );
@@ -50,7 +52,14 @@ describe('BattleHud', () => {
     expect(within(hud).getByTestId('player-queue-swap')).toHaveTextContent('5');
     expect(within(hud).getByTestId('player-freeze-ticks')).toHaveTextContent('90');
     expect(within(hud).getByTestId('player-phase')).toHaveTextContent('active');
-    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('DANGER');
+    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('위험');
+    expect(within(hud).getByText('행 제거')).toBeInTheDocument();
+    expect(within(hud).getByText('빙결')).toBeInTheDocument();
+    expect(within(hud).getByText('교체')).toBeInTheDocument();
+    expect(within(hud).getByLabelText('견습 마도공학자 아이템')).toBeInTheDocument();
+    expect(within(hud).getByRole('img', { name: '행 제거 아이템' })).toBeInTheDocument();
+    expect(within(hud).getByRole('img', { name: '빙결 아이템' })).toBeInTheDocument();
+    expect(within(hud).getByRole('img', { name: '교체 아이템' })).toBeInTheDocument();
   });
 
   it('announces a top-out state on the same symmetric HUD component', () => {
@@ -62,7 +71,7 @@ describe('BattleHud', () => {
       />,
     );
 
-    expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('DANGER');
+    expect(screen.getByTestId('opponent-top-out')).toHaveTextContent('위험');
   });
 
   it('keeps labels available without portrait sources and exposes deterministic portrait state', () => {
@@ -73,7 +82,7 @@ describe('BattleHud', () => {
         side="player"
       />,
     );
-    const hud = screen.getByRole('region', { name: '견습 마도공학자 battle status' });
+    const hud = screen.getByRole('region', { name: '견습 마도공학자 대전 상태' });
 
     expect(hud.querySelector('[data-portrait-state]')).toHaveAttribute(
       'data-portrait-state',
@@ -81,7 +90,7 @@ describe('BattleHud', () => {
     );
     expect(hud.querySelector('img')).toBeNull();
     expect(within(hud).getByRole('heading', { name: '견습 마도공학자' })).toBeVisible();
-    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('DANGER');
+    expect(within(hud).getByTestId('player-top-out')).toHaveTextContent('위험');
 
     result.rerender(
       <BattleHud
@@ -118,10 +127,22 @@ describe('BattleHud', () => {
       />,
     );
 
-    const hud = screen.getByRole('region', { name: '루미 battle status' });
+    const hud = screen.getByRole('region', { name: '루미 대전 상태' });
     const plate = hud.querySelector<HTMLElement>('.battle-hud__portrait--plate');
     expect(hud).toHaveAttribute('data-character-id', 'cloud-courier');
     expect(plate).toHaveStyle({ '--portrait-position': '48% 18%' });
-    expect(within(hud).getByAltText('PLAYER focus portrait')).toHaveClass('asset-image');
+    expect(within(hud).getByAltText('루미 기본 표정')).toHaveClass('asset-image');
+  });
+
+  it('shows the ready label without incoming danger or a top-out', () => {
+    render(
+      <BattleHud
+        character={{ id: 'hero-engineer', name: '견습 마도공학자', title: '별빛 수리공' }}
+        model={{ ...model, incoming: 0 }}
+        side="player"
+      />,
+    );
+
+    expect(screen.getByTestId('player-top-out')).toHaveTextContent('준비');
   });
 });

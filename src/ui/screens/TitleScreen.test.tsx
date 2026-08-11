@@ -41,17 +41,24 @@ describe('TitleScreen', () => {
     );
 
     expect(screen.getByTestId('title-screen')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Gearlight Tower logo' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Starlight owl guide' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '기어라이트 타워 로고' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '별빛 부엉이 안내자' })).toBeInTheDocument();
+    expect(screen.getByText('별빛 오락실')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '기어라이트 타워' })).toBeInTheDocument();
+    expect(screen.getByText('탑을 오르고 모든 라이벌을 이겨 보세요.')).toBeInTheDocument();
+    expect(screen.getByText('다음 타워 도전이 준비됐어요.')).toBeInTheDocument();
     expect(screen.getByText('RVT')).toBeInTheDocument();
-    expect(screen.getByText('EASY')).toBeInTheDocument();
+    expect(screen.getByText('쉬움')).toBeInTheDocument();
     expect(screen.getByText('12,340')).toBeInTheDocument();
+    expect(screen.getByText('플레이어')).toBeInTheDocument();
+    expect(screen.getByText('난이도')).toBeInTheDocument();
+    expect(screen.getByText('내 최고 기록')).toBeInTheDocument();
 
-    const actions = screen.getByRole('navigation', { name: 'Primary actions' });
+    const actions = screen.getByRole('navigation', { name: '주요 메뉴' });
     expect(within(actions).getAllByRole('button')).toHaveLength(3);
-    await user.click(within(actions).getByRole('button', { name: 'START RUN' }));
-    await user.click(within(actions).getByRole('button', { name: 'RANKING' }));
-    await user.click(within(actions).getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(within(actions).getByRole('button', { name: '도전 시작' }));
+    await user.click(within(actions).getByRole('button', { name: '랭킹' }));
+    await user.click(within(actions).getByRole('button', { name: '플레이어 변경' }));
     expect(onStartRun).toHaveBeenCalledOnce();
     expect(onOpenRanking).toHaveBeenCalledOnce();
     expect(onChangePlayer).toHaveBeenCalledOnce();
@@ -69,9 +76,34 @@ describe('TitleScreen', () => {
       />,
     );
 
-    expect(screen.getByText('NEW PLAYER')).toBeInTheDocument();
-    expect(screen.getByText('NO LOCAL SCORE')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '플레이어 정보' })).toBeInTheDocument();
+    expect(screen.getByText('세 글자 이름을 등록하고 도전을 시작하세요.')).toBeInTheDocument();
+    expect(screen.getByText('신규 플레이어')).toBeInTheDocument();
+    expect(screen.getByText('캐릭터 미선택')).toBeInTheDocument();
+    expect(screen.getByText('기록 없음')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Offline progress loaded.');
+  });
+
+  it.each([
+    ['easy', '쉬움'],
+    ['normal', '보통'],
+    ['hard', '어려움'],
+  ] as const)('renders the %s difficulty label in Korean', (difficulty, label) => {
+    const progress = cloneProgressState(DEFAULT_PROGRESS);
+    progress.selectedDifficulty = difficulty;
+
+    render(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={() => undefined}
+        onOpenRanking={() => undefined}
+        onStartRun={() => undefined}
+        progress={progress}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeInTheDocument();
   });
 
   it('uses the active-run label while keeping the primary action callback', async () => {
@@ -91,7 +123,7 @@ describe('TitleScreen', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(onStartRun).toHaveBeenCalledOnce();
 
     view.rerender(
@@ -123,7 +155,7 @@ describe('TitleScreen', () => {
     );
 
     expect(within(view.container).getByRole('status')).toHaveTextContent(
-      'ONLINE RANKING SYNC PENDING',
+      '온라인 랭킹 동기화 대기 중',
     );
 
     view.rerender(
@@ -137,6 +169,6 @@ describe('TitleScreen', () => {
         syncPending={false}
       />,
     );
-    expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
+    expect(screen.queryByText('온라인 랭킹 동기화 대기 중')).not.toBeInTheDocument();
   });
 });

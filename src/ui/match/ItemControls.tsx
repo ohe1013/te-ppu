@@ -18,9 +18,9 @@ export interface ItemControlsProps {
 }
 
 const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
-  'row-clear': 'CLEAR',
-  freeze: 'FREEZE',
-  'queue-swap': 'SWAP',
+  'row-clear': '행 제거',
+  freeze: '빙결',
+  'queue-swap': '교체',
 };
 
 export function ItemControls({

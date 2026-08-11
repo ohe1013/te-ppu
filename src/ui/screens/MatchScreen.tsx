@@ -432,12 +432,12 @@ export function MatchScreen({
       <header className="match-header">
         <div className="match-header__series">
           <span className="match-header__series-badge">
-            {isOwlMatch ? 'HIDDEN BOSS' : `${floor}F · ${encounterIndex + 1}/3`}
+            {isOwlMatch ? '숨겨진 보스' : `${floor}층 · ${encounterIndex + 1}/3`}
           </span>
           <span className="match-header__series-wins">
-            {isOwlMatch ? 'OWL' : `승리 ${wins ?? 0}/3`}
+            {isOwlMatch ? '부엉이' : `승리 ${wins ?? 0}/3`}
             <span className="match-header__run-score" data-testid="run-score">
-              SCORE {String(runScore).padStart(6, '0')}
+              점수 {String(runScore).padStart(6, '0')}
             </span>
           </span>
         </div>

@@ -303,7 +303,7 @@ function TestMatch({
       <h3>{player?.name}</h3>
       <p>{player?.title}</p>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
-      <output data-testid="run-score">SCORE {String(runScore).padStart(6, '0')}</output>
+      <output data-testid="run-score">점수 {String(runScore).padStart(6, '0')}</output>
       <button type="button" onClick={() => onScoreEvents(scoreEvents)}>
         emit score events
       </button>
@@ -380,7 +380,7 @@ function renderGame(
 async function enterTower(user: ReturnType<typeof userEvent.setup>) {
   if (screen.queryByTestId('tower-screen') === null) {
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
   }
   await screen.findByTestId('tower-screen');
 }
@@ -502,7 +502,7 @@ describe('AppRoot', () => {
 
     expect(await screen.findByTestId('title-screen')).toBeVisible();
     expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('name-entry-screen')).toBeVisible();
     await enterInitials(user, 'RVT');
     expect(await screen.findByTestId('character-select-screen')).toBeVisible();
@@ -514,7 +514,7 @@ describe('AppRoot', () => {
       characterId: 'hero-engineer',
     });
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -527,7 +527,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await enterInitials(user, 'ART');
     const selectionScreen = await screen.findByTestId('character-select-screen');
 
@@ -553,13 +553,13 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     expect(await screen.findByTestId('title-screen')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
 
     expect(await screen.findByTestId('tower-screen')).toBeVisible();
     expect(screen.queryByTestId('name-entry-screen')).not.toBeInTheDocument();
     expect(repository.saves).toEqual([]);
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
-    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('점수 000000');
   });
 
   it('returns to title and resumes the same active score run', async () => {
@@ -570,7 +570,7 @@ describe('AppRoot', () => {
     await completeFloor(user, false);
     await user.click(screen.getByRole('button', { name: '다음 층' }));
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
 
     await user.click(screen.getByRole('button', { name: '처음으로' }));
@@ -578,7 +578,7 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '도전 계속' }));
 
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
   });
@@ -592,13 +592,13 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '다음 층' }));
     await user.click(screen.getByRole('button', { name: '처음으로' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
     await user.click(screen.getByRole('button', { name: 'BACK' }));
 
     expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '도전 계속' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
   });
 
@@ -611,13 +611,13 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '다음 층' }));
     await user.click(screen.getByRole('button', { name: '처음으로' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     await user.click(screen.getByRole('button', { name: 'BACK' }));
 
     expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '도전 계속' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
   });
 
@@ -630,14 +630,14 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '다음 층' }));
     await user.click(screen.getByRole('button', { name: '처음으로' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
     await enterInitials(user, 'LUM');
     await chooseCharacter(user, 'cloud-courier');
 
-    expect(await screen.findByRole('button', { name: 'START RUN' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(await screen.findByRole('button', { name: '도전 시작' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -655,15 +655,15 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '다음 층' }));
     await user.click(screen.getByRole('button', { name: '처음으로' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
     await enterInitials(user, 'LUM');
     await chooseCharacter(user, 'cloud-courier');
     await user.click(await screen.findByRole('button', { name: 'RETRY SAVE' }));
 
-    expect(await screen.findByRole('button', { name: 'START RUN' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    expect(await screen.findByRole('button', { name: '도전 시작' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -673,7 +673,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
     await enterInitials(user, 'LUM');
     await chooseCharacter(user, 'cloud-courier');
 
@@ -685,9 +685,9 @@ describe('AppRoot', () => {
     });
     expect(screen.queryByTestId('tower-run-status')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -697,7 +697,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await enterInitials(user, 'RVT');
     const selectionScreen = await screen.findByTestId('character-select-screen');
     const starCard = document.querySelector<HTMLButtonElement>(
@@ -786,7 +786,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
 
     expect(await screen.findByTestId('ranking-screen')).toBeVisible();
     expect(screen.getByText('43,210')).toBeInTheDocument();
@@ -829,7 +829,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).queryByText('40,000')).not.toBeInTheDocument();
@@ -889,7 +889,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).getByText(visibleScore)).toBeInTheDocument();
@@ -926,7 +926,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).getAllByText('43,210')).toHaveLength(1);
@@ -958,7 +958,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('ONLINE RANKING UNAVAILABLE');
     expect(screen.getByText('43,210')).toBeInTheDocument();
@@ -1000,14 +1000,14 @@ describe('AppRoot', () => {
 
     await screen.findByTestId('title-screen');
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('status')).toHaveTextContent('ONLINE RANKING SYNC PENDING');
+    expect(screen.getByRole('status')).toHaveTextContent('온라인 랭킹 동기화 대기 중');
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(submitBest).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(getTop).toHaveBeenCalledTimes(1));
     expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
@@ -1092,9 +1092,9 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
 
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
-    expect(screen.getByRole('region', { name: '리벳 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 대전 상태' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '기어 창고장 battle status' }))
+    expect(screen.getByRole('region', { name: '기어 창고장 대전 상태' }))
       .toBeInTheDocument();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
@@ -1282,7 +1282,7 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
   });
 
@@ -1356,13 +1356,13 @@ describe('AppRoot', () => {
 
     await enterTower(user);
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
-    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+    await user.click(screen.getByRole('button', { name: '보통' }));
 
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
     expect(screen.getByTestId('tower-screen')).toHaveAttribute('data-difficulty', 'normal');
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -1378,10 +1378,10 @@ describe('AppRoot', () => {
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '다음 층' }));
 
-    expect(screen.getByRole('button', { name: 'EASY' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('RUN DIFFICULTY LOCKED');
-    fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
+    expect(screen.getByRole('button', { name: '쉬움' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('도전 중에는 난이도를 바꿀 수 없습니다.');
+    fireEvent.click(screen.getByRole('button', { name: '보통' }));
     expect(repository.saves).toHaveLength(1);
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
     expect(screen.getByTestId('tower-screen')).toHaveAttribute('data-difficulty', 'easy');
@@ -1392,9 +1392,9 @@ describe('AppRoot', () => {
     renderGame(new TestProgressRepository(floorOneProgress));
 
     await enterMatch(user, 1, 0);
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000250');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000250');
     await user.click(screen.getByRole('button', { name: 'finish win' }));
 
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
@@ -1463,7 +1463,7 @@ describe('AppRoot', () => {
       await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
     })).resolves.toBeUndefined();
     expect(screen.getByTestId('match-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
 
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
@@ -1520,7 +1520,7 @@ describe('AppRoot', () => {
       await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
     })).resolves.toBeUndefined();
     expect(screen.getByTestId('match-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
 
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
@@ -1724,7 +1724,7 @@ describe('AppRoot', () => {
 
     await screen.findByTestId('title-screen');
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
-    expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
+    expect(screen.getByText('온라인 랭킹 동기화 대기 중')).toBeInTheDocument();
 
     await act(async () => {
       secondWrite.resolve({ ok: true, source: 'firestore' });
@@ -1733,7 +1733,7 @@ describe('AppRoot', () => {
     await waitFor(() => expect(progressRepository.saves).toHaveLength(3));
     expect(progressRepository.saves[2]).toEqual(progressRepository.saves[1]);
     await waitFor(() => {
-      expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
+      expect(screen.queryByText('온라인 랭킹 동기화 대기 중')).not.toBeInTheDocument();
     });
   });
 
@@ -1860,10 +1860,10 @@ describe('AppRoot', () => {
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 000250');
     await user.click(screen.getByRole('button', { name: '도전 종료' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
 
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -2075,10 +2075,10 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('ending-screen')).toHaveAttribute('data-next-difficulty', 'normal');
     await user.click(screen.getByRole('button', { name: '타이틀로 돌아가기' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await screen.findByTestId('tower-screen');
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+    expect(screen.getByRole('button', { name: '보통' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '보통' }));
 
     await waitFor(() => expect(screen.getByTestId('app-shell')).toHaveAttribute(
       'data-difficulty',

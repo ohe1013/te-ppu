@@ -26,9 +26,9 @@ export interface TowerScreenProps {
 }
 
 const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
-  easy: 'EASY',
-  normal: 'NORMAL',
-  hard: 'HARD',
+  easy: '쉬움',
+  normal: '보통',
+  hard: '어려움',
 };
 
 export function TowerScreen({
@@ -64,7 +64,7 @@ export function TowerScreen({
             />
           </span>
           <div>
-            <p className="eyebrow">THE GEARLIGHT TOWER</p>
+            <p className="eyebrow">기어라이트 타워</p>
             <h1>꼭대기까지 올라가자!</h1>
           </div>
         </div>
@@ -76,11 +76,11 @@ export function TowerScreen({
       {notice !== null && <p className="notice" role="status">{notice}</p>}
       {runActive && (
         <p className="tower-run-status" data-testid="tower-run-status">
-          RUN ACTIVE · NEXT {requiredFloor}F · SCORE {String(runScore).padStart(6, '0')}
+          도전 중 · 다음 {requiredFloor}층 · 점수 {String(runScore).padStart(6, '0')}
         </p>
       )}
       {difficultySelectionLocked && (
-        <p className="tower-run-lock-notice" role="status">RUN DIFFICULTY LOCKED</p>
+        <p className="tower-run-lock-notice" role="status">도전 중에는 난이도를 바꿀 수 없습니다.</p>
       )}
       <fieldset aria-label="난이도 선택" className="difficulty-selector">
         <legend>난이도</legend>
@@ -99,7 +99,7 @@ export function TowerScreen({
                 type="button"
               >
                 {DIFFICULTY_LABELS[difficulty]}
-                {!unlocked && <small>LOCKED</small>}
+                {!unlocked && <small>잠김</small>}
               </button>
             );
           })}

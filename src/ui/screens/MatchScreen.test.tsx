@@ -238,9 +238,9 @@ describe('MatchScreen', () => {
   it('composes two symmetric public HUDs around the single battle canvas', () => {
     render(<MatchScreen {...lifecycleProps} floor={2} seed={17} onFinished={vi.fn()} />);
 
-    expect(screen.getByRole('region', { name: '리벳 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 대전 상태' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '거품 연금술사 battle status' }))
+    expect(screen.getByRole('region', { name: '거품 연금술사 대전 상태' }))
       .toBeInTheDocument();
     expect(screen.getAllByTestId('battle-canvas-proxy')).toHaveLength(1);
     expect(screen.getByTestId('battle-canvas-proxy')).toHaveAttribute(
@@ -254,6 +254,8 @@ describe('MatchScreen', () => {
     expect(document.querySelector('img')).toBeNull();
     expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
+    expect(screen.getByText('2층 · 1/3')).toBeInTheDocument();
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
   });
 
   it('renders the hidden owl encounter as the opponent instead of a floor rival', () => {
@@ -275,10 +277,11 @@ describe('MatchScreen', () => {
       />,
     );
 
-    expect(screen.getByRole('region', { name: 'Owl Architect battle status' }))
+    expect(screen.getByRole('region', { name: 'Owl Architect 대전 상태' }))
       .toHaveAttribute('data-character-id', 'owl-companion');
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
-    expect(screen.getByText('HIDDEN BOSS')).toBeInTheDocument();
+    expect(screen.getByText('숨겨진 보스')).toBeInTheDocument();
+    expect(screen.getByText('부엉이')).toBeInTheDocument();
   });
 
   it.each([
@@ -312,13 +315,13 @@ describe('MatchScreen', () => {
     );
 
     const opponentHud = screen.getByRole('region', {
-      name: 'Owl Architect battle status',
+      name: 'Owl Architect 대전 상태',
     });
     expect(opponentHud.querySelector('[data-portrait-state]')).toHaveAttribute(
       'data-portrait-state',
       portraitState,
     );
-    expect(screen.getByAltText(`RIVAL ${portraitState} portrait`)).toHaveAttribute(
+    expect(screen.getByAltText('Owl Architect 기본 표정')).toHaveAttribute(
       'src',
       expectedUrl,
     );
@@ -350,14 +353,14 @@ describe('MatchScreen', () => {
       />,
     );
 
-    const playerHud = screen.getByRole('region', { name: '루미 battle status' });
+    const playerHud = screen.getByRole('region', { name: '루미 대전 상태' });
     expect(playerHud).toHaveAttribute('data-character-id', 'cloud-courier');
     expect(playerHud).toHaveTextContent('바람길의 전령');
     expect(playerHud.querySelector('[data-portrait-state]')).toHaveAttribute(
       'data-portrait-state',
       portraitState,
     );
-    expect(screen.getByAltText(`PLAYER ${portraitState} portrait`)).toHaveAttribute(
+    expect(screen.getByAltText('루미 기본 표정')).toHaveAttribute(
       'src',
       expectedUrl,
     );
@@ -517,9 +520,9 @@ describe('MatchScreen', () => {
   });
 
   it.each([
-    [0, 'SCORE 000000'],
-    [12_450, 'SCORE 012450'],
-    [1_234_567, 'SCORE 1234567'],
+    [0, '점수 000000'],
+    [12_450, '점수 012450'],
+    [1_234_567, '점수 1234567'],
   ] as const)('renders score %i in one compact fixed-width header', (runScore, label) => {
     render(
       <MatchScreen

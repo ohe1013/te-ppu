@@ -20,9 +20,9 @@ export interface BattleHudProps {
 }
 
 const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
-  'row-clear': 'ROW',
-  freeze: 'FREEZE',
-  'queue-swap': 'SWAP',
+  'row-clear': '행 제거',
+  freeze: '빙결',
+  'queue-swap': '교체',
 };
 
 export function BattleHud({
@@ -35,13 +35,13 @@ export function BattleHud({
   tiles,
 }: BattleHudProps) {
   const presentation = portrait ?? {
-    alt: `${character.name} idle portrait`,
+    alt: `${character.name} 기본 표정`,
     state: 'idle' as const,
   };
   const plate = createCharacterPlateModel(character, side, presentation, model);
   return (
     <section
-      aria-label={`${character.name} battle status`}
+      aria-label={`${character.name} 대전 상태`}
       className="battle-hud"
       data-character-id={plate.characterId}
       data-danger={plate.danger ? 'true' : 'false'}
@@ -54,20 +54,20 @@ export function BattleHud({
           data-portrait-state={presentation.state}
           style={{ '--portrait-position': portraitPosition } as CSSProperties}
         >
-          <AssetImage alt={presentation.alt} url={presentation.url} />
+          <AssetImage alt={`${character.name} 기본 표정`} url={presentation.url} />
         </span>
         <div className="battle-hud__character-copy">
           <h2>{plate.name}</h2>
           <p>{plate.title}</p>
         </div>
         <span className="battle-hud__danger" data-testid={`${side}-top-out`}>
-          {plate.danger ? 'DANGER' : 'READY'}
+          {plate.danger ? '위험' : '준비'}
         </span>
       </header>
 
-      <div className="battle-hud__next-heading">NEXT</div>
+      <div className="battle-hud__next-heading">다음 블록</div>
       <ol
-        aria-label={`${plate.name} next pieces`}
+        aria-label={`${plate.name} 다음 블록`}
         className="battle-hud__next"
         data-testid={`${side}-next`}
       >
@@ -83,7 +83,7 @@ export function BattleHud({
         ))}
       </ol>
 
-      <div aria-label={`${plate.name} item slots`} className="battle-hud__item-ribbon">
+      <div aria-label={`${plate.name} 아이템`} className="battle-hud__item-ribbon">
         {(Object.keys(ITEM_LABELS) as ItemType[]).map((item) => {
           const count = item === 'row-clear'
             ? model.inventory.rowClear
@@ -96,7 +96,7 @@ export function BattleHud({
               key={item}
             >
               <AssetImage
-                alt={`${ITEM_LABELS[item]} item`}
+                alt={`${ITEM_LABELS[item]} 아이템`}
                 className="battle-hud__item-image"
                 url={items?.[item]?.url}
               />

@@ -80,6 +80,7 @@ describe('ItemControls', () => {
     );
 
     const rowClear = screen.getByRole('button', { name: /행 제거/ });
+    expect(rowClear).toHaveTextContent('행 제거');
     expect(rowClear).toHaveTextContent('2회');
     fireEvent.click(rowClear);
 
@@ -112,6 +113,8 @@ describe('ItemControls', () => {
 
     const freeze = screen.getByRole('button', { name: /상대 정지/ });
     const queueSwap = screen.getByRole('button', { name: /다음 교환/ });
+    expect(freeze).toHaveTextContent('빙결');
+    expect(queueSwap).toHaveTextContent('교체');
     fireEvent.click(freeze);
     fireEvent.click(queueSwap);
 

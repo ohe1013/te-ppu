@@ -125,9 +125,9 @@ describe('TowerScreen', () => {
     );
 
     expect(screen.getByRole('group', { name: '난이도 선택' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'EASY' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'HARD' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '쉬움' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '어려움' })).toBeDisabled();
 
     const unlockedNormal = cloneProgressState(progress);
     unlockedNormal.unlockedDifficulties.normal = true;
@@ -144,7 +144,7 @@ describe('TowerScreen', () => {
         runScore={0}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
+    fireEvent.click(screen.getByRole('button', { name: '보통' }));
     expect(onSelectDifficulty).toHaveBeenCalledWith('normal');
   });
 
@@ -174,7 +174,7 @@ describe('TowerScreen', () => {
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -196,11 +196,13 @@ describe('TowerScreen', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'EASY' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('RUN DIFFICULTY LOCKED');
+    expect(screen.getByRole('button', { name: '쉬움' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('도전 중에는 난이도를 바꿀 수 없습니다.');
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
+    expect(screen.getByText('기어라이트 타워')).toBeInTheDocument();
+    expect(screen.getByText('잠김')).toBeInTheDocument();
   });
 });

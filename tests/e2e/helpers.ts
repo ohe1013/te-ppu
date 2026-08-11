@@ -107,7 +107,7 @@ export async function completeFirstRunProfile(
 ): Promise<void> {
   await page.goto('/');
   await expect(page.getByTestId('title-screen')).toBeVisible();
-  await page.getByRole('button', { name: 'START RUN' }).click();
+  await page.getByRole('button', { name: '도전 시작' }).click();
   await expect(page.getByTestId('name-entry-screen')).toBeVisible();
   await chooseArcadeLetters(page, initials);
   await page.getByRole('button', { name: 'END' }).click();
@@ -161,7 +161,7 @@ export async function openTower(page: Page): Promise<number> {
   const startedAt = Date.now();
   await page.goto('/');
   await expect(page.getByTestId('title-screen')).toBeVisible({ timeout: 10_000 });
-  await page.getByRole('button', { name: 'START RUN' }).click();
+  await page.getByRole('button', { name: '도전 시작' }).click();
   await expect(page.getByTestId('tower-screen')).toBeVisible({ timeout: 10_000 });
   return Date.now() - startedAt;
 }
