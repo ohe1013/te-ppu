@@ -1096,7 +1096,7 @@ describe('AppRoot', () => {
       .toBeInTheDocument();
     expect(screen.getByRole('region', { name: '기어 창고장 대전 상태' }))
       .toBeInTheDocument();
-    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
 

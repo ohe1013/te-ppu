@@ -552,7 +552,7 @@ describe('MatchScreen', () => {
     expect(aiSpies.createAiController).toHaveBeenCalledWith(AI_FLOOR_PROFILES[1], 73);
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '2');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
-    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
 
     unmount();
     expect(clock.pendingFrames).toBe(0);
