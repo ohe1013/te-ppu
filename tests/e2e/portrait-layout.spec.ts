@@ -275,6 +275,13 @@ for (const { viewport } of PORTRAITS) {
       'rotate control',
     );
 
+    const rotateWidth = viewport.width <= 360
+      ? { minimum: 75, maximum: 76 }
+      : { minimum: 79, maximum: 80 };
+    expect(rotate.width).toBeGreaterThanOrEqual(rotateWidth.minimum);
+    expect(rotate.width).toBeLessThanOrEqual(rotateWidth.maximum);
+    expect(Math.abs(rotate.width - rotate.height)).toBeLessThanOrEqual(1);
+
     const matchElements = [
       { label: 'match header', box: matchHeader },
       { label: 'battle canvas', box: battleCanvasBox },
