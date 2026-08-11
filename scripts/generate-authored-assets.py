@@ -297,8 +297,8 @@ def overlay_state(image: Image.Image, state: str, character: str) -> Image.Image
     if state in {"attack", "rage"}:
         draw.arc((20, 20, 236, 236), 205, 335, fill=(255, 220, 74, 185), width=3)
     elif state in {"hit", "panic"}:
-        draw.line((24, 30, 232, 218), fill=(255, 93, 115, 185), width=3)
-        draw.line((232, 30, 24, 218), fill=(255, 159, 67, 125), width=2)
+        draw.line((18, 178, 78, 238), fill=(255, 93, 115, 185), width=3)
+        draw.line((238, 178, 178, 238), fill=(255, 159, 67, 125), width=2)
     elif state == "win" or state == "cheer":
         for x, y in ((26, 42), (218, 58), (42, 214), (210, 204)):
             draw.rectangle((x - 3, y - 3, x + 3, y + 3), fill=(255, 244, 166, 210))
@@ -323,6 +323,37 @@ PORTRAITS = {
 }
 
 
+PORTRAIT_FRAMES = {
+    "hero-engineer": (0.50, 0.18, 0.56),
+    "cloud-courier": (0.48, 0.18, 0.56),
+    "star-alchemist": (0.45, 0.18, 0.56),
+    "owl-companion": (0.50, 0.32, 0.56),
+    "quartermaster": (0.56, 0.26, 0.54),
+    "alchemist": (0.50, 0.16, 0.50),
+    "guard-captain": (0.50, 0.14, 0.48),
+    "dark-engineer": (0.46, 0.16, 0.50),
+    "clock-moth": (0.50, 0.32, 0.48),
+    "glass-oracle": (0.49, 0.24, 0.48),
+    "moss-golem": (0.52, 0.25, 0.50),
+    "demon-king": (0.51, 0.14, 0.45),
+}
+
+
+def portrait_crop_box(
+    bbox: tuple[int, int, int, int],
+    frame: tuple[float, float, float],
+) -> tuple[int, int, int, int]:
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    center_x, center_y, size_fraction = frame
+    size = max(1, round(min(width, height) * size_fraction))
+    x = bbox[0] + round(width * center_x)
+    y = bbox[1] + round(height * center_y)
+    left = min(max(bbox[0], x - size // 2), bbox[2] - size)
+    top = min(max(bbox[1], y - size // 2), bbox[3] - size)
+    return left, top, left + size, top + size
+
+
 def derive_portraits(
     characters: Iterable[str] | None = None,
     *,
@@ -337,14 +368,7 @@ def derive_portraits(
             continue
         source = Image.open(source_path).convert("RGBA")
         bbox = source.getbbox() or (0, 0, source.width, source.height)
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        size = int(min(width * .72, height * .38))
-        cx = (bbox[0] + bbox[2]) // 2
-        cy = bbox[1] + int(height * .22)
-        left = max(0, cx - size // 2)
-        top = max(0, cy - size // 2)
-        crop = source.crop((left, top, min(source.width, left + size), min(source.height, top + size)))
+        crop = source.crop(portrait_crop_box(bbox, PORTRAIT_FRAMES[character]))
         crop = crop.resize((240, 240), Image.Resampling.LANCZOS)
         portrait_base = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
         portrait_base.alpha_composite(crop, (8, 8))

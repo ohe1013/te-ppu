@@ -1,6 +1,5 @@
 import type { ItemType, PieceKind, PublicSideView, SideId } from '../../core/index';
 import type { LoadedImageRef } from '../../assets';
-import type { CSSProperties } from 'react';
 import { AssetImage } from './AssetImage';
 import {
   createCharacterPlateModel,
@@ -13,7 +12,6 @@ export interface BattleHudProps {
   readonly character: CharacterPlateCharacter;
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
-  readonly portraitPosition?: string;
   readonly side: SideId;
   readonly tiles?: Partial<Record<PieceKind, LoadedImageRef>>;
   readonly items?: Partial<Record<ItemType, LoadedImageRef>>;
@@ -30,7 +28,6 @@ export function BattleHud({
   items,
   model,
   portrait,
-  portraitPosition = '50% 18%',
   side,
   tiles,
 }: BattleHudProps) {
@@ -52,7 +49,6 @@ export function BattleHud({
         <span
           className="battle-hud__portrait battle-hud__portrait--plate"
           data-portrait-state={presentation.state}
-          style={{ '--portrait-position': portraitPosition } as CSSProperties}
         >
           <AssetImage alt={`${character.name} 기본 표정`} url={presentation.url} />
         </span>

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PublicSideView } from '../../core/index';
 import { BattleHud } from './BattleHud';
@@ -116,7 +118,7 @@ describe('BattleHud', () => {
     expect(hud.querySelector('img')).toHaveAttribute('src', '/assets/hero-attack.webp');
   });
 
-  it('uses a configurable top-biased portrait crop without changing identity hooks', () => {
+  it('uses the authored square portrait without publishing a runtime crop offset', () => {
     render(
       <BattleHud
         character={{ id: 'cloud-courier', name: '루미', title: '바람길의 전령' }}
@@ -126,7 +128,6 @@ describe('BattleHud', () => {
           state: 'focus',
           url: '/assets/characters/cloud-courier/portrait-focus.webp',
         }}
-        portraitPosition="48% 18%"
         side="player"
       />,
     );
@@ -134,8 +135,24 @@ describe('BattleHud', () => {
     const hud = screen.getByRole('region', { name: '루미 대전 상태' });
     const plate = hud.querySelector<HTMLElement>('.battle-hud__portrait--plate');
     expect(hud).toHaveAttribute('data-character-id', 'cloud-courier');
-    expect(plate).toHaveStyle({ '--portrait-position': '48% 18%' });
+    expect(plate).not.toHaveAttribute('style');
+    expect(plate?.querySelector('img')).toHaveAttribute(
+      'src',
+      '/assets/characters/cloud-courier/portrait-focus.webp',
+    );
     expect(within(hud).getByAltText('루미 기본 표정')).toHaveClass('asset-image');
+  });
+
+  it('centers authored square portraits in battle and shared character plates', () => {
+    const matchCss = readFileSync(resolve('src/ui/match/match-layout.css'), 'utf8');
+    const screensCss = readFileSync(resolve('src/ui/screens/screens.css'), 'utf8');
+
+    expect(matchCss).toMatch(
+      /\.battle-hud__portrait \.asset-image\s*\{[^}]*object-position:\s*center;/s,
+    );
+    expect(screensCss).toMatch(
+      /\.character-portrait__image\s*\{[^}]*object-position:\s*center;/s,
+    );
   });
 
   it('shows the ready label without incoming danger or a top-out', () => {

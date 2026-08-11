@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCRIPT = PROJECT_ROOT / "scripts" / "generate-authored-assets.py"
 CHARACTER_IDS = ("cloud-courier", "star-alchemist")
 STATES = ("idle", "focus", "attack", "hit", "win", "loss")
+
+
+def load_generator():
+    spec = importlib.util.spec_from_file_location("generate_authored_assets", SOURCE_SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load generator from {SOURCE_SCRIPT}")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    return generator
 
 
 def install_generator(root: Path) -> Path:
@@ -69,6 +79,39 @@ def run_generator(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class GenerateAuthoredAssetsTest(unittest.TestCase):
+    def test_portrait_frames_cover_every_character_with_normalized_values(self) -> None:
+        generator = load_generator()
+
+        self.assertEqual(set(generator.PORTRAIT_FRAMES), set(generator.PORTRAITS))
+        for center_x, center_y, size_fraction in generator.PORTRAIT_FRAMES.values():
+            self.assertGreaterEqual(center_x, 0)
+            self.assertLessEqual(center_x, 1)
+            self.assertGreaterEqual(center_y, 0)
+            self.assertLessEqual(center_y, 1)
+            self.assertGreater(size_fraction, 0)
+            self.assertLessEqual(size_fraction, 1)
+
+    def test_portrait_crop_box_supports_an_off_center_frame(self) -> None:
+        generator = load_generator()
+
+        self.assertEqual(
+            generator.portrait_crop_box((100, 200, 900, 1200), (0.75, 0.30, 0.50)),
+            (500, 300, 900, 700),
+        )
+
+    def test_hit_effect_keeps_the_face_safe_zone_clear(self) -> None:
+        generator = load_generator()
+        transparent_portrait = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+
+        hit_effect = generator.overlay_state(
+            transparent_portrait,
+            "hit",
+            "cloud-courier",
+        ).getchannel("A")
+
+        self.assertIsNone(hit_effect.crop((0, 0, 256, 168)).getbbox())
+        self.assertIsNotNone(hit_effect.crop((0, 168, 256, 256)).getbbox())
+
     def test_default_preserves_imported_portraits_and_derives_only_missing_states(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -89,6 +132,13 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                     with Image.open(path) as image:
                         self.assertEqual(image.size, (256, 256))
                         self.assertEqual(image.mode, "RGBA")
+                        alpha_bbox = image.getchannel("A").getbbox()
+                        self.assertIsNotNone(alpha_bbox)
+                        assert alpha_bbox is not None
+                        self.assertGreaterEqual(alpha_bbox[0], 8)
+                        self.assertGreaterEqual(alpha_bbox[1], 8)
+                        self.assertLessEqual(alpha_bbox[2], 248)
+                        self.assertLessEqual(alpha_bbox[3], 248)
 
     def test_force_derived_portraits_is_the_only_mode_that_replaces_existing_states(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -106,6 +156,13 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                     with Image.open(path) as image:
                         self.assertEqual(image.size, (256, 256))
                         self.assertEqual(image.mode, "RGBA")
+                        alpha_bbox = image.getchannel("A").getbbox()
+                        self.assertIsNotNone(alpha_bbox)
+                        assert alpha_bbox is not None
+                        self.assertGreaterEqual(alpha_bbox[0], 8)
+                        self.assertGreaterEqual(alpha_bbox[1], 8)
+                        self.assertLessEqual(alpha_bbox[2], 248)
+                        self.assertLessEqual(alpha_bbox[3], 248)
 
 
 if __name__ == "__main__":

@@ -317,7 +317,7 @@
 
 .battle-hud__portrait .asset-image {
   object-fit: cover;
-  object-position: var(--portrait-position, 50% 18%);
+  object-position: center;
 }
 
 .battle-hud__portrait--plate {
