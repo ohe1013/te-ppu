@@ -138,8 +138,8 @@ function modulo(value: number, duration: number): number {
   return remainder < 0 ? remainder + duration : remainder;
 }
 
-function clampVolume(value: number): number {
-  if (!Number.isFinite(value)) return 0;
+function clampVolume(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
   return Math.max(0, Math.min(1, value));
 }
 
@@ -623,11 +623,17 @@ export function createWebAudioPort({
 
     setVolumes(volumes: AudioVolumes): void {
       if (destroyed) return;
-      bgmVolume = clampVolume(volumes.bgm);
-      sfxVolume = clampVolume(volumes.sfx);
+      const nextBgmVolume = clampVolume(volumes.bgm);
+      const nextSfxVolume = clampVolume(volumes.sfx);
       const now = context?.currentTime ?? 0;
-      if (musicVolumeGain !== null) applyUserVolume(musicVolumeGain, bgmVolume, now);
-      if (sfxVolumeGain !== null) applyUserVolume(sfxVolumeGain, sfxVolume, now);
+      if (nextBgmVolume !== null) {
+        bgmVolume = nextBgmVolume;
+        if (musicVolumeGain !== null) applyUserVolume(musicVolumeGain, bgmVolume, now);
+      }
+      if (nextSfxVolume !== null) {
+        sfxVolume = nextSfxVolume;
+        if (sfxVolumeGain !== null) applyUserVolume(sfxVolumeGain, sfxVolume, now);
+      }
     },
 
     setEnabled(nextEnabled: boolean): void {

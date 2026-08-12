@@ -497,6 +497,35 @@ describe('createWebAudioPort', () => {
     expect(fixture.sfxVolumeGain().gain.calls).toContainEqual(['set', 1, 4]);
   });
 
+  it('retains each bus volume for non-finite input while applying a valid sibling', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+    const musicBus = fixture.musicVolumeGain().gain;
+    const sfxBus = fixture.sfxVolumeGain().gain;
+
+    audio.setVolumes({ bgm: Number.NaN, sfx: 0.3 });
+    expect(musicBus.calls.slice(-1)).toEqual([['set', 0.4, 4]]);
+    expect(sfxBus.calls.slice(-1)).toEqual([['set', 0.3, 4]]);
+
+    audio.setVolumes({ bgm: 0.6, sfx: Infinity });
+    expect(musicBus.calls.slice(-1)).toEqual([['set', 0.6, 4]]);
+    expect(sfxBus.calls.slice(-1)).toEqual([['set', 0.3, 4]]);
+
+    audio.setVolumes({ bgm: -Infinity, sfx: 0.7 });
+    expect(musicBus.calls.slice(-1)).toEqual([['set', 0.6, 4]]);
+    expect(sfxBus.calls.slice(-1)).toEqual([['set', 0.7, 4]]);
+  });
+
   it('ducks and restores only music dynamics while retaining the user BGM volume', async () => {
     const fixture = createContext();
     const audio = createWebAudioPort({
