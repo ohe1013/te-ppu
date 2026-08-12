@@ -541,6 +541,43 @@ describe('MatchScreen', () => {
     expect(onScoreEvents).toHaveBeenCalledOnce();
   });
 
+  it('adapts immediate volume previews and commits one SFX preview cue without owning audio', async () => {
+    const audioPort = createAudioPort();
+    const onSettingsChange = vi.fn(async () => true);
+    useMatchLoopMock.mockReturnValue(activeLoop());
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={audioPort}
+        floor={2}
+        onFinished={vi.fn()}
+        onSettingsChange={onSettingsChange}
+        seed={17}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+
+    fireEvent.change(bgm, { target: { value: '40' } });
+    expect(audioPort.setVolumes).toHaveBeenLastCalledWith({ bgm: 0.4, sfx: 1 });
+    fireEvent.pointerUp(bgm);
+    await act(async () => undefined);
+    expect(audioPort.play).not.toHaveBeenCalled();
+
+    fireEvent.change(sfx, { target: { value: '80' } });
+    expect(audioPort.setVolumes).toHaveBeenLastCalledWith({ bgm: 0.4, sfx: 0.8 });
+    fireEvent.pointerUp(sfx);
+    await act(async () => undefined);
+    expect(audioPort.play).toHaveBeenCalledTimes(1);
+    expect(audioPort.play).toHaveBeenCalledWith('rotate');
+    expect(audioPort.unlock).not.toHaveBeenCalled();
+    expect(audioPort.suspend).not.toHaveBeenCalled();
+    expect(audioPort.resume).not.toHaveBeenCalled();
+    expect(audioPort.destroy).not.toHaveBeenCalled();
+  });
+
   it.each([
     [0, '점수 000000'],
     [12_450, '점수 012450'],

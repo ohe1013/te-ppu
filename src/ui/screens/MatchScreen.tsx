@@ -74,7 +74,7 @@ const MATCH_STATUS_LABELS: Readonly<Record<MatchStatus, string>> = {
 };
 
 export interface MatchScreenProps {
-  readonly audioPort: Pick<AudioPort, 'play'>;
+  readonly audioPort: Pick<AudioPort, 'play' | 'setVolumes'>;
   readonly floor: Floor;
   readonly encounterIndex?: EncounterIndex;
   readonly wins?: 0 | 1 | 2;
@@ -449,6 +449,11 @@ export function MatchScreen({
             }}
             onRetrySave={onRetrySettingsSave}
             onSettingsChange={onSettingsChange}
+            onSfxPreview={() => audio.play('rotate')}
+            onVolumePreview={({ bgmVolume, sfxVolume }) => audio.setVolumes({
+              bgm: bgmVolume / 100,
+              sfx: sfxVolume / 100,
+            })}
             saveFailed={settingsSaveFailed}
             settings={settings}
           />

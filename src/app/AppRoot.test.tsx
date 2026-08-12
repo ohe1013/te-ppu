@@ -2187,6 +2187,27 @@ describe('AppRoot', () => {
     expect(await screen.findByTestId('title-screen')).toBeInTheDocument();
   });
 
+  it('synchronizes loaded master sound and normalized volumes into root-owned audio', async () => {
+    const progress = cloneProgress(floorOneProgress);
+    progress.settings = {
+      ...progress.settings,
+      bgmVolume: 35,
+      sfxVolume: 80,
+    };
+    const audioPort = createAudioPort();
+
+    renderGame(
+      new TestProgressRepository(progress),
+      createTestPlatform(),
+      createAssetManager(),
+      audioPort,
+    );
+
+    await screen.findByTestId('title-screen');
+    expect(audioPort.setEnabled).toHaveBeenLastCalledWith(true);
+    expect(audioPort.setVolumes).toHaveBeenLastCalledWith({ bgm: 0.35, sfx: 0.8 });
+  });
+
   it('owns tower-route music and app foreground audio without mounting MatchScreen', async () => {
     const realNow = Date.now;
     let elapsed = 0;

@@ -312,10 +312,20 @@ export function AppRoot({
   }, [route, services.audioPort]);
 
   useEffect(() => {
-    if (controller !== null) {
-      services.audioPort.setEnabled(controller.progress.settings.soundEnabled);
-    }
-  }, [controller, controller?.progress.settings.soundEnabled, services.audioPort]);
+    if (controller === null) return;
+    const { soundEnabled, bgmVolume, sfxVolume } = controller.progress.settings;
+    services.audioPort.setEnabled(soundEnabled);
+    services.audioPort.setVolumes({
+      bgm: bgmVolume / 100,
+      sfx: sfxVolume / 100,
+    });
+  }, [
+    controller,
+    controller?.progress.settings.soundEnabled,
+    controller?.progress.settings.bgmVolume,
+    controller?.progress.settings.sfxVolume,
+    services.audioPort,
+  ]);
 
   useEffect(() => {
     const manager = services.assetManager;

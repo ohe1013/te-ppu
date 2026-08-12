@@ -1,5 +1,11 @@
 import type { Page } from '@playwright/test';
-import { expect, openMatch, seedReturningProfile, test } from './helpers';
+import {
+  expect,
+  LOCAL_PROGRESS_KEY,
+  openMatch,
+  seedReturningProfile,
+  test,
+} from './helpers';
 
 type Insets = {
   readonly top: number;
@@ -14,6 +20,9 @@ const ASYMMETRIC_SAFE_AREA: Insets = {
   bottom: 21,
   left: 13,
 };
+
+const VOLUME_PERSISTENCE_TEST =
+  'previews and persists independent volumes across close, reopen, and active-run reload';
 
 async function expectViewportCenteredOverlay(page: Page, insets?: Insets): Promise<void> {
   const geometry = await page.locator('.modal-overlay').evaluate((overlay) => {
@@ -66,11 +75,61 @@ async function expectViewportCenteredOverlay(page: Page, insets?: Insets): Promi
   }
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title === VOLUME_PERSISTENCE_TEST) return;
   await seedReturningProfile(page, {
     initials: 'RVT',
     characterId: 'hero-engineer',
   });
+});
+
+test(VOLUME_PERSISTENCE_TEST, async ({ context, page }) => {
+  const seedPage = await context.newPage();
+  await seedReturningProfile(seedPage, {
+    initials: 'RVT',
+    characterId: 'hero-engineer',
+  });
+  await seedPage.goto('/');
+  await expect(seedPage.getByTestId('title-screen')).toBeVisible();
+  await seedPage.close();
+
+  await openMatch(page);
+  await page.getByRole('button', { name: '설정' }).click();
+  const bgm = page.getByRole('slider', { name: 'BGM 음량' });
+  const sfx = page.getByRole('slider', { name: '효과음 음량' });
+
+  await expect(page.getByRole('dialog', { name: '게임 설정' })).toBeVisible();
+  await expect(bgm).toHaveValue('70');
+  await expect(sfx).toHaveValue('100');
+  await bgm.fill('40');
+  await bgm.dispatchEvent('pointerup');
+  await sfx.fill('80');
+  await sfx.dispatchEvent('pointerup');
+  await expect(bgm).toHaveValue('40');
+  await expect(sfx).toHaveValue('80');
+
+  await page.getByRole('button', { name: '설정 닫기' }).click();
+  await page.getByRole('button', { name: '설정' }).click();
+  await expect(page.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('40');
+  await expect(page.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
+  await expect.poll(() => page.evaluate((key) => {
+    const serialized = window.localStorage.getItem(key);
+    if (serialized === null) return null;
+    const progress = JSON.parse(serialized) as {
+      settings?: { bgmVolume?: number; sfxVolume?: number };
+    };
+    return progress.settings;
+  }, LOCAL_PROGRESS_KEY)).toMatchObject({ bgmVolume: 40, sfxVolume: 80 });
+
+  await page.reload();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await page.getByRole('button', { name: '1층 선택' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await expect(page.getByTestId('match-screen')).toBeVisible();
+  await page.getByRole('button', { name: '설정' }).click();
+  await expect(page.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('40');
+  await expect(page.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
 });
 
 test('dispatches joystick commands in order and rotates exactly once per tap', async ({ page }) => {

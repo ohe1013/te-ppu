@@ -16,7 +16,11 @@ export interface SettingsPanelProps {
     settings: Partial<ProgressState['settings']>,
   ) => Promise<boolean>;
   readonly onRetrySave: () => Promise<boolean>;
+  readonly onSfxPreview: () => void;
   readonly onSoundEnabled?: (enabled: boolean) => void;
+  readonly onVolumePreview: (
+    settings: Pick<ProgressState['settings'], 'bgmVolume' | 'sfxVolume'>,
+  ) => void;
   readonly icons?: {
     readonly settings?: LoadedImageRef;
     readonly soundOn?: LoadedImageRef;
@@ -36,11 +40,17 @@ const FOCUSABLE = [
 ].join(',');
 
 const SETTINGS_TITLE_ID = 'settings-panel-title';
+const BGM_VOLUME_ID = 'settings-bgm-volume';
+const SFX_VOLUME_ID = 'settings-sfx-volume';
+
+type VolumeSetting = 'bgmVolume' | 'sfxVolume';
 
 export function SettingsPanel({
   onRetrySave,
   onSettingsChange,
+  onSfxPreview,
   onSoundEnabled,
+  onVolumePreview,
   icons,
   saveFailed,
   settings,
@@ -48,7 +58,30 @@ export function SettingsPanel({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localFailure, setLocalFailure] = useState(false);
+  const [bgmVolume, setBgmVolume] = useState(settings.bgmVolume);
+  const [sfxVolume, setSfxVolume] = useState(settings.sfxVolume);
   const dialogRef = useRef<HTMLElement>(null);
+  const bgmVolumeRef = useRef(settings.bgmVolume);
+  const sfxVolumeRef = useRef(settings.sfxVolume);
+  const committedBgmRef = useRef(settings.bgmVolume);
+  const committedSfxRef = useRef(settings.sfxVolume);
+  const activeDragRef = useRef<VolumeSetting | null>(null);
+  const pendingSavesRef = useRef(0);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(() => {
+    if (activeDragRef.current === 'bgmVolume') return;
+    setBgmVolume(settings.bgmVolume);
+    bgmVolumeRef.current = settings.bgmVolume;
+    committedBgmRef.current = settings.bgmVolume;
+  }, [settings.bgmVolume]);
+
+  useEffect(() => {
+    if (activeDragRef.current === 'sfxVolume') return;
+    setSfxVolume(settings.sfxVolume);
+    sfxVolumeRef.current = settings.sfxVolume;
+    committedSfxRef.current = settings.sfxVolume;
+  }, [settings.sfxVolume]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -61,9 +94,9 @@ export function SettingsPanel({
   }, [open]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>): void {
-    if (event.key === 'Escape' && !saving) {
+    if (event.key === 'Escape') {
       event.preventDefault();
-      setOpen(false);
+      closeSettings();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -86,27 +119,65 @@ export function SettingsPanel({
     }
   }
 
-  async function update(next: Partial<ProgressState['settings']>): Promise<void> {
+  function enqueueSave(operation: () => Promise<boolean>): void {
+    pendingSavesRef.current += 1;
     setSaving(true);
     setLocalFailure(false);
-    try {
-      setLocalFailure(!await onSettingsChange(next));
-    } catch {
-      setLocalFailure(true);
-    } finally {
-      setSaving(false);
-    }
+    const next = saveQueueRef.current.then(async () => {
+      try {
+        setLocalFailure(!await operation());
+      } catch {
+        setLocalFailure(true);
+      } finally {
+        pendingSavesRef.current -= 1;
+        if (pendingSavesRef.current === 0) setSaving(false);
+      }
+    });
+    saveQueueRef.current = next;
   }
 
-  async function retrySave(): Promise<void> {
-    setSaving(true);
-    try {
-      setLocalFailure(!await onRetrySave());
-    } catch {
-      setLocalFailure(true);
-    } finally {
-      setSaving(false);
+  function update(next: Partial<ProgressState['settings']>): void {
+    enqueueSave(() => onSettingsChange(next));
+  }
+
+  function retrySave(): void {
+    enqueueSave(onRetrySave);
+  }
+
+  function finalizeVolume(setting: VolumeSetting): void {
+    const value = setting === 'bgmVolume' ? bgmVolumeRef.current : sfxVolumeRef.current;
+    const committed = setting === 'bgmVolume' ? committedBgmRef : committedSfxRef;
+    if (value === committed.current) return;
+    committed.current = value;
+    if (setting === 'sfxVolume' && settings.soundEnabled) onSfxPreview();
+    update({ [setting]: value });
+  }
+
+  function finishVolumeInteraction(setting: VolumeSetting): void {
+    if (activeDragRef.current === setting) activeDragRef.current = null;
+    finalizeVolume(setting);
+  }
+
+  function closeSettings(): void {
+    activeDragRef.current = null;
+    finalizeVolume('bgmVolume');
+    finalizeVolume('sfxVolume');
+    setOpen(false);
+  }
+
+  function changeVolume(setting: VolumeSetting, value: number): void {
+    if (!settings.soundEnabled) return;
+    if (setting === 'bgmVolume') {
+      bgmVolumeRef.current = value;
+      setBgmVolume(value);
+    } else {
+      sfxVolumeRef.current = value;
+      setSfxVolume(value);
     }
+    onVolumePreview({
+      bgmVolume: bgmVolumeRef.current,
+      sfxVolume: sfxVolumeRef.current,
+    });
   }
 
   return (
@@ -114,14 +185,17 @@ export function SettingsPanel({
       <button
         aria-expanded={open}
         className="match-header__button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (open) closeSettings();
+          else setOpen(true);
+        }}
         type="button"
       >
         <AssetIcon className="asset-icon" fallback="⚙" image={icons?.settings} />
         설정
       </button>
       {open ? (
-        <ModalOverlay onDismiss={() => setOpen(false)} testId="settings-overlay">
+        <ModalOverlay onDismiss={closeSettings} testId="settings-overlay">
           <section
             aria-labelledby={SETTINGS_TITLE_ID}
             aria-modal="true"
@@ -136,8 +210,7 @@ export function SettingsPanel({
               <button
                 aria-label="설정 닫기"
                 className="settings-panel__close"
-                disabled={saving}
-                onClick={() => setOpen(false)}
+                onClick={closeSettings}
                 type="button"
               >
                 ×
@@ -150,7 +223,7 @@ export function SettingsPanel({
                 onChange={(event) => {
                   const enabled = event.currentTarget.checked;
                   onSoundEnabled?.(enabled);
-                  void update({ soundEnabled: enabled });
+                  update({ soundEnabled: enabled });
                 }}
                 type="checkbox"
               />
@@ -159,13 +232,63 @@ export function SettingsPanel({
                 fallback={settings.soundEnabled ? '🔊' : '🔇'}
                 image={settings.soundEnabled ? icons?.soundOn : icons?.soundOff}
               />
-              효과음
+              전체 소리
             </label>
+            <div className="settings-panel__volume">
+              <label htmlFor={BGM_VOLUME_ID}>BGM 음량</label>
+              <output htmlFor={BGM_VOLUME_ID}>{bgmVolume}%</output>
+              <input
+                aria-label="BGM 음량"
+                className="settings-panel__range"
+                disabled={!settings.soundEnabled}
+                id={BGM_VOLUME_ID}
+                max={100}
+                min={0}
+                onBlur={() => finishVolumeInteraction('bgmVolume')}
+                onChange={(event) => changeVolume(
+                  'bgmVolume',
+                  Number(event.currentTarget.value),
+                )}
+                onKeyUp={() => finishVolumeInteraction('bgmVolume')}
+                onPointerDown={() => {
+                  activeDragRef.current = 'bgmVolume';
+                }}
+                onPointerUp={() => finishVolumeInteraction('bgmVolume')}
+                step={10}
+                type="range"
+                value={bgmVolume}
+              />
+            </div>
+            <div className="settings-panel__volume">
+              <label htmlFor={SFX_VOLUME_ID}>효과음 음량</label>
+              <output htmlFor={SFX_VOLUME_ID}>{sfxVolume}%</output>
+              <input
+                aria-label="효과음 음량"
+                className="settings-panel__range"
+                disabled={!settings.soundEnabled}
+                id={SFX_VOLUME_ID}
+                max={100}
+                min={0}
+                onBlur={() => finishVolumeInteraction('sfxVolume')}
+                onChange={(event) => changeVolume(
+                  'sfxVolume',
+                  Number(event.currentTarget.value),
+                )}
+                onKeyUp={() => finishVolumeInteraction('sfxVolume')}
+                onPointerDown={() => {
+                  activeDragRef.current = 'sfxVolume';
+                }}
+                onPointerUp={() => finishVolumeInteraction('sfxVolume')}
+                step={10}
+                type="range"
+                value={sfxVolume}
+              />
+            </div>
             <label>
               <input
                 checked={settings.hapticsEnabled}
                 disabled={saving}
-                onChange={(event) => void update({
+                onChange={(event) => update({
                   hapticsEnabled: event.currentTarget.checked,
                 })}
                 type="checkbox"
@@ -183,7 +306,7 @@ export function SettingsPanel({
                 <p aria-live="polite" role="status">설정은 적용됐지만 저장하지 못했습니다.</p>
                 <button
                   disabled={saving}
-                  onClick={() => void retrySave()}
+                  onClick={retrySave}
                   type="button"
                 >
                   설정 저장 다시 시도
