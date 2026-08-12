@@ -41,12 +41,25 @@ const version3Progress = {
   settings: { soundEnabled: true, hapticsEnabled: true },
 } as const;
 
-const currentState = {
+const defaultSettings = {
+  soundEnabled: true,
+  bgmVolume: 70,
+  sfxVolume: 100,
+  hapticsEnabled: true,
+} as const;
+
+const currentVersion4 = {
   ...version3Progress,
   schemaVersion: 4,
   profile: null,
   localBestScores: { easy: null, normal: null, hard: null },
   pendingLeaderboardSubmissions: {},
+} as const;
+
+const currentState = {
+  ...currentVersion4,
+  schemaVersion: 5,
+  settings: defaultSettings,
 } satisfies ProgressState;
 
 const scoreRecord = {
@@ -108,7 +121,7 @@ describe('difficulty progress schema', () => {
       migrated: true,
       state: {
         ...currentState,
-        settings: legacyV2.settings,
+        settings: { ...legacyV2.settings, bgmVolume: 70, sfxVolume: 100 },
         difficultyProgress: {
           ...currentState.difficultyProgress,
           easy: {
@@ -121,18 +134,37 @@ describe('difficulty progress schema', () => {
     });
   });
 
-  it('migrates schema 3 to schema 4 without changing tower progress or settings', () => {
+  it('migrates schema 3 to schema 5 without changing tower progress or existing settings', () => {
     const parsed = parsePersistedProgress(version3Progress);
 
     expect(parsed?.migrated).toBe(true);
     expect(parsed?.state).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       profile: null,
       localBestScores: { easy: null, normal: null, hard: null },
       pendingLeaderboardSubmissions: {},
       difficultyProgress: version3Progress.difficultyProgress,
-      settings: version3Progress.settings,
+      settings: { ...version3Progress.settings, bgmVolume: 70, sfxVolume: 100 },
     });
+  });
+
+  it('migrates schema 4 audio settings to schema 5 defaults', () => {
+    expect(parsePersistedProgress(currentVersion4)).toMatchObject({
+      migrated: true,
+      state: { schemaVersion: 5, settings: defaultSettings },
+    });
+  });
+
+  it.each([
+    { bgmVolume: -1 },
+    { bgmVolume: 101 },
+    { sfxVolume: 50.5 },
+    { sfxVolume: '100' },
+  ])('rejects invalid persisted audio percentages: %j', (patch) => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      settings: { ...defaultSettings, ...patch },
+    })).toBeNull();
   });
 
   it('updates only the selected difficulty run', () => {
@@ -156,7 +188,7 @@ describe('difficulty progress schema', () => {
     expect(currentState.settings.soundEnabled).toBe(true);
   });
 
-  it('accepts exact v4 score keys and rejects extra persisted profile or score keys', () => {
+  it('accepts exact v5 score keys and rejects extra persisted profile or score keys', () => {
     const completeState = {
       ...currentState,
       profile: { initials: 'RVT', characterId: 'hero-engineer' },

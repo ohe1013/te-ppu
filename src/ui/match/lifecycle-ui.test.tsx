@@ -45,6 +45,8 @@ vi.mock('../../render/BattleCanvas', () => ({
 const enabledSettings: ProgressState['settings'] = {
   hapticsEnabled: true,
   soundEnabled: true,
+  bgmVolume: 70,
+  sfxVolume: 100,
 };
 
 const defaultPlayer = PLAYER_CHARACTERS['hero-engineer'];
@@ -265,7 +267,7 @@ describe('lifecycle UI', () => {
         onRetrySave={onRetrySave}
         onSettingsChange={onSettingsChange}
         saveFailed
-        settings={{ hapticsEnabled: false, soundEnabled: false }}
+        settings={{ hapticsEnabled: false, soundEnabled: false, bgmVolume: 70, sfxVolume: 100 }}
       />,
     );
     await user.click(screen.getByRole('button', { name: '설정 저장 다시 시도' }));
@@ -461,7 +463,7 @@ describe('lifecycle UI', () => {
     result.rerender(
       <MatchScreen
         {...props}
-        settings={{ hapticsEnabled: false, soundEnabled: false }}
+        settings={{ hapticsEnabled: false, soundEnabled: false, bgmVolume: 70, sfxVolume: 100 }}
       />,
     );
     act(() => loopOptions?.onEvents?.([...events], loop.view));

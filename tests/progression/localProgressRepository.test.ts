@@ -64,7 +64,12 @@ function validProgress(patch: ProgressPatch = {}): ProgressState {
     },
     owlDefeated: false,
   };
-  state.settings = patch.settings ?? { soundEnabled: false, hapticsEnabled: true };
+  state.settings = patch.settings ?? {
+    soundEnabled: false,
+    bgmVolume: 70,
+    sfxVolume: 100,
+    hapticsEnabled: true,
+  };
   return state;
 }
 
@@ -104,7 +109,7 @@ describe('local progress repository', () => {
     const load: ProgressLoadResult = await repository.load();
     const save: ProgressSaveResult = await repository.save(validProgress());
 
-    expect(DEFAULT_PROGRESS.schemaVersion).toBe(4);
+    expect(DEFAULT_PROGRESS.schemaVersion).toBe(5);
     expect(DEFAULT_PROGRESS.selectedDifficulty).toBe('easy');
     expect(load).toEqual({
       ok: true,
@@ -196,7 +201,7 @@ describe('local progress repository', () => {
     const migratedV3Progress = migratedProgress(
       4,
       { 1: true, 2: true, 3: true, 4: false, 5: false },
-      { soundEnabled: false, hapticsEnabled: true },
+      { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true },
     );
     const raw = JSON.stringify(legacyV1Progress);
     const storage = new TestStorage();
@@ -225,7 +230,7 @@ describe('local progress repository', () => {
     const expected = migratedProgress(
       5,
       { 1: true, 2: true, 3: true, 4: true, 5: true },
-      { soundEnabled: false, hapticsEnabled: false },
+      { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: false },
     );
     expect(result).toMatchObject({ ok: true, state: expected });
     expect(JSON.parse(storage.values.get(SCOPED_KEY)!)).toEqual(expected);
@@ -266,7 +271,7 @@ describe('local progress repository', () => {
       state: migratedProgress(
         4,
         { 1: true, 2: true, 3: true, 4: false, 5: false },
-        { soundEnabled: false, hapticsEnabled: true },
+        { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true },
       ),
       error: error('WRITE_FAILED'),
     });
@@ -316,7 +321,7 @@ describe('local progress repository', () => {
       state: migratedProgress(
         4,
         { 1: true, 2: true, 3: true, 4: false, 5: false },
-        { soundEnabled: false, hapticsEnabled: true },
+        { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true },
       ),
     });
     expect(storage.writes).toEqual([{
@@ -341,7 +346,7 @@ describe('local progress repository', () => {
       state: migratedProgress(
         3,
         { 1: true, 2: true, 3: false, 4: false, 5: false },
-        { soundEnabled: true, hapticsEnabled: false },
+        { soundEnabled: true, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: false },
       ),
     });
     expect(storage.writes).toHaveLength(1);
@@ -364,7 +369,7 @@ describe('local progress repository', () => {
       state: migratedProgress(
         4,
         { 1: true, 2: true, 3: true, 4: false, 5: false },
-        { soundEnabled: false, hapticsEnabled: true },
+        { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true },
       ),
       error: error('WRITE_FAILED'),
     });

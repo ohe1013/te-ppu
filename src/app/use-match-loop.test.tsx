@@ -544,7 +544,7 @@ describe('MatchScreen', () => {
         }}
         runScore={0}
         seed={73}
-        settings={{ hapticsEnabled: true, soundEnabled: true }}
+        settings={{ hapticsEnabled: true, soundEnabled: true, bgmVolume: 70, sfxVolume: 100 }}
         settingsSaveFailed={false}
       />,
     );

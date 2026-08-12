@@ -657,13 +657,21 @@ describe('tower controller', () => {
     ]);
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
 
-    expect(await controller.updateSettings({ soundEnabled: false })).toEqual({
+    expect(await controller.updateSettings({ soundEnabled: false, bgmVolume: 40, sfxVolume: 80 })).toEqual({
       ok: false,
       reason: 'SAVE_FAILED',
       route: 'TOWER',
     });
     expect(controller.progress.settings).toEqual({
       soundEnabled: false,
+      bgmVolume: 40,
+      sfxVolume: 80,
+      hapticsEnabled: true,
+    });
+    expect(repository.saved[0]?.settings).toEqual({
+      soundEnabled: false,
+      bgmVolume: 40,
+      sfxVolume: 80,
       hapticsEnabled: true,
     });
     expect(await controller.retrySave()).toEqual({ ok: true, route: 'TOWER' });
@@ -673,6 +681,11 @@ describe('tower controller', () => {
   it.each([
     { soundEnabled: undefined },
     { hapticsEnabled: 'yes' },
+    { bgmVolume: -1 },
+    { bgmVolume: 101 },
+    { sfxVolume: 1.5 },
+    { sfxVolume: Number.NaN },
+    { unknown: true },
   ])('rejects invalid runtime settings without mutating or persisting them: %j', async (settings) => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
@@ -706,6 +719,8 @@ describe('tower controller', () => {
     expect(repository.saved).toHaveLength(2);
     expect(repository.saved[1]?.settings).toEqual({
       soundEnabled: false,
+      bgmVolume: 70,
+      sfxVolume: 100,
       hapticsEnabled: false,
     });
 

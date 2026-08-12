@@ -31,29 +31,44 @@ export interface ScoreRecord {
 export type LocalBestScores = Record<Difficulty, ScoreRecord | null>;
 export type PendingLeaderboardSubmissions = Partial<Record<Difficulty, ScoreRecord>>;
 
+export interface ProgressSettings {
+  soundEnabled: boolean;
+  bgmVolume: number;
+  sfxVolume: number;
+  hapticsEnabled: boolean;
+}
+
+interface LegacySettings {
+  readonly soundEnabled: boolean;
+  readonly hapticsEnabled: boolean;
+}
+
+const DEFAULT_BGM_VOLUME = 70;
+const DEFAULT_SFX_VOLUME = 100;
+
 export interface ProgressState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   profile: PlayerProfile | null;
   localBestScores: LocalBestScores;
   pendingLeaderboardSubmissions: PendingLeaderboardSubmissions;
   selectedDifficulty: Difficulty;
   unlockedDifficulties: Record<Difficulty, boolean>;
   difficultyProgress: DifficultyProgressMap;
-  settings: { soundEnabled: boolean; hapticsEnabled: boolean };
+  settings: ProgressSettings;
 }
 
 interface LegacyProgressState {
   readonly schemaVersion: 1;
   readonly highestUnlockedFloor: 1 | 2 | 3;
   readonly clearedFloors: { readonly 1: boolean; readonly 2: boolean; readonly 3: boolean };
-  readonly settings: { readonly soundEnabled: boolean; readonly hapticsEnabled: boolean };
+  readonly settings: LegacySettings;
 }
 
 interface Version2ProgressState {
   readonly schemaVersion: 2;
   readonly highestUnlockedFloor: 1 | 2 | 3 | 4 | 5;
   readonly clearedFloors: ClearedFloors;
-  readonly settings: { readonly soundEnabled: boolean; readonly hapticsEnabled: boolean };
+  readonly settings: LegacySettings;
 }
 
 interface Version3ProgressState {
@@ -61,7 +76,18 @@ interface Version3ProgressState {
   readonly selectedDifficulty: Difficulty;
   readonly unlockedDifficulties: Record<Difficulty, boolean>;
   readonly difficultyProgress: DifficultyProgressMap;
-  readonly settings: { readonly soundEnabled: boolean; readonly hapticsEnabled: boolean };
+  readonly settings: LegacySettings;
+}
+
+interface Version4ProgressState {
+  readonly schemaVersion: 4;
+  readonly profile: PlayerProfile | null;
+  readonly localBestScores: LocalBestScores;
+  readonly pendingLeaderboardSubmissions: PendingLeaderboardSubmissions;
+  readonly selectedDifficulty: Difficulty;
+  readonly unlockedDifficulties: Record<Difficulty, boolean>;
+  readonly difficultyProgress: DifficultyProgressMap;
+  readonly settings: LegacySettings;
 }
 
 export interface ParsedProgress {
@@ -108,19 +134,24 @@ function createEmptyLocalBestScores(): LocalBestScores {
 }
 
 export const DEFAULT_PROGRESS: ProgressState = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   profile: null,
   localBestScores: createEmptyLocalBestScores(),
   pendingLeaderboardSubmissions: {},
   selectedDifficulty: 'easy',
   unlockedDifficulties: { easy: true, normal: false, hard: false },
   difficultyProgress: createDifficultyProgressMap(),
-  settings: { soundEnabled: true, hapticsEnabled: true },
+  settings: {
+    soundEnabled: true,
+    bgmVolume: DEFAULT_BGM_VOLUME,
+    sfxVolume: DEFAULT_SFX_VOLUME,
+    hapticsEnabled: true,
+  },
 };
 
 export function cloneProgressState(state: ProgressState): ProgressState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     profile: state.profile === null ? null : cloneProfile(state.profile),
     localBestScores: {
       easy: state.localBestScores.easy === null ? null : cloneScoreRecord(state.localBestScores.easy),
@@ -153,9 +184,21 @@ function exactObject(
     && actual.every((key, index) => key === expected[index]);
 }
 
-function isSettings(value: unknown): value is ProgressState['settings'] {
+function isLegacySettings(value: unknown): value is LegacySettings {
   return exactObject(value, ['soundEnabled', 'hapticsEnabled'])
     && typeof value.soundEnabled === 'boolean'
+    && typeof value.hapticsEnabled === 'boolean';
+}
+
+function isVolume(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 100;
+}
+
+function isSettings(value: unknown): value is ProgressSettings {
+  return exactObject(value, ['soundEnabled', 'bgmVolume', 'sfxVolume', 'hapticsEnabled'])
+    && typeof value.soundEnabled === 'boolean'
+    && isVolume(value.bgmVolume)
+    && isVolume(value.sfxVolume)
     && typeof value.hapticsEnabled === 'boolean';
 }
 
@@ -187,7 +230,7 @@ function parseLegacyProgress(value: unknown): LegacyProgressState | null {
     || typeof value.clearedFloors[2] !== 'boolean'
     || typeof value.clearedFloors[3] !== 'boolean'
   ) return null;
-  if (!isSettings(value.settings)) return null;
+  if (!isLegacySettings(value.settings)) return null;
 
   return {
     schemaVersion: 1,
@@ -209,7 +252,7 @@ function parseVersion2Progress(value: unknown): Version2ProgressState | null {
     'settings',
   ])) return null;
   if (value.schemaVersion !== 2 || !isFloor(value.highestUnlockedFloor)) return null;
-  if (!isClearedFloors(value.clearedFloors) || !isSettings(value.settings)) return null;
+  if (!isClearedFloors(value.clearedFloors) || !isLegacySettings(value.settings)) return null;
 
   return {
     schemaVersion: 2,
@@ -341,7 +384,7 @@ function parseVersion3Progress(value: unknown): Version3ProgressState | null {
   if (!isUnlockedDifficulties(value.unlockedDifficulties)) return null;
   if (!value.unlockedDifficulties[value.selectedDifficulty]) return null;
   const difficultyProgress = parseDifficultyProgress(value.difficultyProgress);
-  if (difficultyProgress === null || !isSettings(value.settings)) return null;
+  if (difficultyProgress === null || !isLegacySettings(value.settings)) return null;
   if (!value.unlockedDifficulties.easy) return null;
   return {
     schemaVersion: 3,
@@ -352,7 +395,7 @@ function parseVersion3Progress(value: unknown): Version3ProgressState | null {
   };
 }
 
-function parseVersion4Progress(value: unknown): ProgressState | null {
+function parseVersion4Progress(value: unknown): Version4ProgressState | null {
   if (!exactObject(value, [
     'schemaVersion',
     'profile',
@@ -373,7 +416,7 @@ function parseVersion4Progress(value: unknown): ProgressState | null {
   if (!isUnlockedDifficulties(value.unlockedDifficulties)) return null;
   if (!value.unlockedDifficulties[value.selectedDifficulty]) return null;
   const difficultyProgress = parseDifficultyProgress(value.difficultyProgress);
-  if (difficultyProgress === null || !isSettings(value.settings)) return null;
+  if (difficultyProgress === null || !isLegacySettings(value.settings)) return null;
   if (!value.unlockedDifficulties.easy) return null;
 
   return {
@@ -388,7 +431,76 @@ function parseVersion4Progress(value: unknown): ProgressState | null {
   };
 }
 
-function migrateVersion3(state: Version3ProgressState): ProgressState {
+function parseVersion5Progress(value: unknown): ProgressState | null {
+  if (!exactObject(value, [
+    'schemaVersion',
+    'profile',
+    'localBestScores',
+    'pendingLeaderboardSubmissions',
+    'selectedDifficulty',
+    'unlockedDifficulties',
+    'difficultyProgress',
+    'settings',
+  ])) return null;
+  if (value.schemaVersion !== 5 || !isDifficulty(value.selectedDifficulty)) return null;
+  if (value.profile !== null && !isPlayerProfile(value.profile)) return null;
+  const localBestScores = parseLocalBestScores(value.localBestScores);
+  const pendingLeaderboardSubmissions = parsePendingLeaderboardSubmissions(
+    value.pendingLeaderboardSubmissions,
+  );
+  if (localBestScores === null || pendingLeaderboardSubmissions === null) return null;
+  if (!isUnlockedDifficulties(value.unlockedDifficulties)) return null;
+  if (!value.unlockedDifficulties[value.selectedDifficulty]) return null;
+  const difficultyProgress = parseDifficultyProgress(value.difficultyProgress);
+  if (difficultyProgress === null || !isSettings(value.settings)) return null;
+  if (!value.unlockedDifficulties.easy) return null;
+
+  return {
+    schemaVersion: 5,
+    profile: value.profile === null ? null : cloneProfile(value.profile),
+    localBestScores,
+    pendingLeaderboardSubmissions,
+    selectedDifficulty: value.selectedDifficulty,
+    unlockedDifficulties: { ...value.unlockedDifficulties },
+    difficultyProgress,
+    settings: { ...value.settings },
+  };
+}
+
+function migrateSettings(settings: LegacySettings): ProgressSettings {
+  return {
+    soundEnabled: settings.soundEnabled,
+    bgmVolume: DEFAULT_BGM_VOLUME,
+    sfxVolume: DEFAULT_SFX_VOLUME,
+    hapticsEnabled: settings.hapticsEnabled,
+  };
+}
+
+function migrateVersion4(state: Version4ProgressState): ProgressState {
+  return {
+    schemaVersion: 5,
+    profile: state.profile === null ? null : cloneProfile(state.profile),
+    localBestScores: {
+      easy: state.localBestScores.easy === null ? null : cloneScoreRecord(state.localBestScores.easy),
+      normal: state.localBestScores.normal === null ? null : cloneScoreRecord(state.localBestScores.normal),
+      hard: state.localBestScores.hard === null ? null : cloneScoreRecord(state.localBestScores.hard),
+    },
+    pendingLeaderboardSubmissions: Object.fromEntries(
+      Object.entries(state.pendingLeaderboardSubmissions)
+        .map(([difficulty, score]) => [difficulty, cloneScoreRecord(score)]),
+    ) as PendingLeaderboardSubmissions,
+    selectedDifficulty: state.selectedDifficulty,
+    unlockedDifficulties: { ...state.unlockedDifficulties },
+    difficultyProgress: {
+      easy: cloneDifficultyRun(state.difficultyProgress.easy),
+      normal: cloneDifficultyRun(state.difficultyProgress.normal),
+      hard: cloneDifficultyRun(state.difficultyProgress.hard),
+    },
+    settings: migrateSettings(state.settings),
+  };
+}
+
+function migrateVersion3(state: Version3ProgressState): Version4ProgressState {
   return {
     schemaVersion: 4,
     profile: null,
@@ -437,18 +549,26 @@ function migrateLegacy(state: LegacyProgressState): Version2ProgressState {
 }
 
 export function parsePersistedProgress(value: unknown): ParsedProgress | null {
+  const version5 = parseVersion5Progress(value);
+  if (version5 !== null) return { state: version5, migrated: false };
+
   const version4 = parseVersion4Progress(value);
-  if (version4 !== null) return { state: version4, migrated: false };
+  if (version4 !== null) return { state: migrateVersion4(version4), migrated: true };
 
   const version3 = parseVersion3Progress(value);
-  if (version3 !== null) return { state: migrateVersion3(version3), migrated: true };
+  if (version3 !== null) return { state: migrateVersion4(migrateVersion3(version3)), migrated: true };
 
   const version2 = parseVersion2Progress(value);
-  if (version2 !== null) return { state: migrateVersion3(migrateVersion2(version2)), migrated: true };
+  if (version2 !== null) {
+    return { state: migrateVersion4(migrateVersion3(migrateVersion2(version2))), migrated: true };
+  }
 
   const legacy = parseLegacyProgress(value);
   if (legacy === null) return null;
-  return { state: migrateVersion3(migrateVersion2(migrateLegacy(legacy))), migrated: true };
+  return {
+    state: migrateVersion4(migrateVersion3(migrateVersion2(migrateLegacy(legacy)))),
+    migrated: true,
+  };
 }
 
 export function parseProgressState(value: unknown): ProgressState | null {

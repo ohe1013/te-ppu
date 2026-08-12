@@ -1256,6 +1256,8 @@ describe('AppRoot', () => {
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     expect(repository.saves[0]?.settings).toEqual({
       hapticsEnabled: true,
+      bgmVolume: 70,
+      sfxVolume: 100,
       soundEnabled: false,
     });
     expect(screen.getByText('false')).toBeInTheDocument();

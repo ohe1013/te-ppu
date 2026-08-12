@@ -49,7 +49,7 @@ const lifecycleProps: Pick<
     palette: ['#35c8c2', '#fff4cf', '#b86f3c'],
   },
   playerAssets: undefined,
-  settings: { hapticsEnabled: true, soundEnabled: true },
+  settings: { hapticsEnabled: true, soundEnabled: true, bgmVolume: 70, sfxVolume: 100 },
   settingsSaveFailed: false,
   runScore: 0,
 };

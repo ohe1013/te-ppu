@@ -68,7 +68,7 @@ export async function seedReturningProfile(
   overrides: SeedProgressOverrides = {},
 ): Promise<void> {
   const progress = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     profile: { ...profile },
     localBestScores: overrides.localBestScores === undefined
       ? { easy: null, normal: null, hard: null }
@@ -90,6 +90,8 @@ export async function seedReturningProfile(
     },
     settings: {
       soundEnabled: true,
+      bgmVolume: 70,
+      sfxVolume: 100,
       hapticsEnabled: true,
       ...overrides.settings,
     },

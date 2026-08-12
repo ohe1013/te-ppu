@@ -127,9 +127,13 @@ function isSettingsUpdate(
   }
 
   return Object.entries(settings).every(([key, value]) => (
-    (key === 'soundEnabled' || key === 'hapticsEnabled')
-    && typeof value === 'boolean'
+    ((key === 'soundEnabled' || key === 'hapticsEnabled') && typeof value === 'boolean')
+    || ((key === 'bgmVolume' || key === 'sfxVolume') && isVolume(value))
   ));
+}
+
+function isVolume(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 100;
 }
 
 export class TowerController {
