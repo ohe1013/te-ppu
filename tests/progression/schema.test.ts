@@ -17,6 +17,13 @@ const legacyV2 = {
   settings: { soundEnabled: false, hapticsEnabled: true },
 };
 
+const legacyV1 = {
+  schemaVersion: 1,
+  highestUnlockedFloor: 3,
+  clearedFloors: { 1: true, 2: true, 3: true },
+  settings: { soundEnabled: false, hapticsEnabled: true },
+} as const;
+
 const version3Progress = {
   schemaVersion: 3,
   selectedDifficulty: 'easy',
@@ -114,6 +121,24 @@ const invalidScoreRecords = [
 describe('difficulty progress schema', () => {
   it('starts a new save on Easy with only Easy unlocked', () => {
     expect(DEFAULT_PROGRESS).toEqual(currentState);
+  });
+
+  it('migrates schema 1 directly to the schema 5 final state', () => {
+    expect(parsePersistedProgress(legacyV1)).toEqual({
+      migrated: true,
+      state: {
+        ...currentState,
+        settings: { soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true },
+        difficultyProgress: {
+          ...currentState.difficultyProgress,
+          easy: {
+            highestUnlockedFloor: 4,
+            clearedFloors: { 1: true, 2: true, 3: true, 4: false, 5: false },
+            owlDefeated: false,
+          },
+        },
+      },
+    });
   });
 
   it('migrates the existing five-floor v2 state into Easy', () => {

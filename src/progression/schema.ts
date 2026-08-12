@@ -477,32 +477,59 @@ function migrateSettings(settings: LegacySettings): ProgressSettings {
 }
 
 function migrateVersion4(state: Version4ProgressState): ProgressState {
+  return createSchema5Progress({
+    profile: state.profile,
+    localBestScores: state.localBestScores,
+    pendingLeaderboardSubmissions: state.pendingLeaderboardSubmissions,
+    selectedDifficulty: state.selectedDifficulty,
+    unlockedDifficulties: state.unlockedDifficulties,
+    difficultyProgress: state.difficultyProgress,
+    settings: state.settings,
+  });
+}
+
+function createSchema5Progress({
+  profile,
+  localBestScores,
+  pendingLeaderboardSubmissions,
+  selectedDifficulty,
+  unlockedDifficulties,
+  difficultyProgress,
+  settings,
+}: {
+  readonly profile: PlayerProfile | null;
+  readonly localBestScores: LocalBestScores;
+  readonly pendingLeaderboardSubmissions: PendingLeaderboardSubmissions;
+  readonly selectedDifficulty: Difficulty;
+  readonly unlockedDifficulties: Record<Difficulty, boolean>;
+  readonly difficultyProgress: DifficultyProgressMap;
+  readonly settings: LegacySettings;
+}): ProgressState {
   return {
     schemaVersion: 5,
-    profile: state.profile === null ? null : cloneProfile(state.profile),
+    profile: profile === null ? null : cloneProfile(profile),
     localBestScores: {
-      easy: state.localBestScores.easy === null ? null : cloneScoreRecord(state.localBestScores.easy),
-      normal: state.localBestScores.normal === null ? null : cloneScoreRecord(state.localBestScores.normal),
-      hard: state.localBestScores.hard === null ? null : cloneScoreRecord(state.localBestScores.hard),
+      easy: localBestScores.easy === null ? null : cloneScoreRecord(localBestScores.easy),
+      normal: localBestScores.normal === null ? null : cloneScoreRecord(localBestScores.normal),
+      hard: localBestScores.hard === null ? null : cloneScoreRecord(localBestScores.hard),
     },
     pendingLeaderboardSubmissions: Object.fromEntries(
-      Object.entries(state.pendingLeaderboardSubmissions)
+      Object.entries(pendingLeaderboardSubmissions)
         .map(([difficulty, score]) => [difficulty, cloneScoreRecord(score)]),
     ) as PendingLeaderboardSubmissions,
-    selectedDifficulty: state.selectedDifficulty,
-    unlockedDifficulties: { ...state.unlockedDifficulties },
+    selectedDifficulty,
+    unlockedDifficulties: { ...unlockedDifficulties },
     difficultyProgress: {
-      easy: cloneDifficultyRun(state.difficultyProgress.easy),
-      normal: cloneDifficultyRun(state.difficultyProgress.normal),
-      hard: cloneDifficultyRun(state.difficultyProgress.hard),
+      easy: cloneDifficultyRun(difficultyProgress.easy),
+      normal: cloneDifficultyRun(difficultyProgress.normal),
+      hard: cloneDifficultyRun(difficultyProgress.hard),
     },
-    settings: migrateSettings(state.settings),
+    settings: migrateSettings(settings),
   };
 }
 
-function migrateVersion3(state: Version3ProgressState): Version4ProgressState {
-  return {
-    schemaVersion: 4,
+function migrateVersion3(state: Version3ProgressState): ProgressState {
+  return createSchema5Progress({
     profile: null,
     localBestScores: createEmptyLocalBestScores(),
     pendingLeaderboardSubmissions: {},
@@ -513,29 +540,31 @@ function migrateVersion3(state: Version3ProgressState): Version4ProgressState {
       normal: cloneDifficultyRun(state.difficultyProgress.normal),
       hard: cloneDifficultyRun(state.difficultyProgress.hard),
     },
-    settings: { ...state.settings },
-  };
+    settings: state.settings,
+  });
 }
 
-function migrateVersion2(state: Version2ProgressState): Version3ProgressState {
+function migrateVersion2(state: Version2ProgressState): ProgressState {
   const difficultyProgress = createDifficultyProgressMap();
   difficultyProgress.easy = {
     highestUnlockedFloor: state.highestUnlockedFloor,
     clearedFloors: { ...state.clearedFloors },
     owlDefeated: false,
   };
-  return {
-    schemaVersion: 3,
+  return createSchema5Progress({
+    profile: null,
+    localBestScores: createEmptyLocalBestScores(),
+    pendingLeaderboardSubmissions: {},
     selectedDifficulty: 'easy',
     unlockedDifficulties: { easy: true, normal: false, hard: false },
     difficultyProgress,
-    settings: { ...state.settings },
-  };
+    settings: state.settings,
+  });
 }
 
-function migrateLegacy(state: LegacyProgressState): Version2ProgressState {
-  return {
-    schemaVersion: 2,
+function migrateLegacy(state: LegacyProgressState): ProgressState {
+  const difficultyProgress = createDifficultyProgressMap();
+  difficultyProgress.easy = {
     highestUnlockedFloor: state.clearedFloors[3] ? 4 : state.highestUnlockedFloor,
     clearedFloors: {
       1: state.clearedFloors[1],
@@ -544,8 +573,17 @@ function migrateLegacy(state: LegacyProgressState): Version2ProgressState {
       4: false,
       5: false,
     },
-    settings: { ...state.settings },
+    owlDefeated: false,
   };
+  return createSchema5Progress({
+    profile: null,
+    localBestScores: createEmptyLocalBestScores(),
+    pendingLeaderboardSubmissions: {},
+    selectedDifficulty: 'easy',
+    unlockedDifficulties: { easy: true, normal: false, hard: false },
+    difficultyProgress,
+    settings: state.settings,
+  });
 }
 
 export function parsePersistedProgress(value: unknown): ParsedProgress | null {
@@ -556,19 +594,14 @@ export function parsePersistedProgress(value: unknown): ParsedProgress | null {
   if (version4 !== null) return { state: migrateVersion4(version4), migrated: true };
 
   const version3 = parseVersion3Progress(value);
-  if (version3 !== null) return { state: migrateVersion4(migrateVersion3(version3)), migrated: true };
+  if (version3 !== null) return { state: migrateVersion3(version3), migrated: true };
 
   const version2 = parseVersion2Progress(value);
-  if (version2 !== null) {
-    return { state: migrateVersion4(migrateVersion3(migrateVersion2(version2))), migrated: true };
-  }
+  if (version2 !== null) return { state: migrateVersion2(version2), migrated: true };
 
   const legacy = parseLegacyProgress(value);
   if (legacy === null) return null;
-  return {
-    state: migrateVersion4(migrateVersion3(migrateVersion2(migrateLegacy(legacy)))),
-    migrated: true,
-  };
+  return { state: migrateLegacy(legacy), migrated: true };
 }
 
 export function parseProgressState(value: unknown): ProgressState | null {
