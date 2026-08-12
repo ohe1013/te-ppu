@@ -181,6 +181,23 @@ describe('difficulty progress schema', () => {
   });
 
   it.each([
+    { label: 'BGM at 0%', patch: { bgmVolume: 0 } },
+    { label: 'BGM at 100%', patch: { bgmVolume: 100 } },
+    { label: 'SFX at 0%', patch: { sfxVolume: 0 } },
+    { label: 'SFX at 100%', patch: { sfxVolume: 100 } },
+  ])('accepts the persisted audio boundary for $label', ({ patch }) => {
+    const settings = { ...defaultSettings, ...patch };
+
+    expect(parsePersistedProgress({
+      ...currentState,
+      settings,
+    })).toMatchObject({
+      migrated: false,
+      state: { settings },
+    });
+  });
+
+  it.each([
     { bgmVolume: -1 },
     { bgmVolume: 101 },
     { sfxVolume: 50.5 },
@@ -190,6 +207,76 @@ describe('difficulty progress schema', () => {
       ...currentState,
       settings: { ...defaultSettings, ...patch },
     })).toBeNull();
+  });
+
+  it.each([
+    { label: 'BGM NaN', patch: { bgmVolume: Number.NaN } },
+    { label: 'BGM positive infinity', patch: { bgmVolume: Number.POSITIVE_INFINITY } },
+    { label: 'BGM negative infinity', patch: { bgmVolume: Number.NEGATIVE_INFINITY } },
+    { label: 'SFX NaN', patch: { sfxVolume: Number.NaN } },
+    { label: 'SFX positive infinity', patch: { sfxVolume: Number.POSITIVE_INFINITY } },
+    { label: 'SFX negative infinity', patch: { sfxVolume: Number.NEGATIVE_INFINITY } },
+  ])('rejects a non-finite persisted audio percentage for $label', ({ patch }) => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      settings: { ...defaultSettings, ...patch },
+    })).toBeNull();
+  });
+
+  it.each([
+    {
+      label: 'a missing BGM volume',
+      settings: { soundEnabled: true, sfxVolume: 100, hapticsEnabled: true },
+    },
+    {
+      label: 'a missing SFX volume',
+      settings: { soundEnabled: true, bgmVolume: 70, hapticsEnabled: true },
+    },
+    {
+      label: 'an extra key',
+      settings: { ...defaultSettings, spatialAudioEnabled: false },
+    },
+  ])('rejects persisted settings with $label', ({ settings }) => {
+    expect(parsePersistedProgress({
+      ...currentState,
+      settings,
+    })).toBeNull();
+  });
+
+  it('preserves custom v5 volumes through parsing and cloning without aliasing', () => {
+    const customSettings = {
+      soundEnabled: true,
+      bgmVolume: 30,
+      sfxVolume: 80,
+      hapticsEnabled: true,
+    };
+    const persisted = {
+      ...currentState,
+      settings: customSettings,
+    } satisfies ProgressState;
+    const parsed = parsePersistedProgress(persisted);
+
+    expect(parsed).toMatchObject({
+      migrated: false,
+      state: { settings: customSettings },
+    });
+    if (parsed === null) throw new Error('Expected custom schema 5 progress to parse.');
+
+    const cloned = cloneProgressState(parsed.state);
+    expect(parsed.state.settings).not.toBe(persisted.settings);
+    expect(cloned.settings).not.toBe(parsed.state.settings);
+
+    parsed.state.settings.bgmVolume = 20;
+    cloned.settings.sfxVolume = 90;
+
+    expect(persisted.settings).toEqual({
+      soundEnabled: true,
+      bgmVolume: 30,
+      sfxVolume: 80,
+      hapticsEnabled: true,
+    });
+    expect(parsed.state.settings).toMatchObject({ bgmVolume: 20, sfxVolume: 80 });
+    expect(cloned.settings).toMatchObject({ bgmVolume: 30, sfxVolume: 90 });
   });
 
   it('updates only the selected difficulty run', () => {

@@ -626,11 +626,11 @@ export function createWebAudioPort({
       const nextBgmVolume = clampVolume(volumes.bgm);
       const nextSfxVolume = clampVolume(volumes.sfx);
       const now = context?.currentTime ?? 0;
-      if (nextBgmVolume !== null) {
+      if (nextBgmVolume !== null && nextBgmVolume !== bgmVolume) {
         bgmVolume = nextBgmVolume;
         if (musicVolumeGain !== null) applyUserVolume(musicVolumeGain, bgmVolume, now);
       }
-      if (nextSfxVolume !== null) {
+      if (nextSfxVolume !== null && nextSfxVolume !== sfxVolume) {
         sfxVolume = nextSfxVolume;
         if (sfxVolumeGain !== null) applyUserVolume(sfxVolumeGain, sfxVolume, now);
       }

@@ -420,19 +420,25 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
+    audio.play('rotate');
+    await flushMicrotasks();
     const source = fixture.bufferSources[0]!;
     const dynamics = fixture.musicDynamicsGain().gain;
     const dynamicsCalls = [...dynamics.calls];
+    const sfxVolume = fixture.sfxVolumeGain().gain;
+    const sfxVolumeCalls = [...sfxVolume.calls];
+    const sourceCount = fixture.bufferSources.length;
 
     audio.setVolumes({ bgm: 0.2, sfx: 1 });
 
-    expect(fixture.bufferSources).toHaveLength(1);
+    expect(fixture.bufferSources).toHaveLength(sourceCount);
     expect(source.start).toHaveBeenCalledTimes(1);
     expect(fixture.musicVolumeGain().gain.calls.slice(-2)).toEqual([
       ['cancel', 0, 4],
       ['set', 0.2, 4],
     ]);
     expect(dynamics.calls).toEqual(dynamicsCalls);
+    expect(sfxVolume.calls).toEqual(sfxVolumeCalls);
   });
 
   it('updates only the SFX bus without changing music dynamics', async () => {
@@ -450,6 +456,8 @@ describe('createWebAudioPort', () => {
     await flushMicrotasks();
     const dynamics = fixture.musicDynamicsGain().gain;
     const dynamicsCalls = [...dynamics.calls];
+    const musicVolume = fixture.musicVolumeGain().gain;
+    const musicVolumeCalls = [...musicVolume.calls];
 
     audio.setVolumes({ bgm: 0.4, sfx: 0.2 });
 
@@ -458,6 +466,7 @@ describe('createWebAudioPort', () => {
       ['set', 0.2, 4],
     ]);
     expect(dynamics.calls).toEqual(dynamicsCalls);
+    expect(musicVolume.calls).toEqual(musicVolumeCalls);
   });
 
   it('allows BGM and SFX volume zero without muting a decoded cue at its local gain', async () => {
@@ -583,12 +592,29 @@ describe('createWebAudioPort', () => {
     const sfxBus = fixture.sfxVolumeGain();
 
     await audio.suspend();
+    const musicCallsBeforeUpdate = musicBus.gain.calls.length;
+    const sfxCallsBeforeUpdate = sfxBus.gain.calls.length;
+    audio.setVolumes({ bgm: 0.25, sfx: 0.65 });
+
+    expect(musicBus.gain.calls.slice(musicCallsBeforeUpdate)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 0.25, 4],
+    ]);
+    expect(sfxBus.gain.calls.slice(sfxCallsBeforeUpdate)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 0.65, 4],
+    ]);
+    const musicCallsAfterUpdate = [...musicBus.gain.calls];
+    const sfxCallsAfterUpdate = [...sfxBus.gain.calls];
+
     await audio.resume();
 
     expect(fixture.musicVolumeGain()).toBe(musicBus);
     expect(fixture.sfxVolumeGain()).toBe(sfxBus);
-    expect(musicBus.gain.calls).toContainEqual(['set', 0.4, 4]);
-    expect(sfxBus.gain.calls).toContainEqual(['set', 0.8, 4]);
+    expect(musicBus.gain.calls).toEqual(musicCallsAfterUpdate);
+    expect(sfxBus.gain.calls).toEqual(sfxCallsAfterUpdate);
+    expect(musicBus.gain.calls).not.toContainEqual(['set', 0.65, 4]);
+    expect(sfxBus.gain.calls).not.toContainEqual(['set', 0.25, 4]);
   });
 
   it('disconnects both user-volume buses on destroy and ignores later volume changes', async () => {
