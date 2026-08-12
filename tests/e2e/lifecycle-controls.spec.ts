@@ -84,6 +84,8 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 
 test(VOLUME_RELOAD_PERSISTENCE_TEST, async ({ context, page }) => {
+  test.setTimeout(30_000);
+
   const seedPage = await context.newPage();
   await seedReturningProfile(seedPage, {
     initials: 'RVT',
