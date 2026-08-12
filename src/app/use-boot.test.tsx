@@ -73,6 +73,7 @@ const defaultAudioPort: AudioPort = {
   resume: async () => undefined,
   setEnabled: () => undefined,
   setMusic: async () => undefined,
+  setVolumes: () => undefined,
   suspend: async () => undefined,
   unlock: async () => undefined,
 };

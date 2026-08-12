@@ -47,6 +47,7 @@ const borrowedAudioPort = {
   resume: vi.fn(async () => undefined),
   setEnabled: vi.fn(),
   setMusic: vi.fn(async () => undefined),
+  setVolumes: vi.fn(),
   suspend: vi.fn(async () => undefined),
   unlock: vi.fn(async () => undefined),
 };

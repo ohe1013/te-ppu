@@ -71,6 +71,7 @@ function createContext(
     duration: 5,
   }),
 ) {
+  const destination = {};
   const oscillators: Array<{
     readonly connect: ReturnType<typeof vi.fn>;
     readonly disconnect: ReturnType<typeof vi.fn>;
@@ -112,7 +113,11 @@ function createContext(
       return source;
     }),
     createGain: vi.fn(() => {
-      const gainNode = { connect: vi.fn(), disconnect: vi.fn(), gain: new TestParam() };
+      const gainNode = {
+        connect: vi.fn((nextDestination: unknown) => nextDestination),
+        disconnect: vi.fn(),
+        gain: new TestParam(),
+      };
       gainNodes.push(gainNode);
       return gainNode;
     }),
@@ -131,7 +136,7 @@ function createContext(
     }),
     currentTime: 4,
     decodeAudioData: vi.fn(decodeAudioData),
-    destination: {},
+    destination,
     resume: vi.fn(async () => {
       context.state = 'running';
     }),
@@ -140,7 +145,62 @@ function createContext(
       context.state = 'suspended';
     }),
   };
-  return { bufferSources, context, gainNodes, oscillators };
+  const connects = (connect: { mock: { calls: unknown[][] } }, nextDestination: unknown) => (
+    connect.mock.calls.some(([destination]) => destination === nextDestination)
+  );
+  const decodedCueGain = () => {
+    const cueSource = bufferSources.find((source) => !source.loop);
+    const gain = gainNodes.find((node) => cueSource !== undefined && connects(cueSource.connect, node));
+    if (gain === undefined) throw new Error('Expected a decoded cue gain node.');
+    return gain;
+  };
+  const oscillatorCueGain = () => {
+    const oscillator = oscillators[0];
+    const gain = gainNodes.find((node) => oscillator !== undefined && connects(oscillator.connect, node));
+    if (gain === undefined) throw new Error('Expected an oscillator cue gain node.');
+    return gain;
+  };
+  const musicDynamicsGain = () => {
+    const musicSource = bufferSources.find((source) => source.loop);
+    const gain = gainNodes.find((node) => musicSource !== undefined && connects(musicSource.connect, node));
+    if (gain === undefined) throw new Error('Expected a music dynamics gain node.');
+    return gain;
+  };
+  const musicVolumeGain = () => {
+    const dynamics = musicDynamicsGain();
+    const gain = gainNodes.find((node) => (
+      node !== dynamics
+      && connects(dynamics.connect, node)
+      && connects(node.connect, destination)
+    ));
+    if (gain === undefined) throw new Error('Expected a music volume gain node.');
+    return gain;
+  };
+  const sfxVolumeGain = () => {
+    const cueGain = gainNodes.find((node) => (
+      bufferSources.some((source) => !source.loop && connects(source.connect, node))
+      || oscillators.some((source) => connects(source.connect, node))
+    ));
+    const gain = gainNodes.find((node) => (
+      cueGain !== undefined
+      && node !== cueGain
+      && connects(cueGain.connect, node)
+      && connects(node.connect, destination)
+    ));
+    if (gain === undefined) throw new Error('Expected an SFX volume gain node.');
+    return gain;
+  };
+  return {
+    bufferSources,
+    context,
+    decodedCueGain,
+    gainNodes,
+    musicDynamicsGain,
+    musicVolumeGain,
+    oscillatorCueGain,
+    oscillators,
+    sfxVolumeGain,
+  };
 }
 
 describe('createWebAudioPort', () => {
@@ -158,7 +218,7 @@ describe('createWebAudioPort', () => {
 
     audio.play('clear');
     const oscillator = fixture.oscillators[0]!;
-    const gain = fixture.gainNodes[0]!.gain;
+    const gain = fixture.oscillatorCueGain().gain;
     expect(fixture.context.createOscillator).toHaveBeenCalledTimes(1);
     expect(oscillator.start).toHaveBeenCalledWith(4);
     expect(oscillator.stop).toHaveBeenCalledWith(4.14);
@@ -253,7 +313,7 @@ describe('createWebAudioPort', () => {
     await flushMicrotasks();
 
     expect(fixture.bufferSources[0]!.playbackRate.calls).toEqual([['set', 1.15, 4]]);
-    expect(fixture.gainNodes[0]!.gain.calls).toEqual([['set', 0.2, 4]]);
+    expect(fixture.decodedCueGain().gain.calls).toEqual([['set', 1, 4]]);
   });
 
   it('applies the same intensity profile to fallback oscillator cues', async () => {
@@ -268,9 +328,9 @@ describe('createWebAudioPort', () => {
       expect.closeTo(759, 10),
       4,
     ]]);
-    expect(fixture.gainNodes[0]!.gain.calls).toEqual([
+    expect(fixture.oscillatorCueGain().gain.calls).toEqual([
       ['set', 0.0001, 4],
-      ['exponential', expect.closeTo(0.17142857142857143, 12), 4.012],
+      ['exponential', expect.closeTo(0.1632, 12), 4.012],
       ['exponential', 0.0001, 4.14],
     ]);
   });
@@ -331,6 +391,204 @@ describe('createWebAudioPort', () => {
     expect(fixture.bufferSources[0]!.start).toHaveBeenCalledTimes(1);
   });
 
+  it('remembers independent volumes before unlock and applies them to separate buses', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('rotate');
+    await flushMicrotasks();
+
+    expect(fixture.musicVolumeGain().gain.calls).toContainEqual(['set', 0.4, 4]);
+    expect(fixture.sfxVolumeGain().gain.calls).toContainEqual(['set', 0.8, 4]);
+    expect(fixture.decodedCueGain().gain.calls).toEqual([['set', 0.75, 4]]);
+  });
+
+  it('updates BGM volume without restarting the active music source', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const source = fixture.bufferSources[0]!;
+    const dynamics = fixture.musicDynamicsGain().gain;
+    const dynamicsCalls = [...dynamics.calls];
+
+    audio.setVolumes({ bgm: 0.2, sfx: 1 });
+
+    expect(fixture.bufferSources).toHaveLength(1);
+    expect(source.start).toHaveBeenCalledTimes(1);
+    expect(fixture.musicVolumeGain().gain.calls.slice(-2)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 0.2, 4],
+    ]);
+    expect(dynamics.calls).toEqual(dynamicsCalls);
+  });
+
+  it('updates only the SFX bus without changing music dynamics', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+    const dynamics = fixture.musicDynamicsGain().gain;
+    const dynamicsCalls = [...dynamics.calls];
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.2 });
+
+    expect(fixture.sfxVolumeGain().gain.calls.slice(-2)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 0.2, 4],
+    ]);
+    expect(dynamics.calls).toEqual(dynamicsCalls);
+  });
+
+  it('allows BGM and SFX volume zero without muting a decoded cue at its local gain', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0, sfx: 0 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+
+    expect(fixture.musicVolumeGain().gain.calls).toContainEqual(['set', 0, 4]);
+    expect(fixture.sfxVolumeGain().gain.calls).toContainEqual(['set', 0, 4]);
+    expect(fixture.decodedCueGain().gain.calls).toEqual([['set', 0.75, 4]]);
+  });
+
+  it('clamps stored user volumes to the normalized bus range', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: -1, sfx: 2 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+
+    expect(fixture.musicVolumeGain().gain.calls).toContainEqual(['set', 0, 4]);
+    expect(fixture.sfxVolumeGain().gain.calls).toContainEqual(['set', 1, 4]);
+  });
+
+  it('ducks and restores only music dynamics while retaining the user BGM volume', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    const volume = fixture.musicVolumeGain().gain;
+    const volumeCalls = [...volume.calls];
+    audio.play('clear', { duckMusic: true });
+    await flushMicrotasks();
+
+    expect(fixture.musicDynamicsGain().gain.calls.slice(-5)).toEqual([
+      ['cancel', 0, 4],
+      ['set', 1, 4],
+      ['exponential', 0.65, 4.02],
+      ['set', 0.65, 4.09],
+      ['exponential', 1, 4.27],
+    ]);
+    expect(volume.calls).toEqual(volumeCalls);
+    expect(volume.calls).toContainEqual(['set', 0.4, 4]);
+  });
+
+  it('routes oscillator fallbacks through the shared SFX volume bus', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({ createContext: () => fixture.context });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    audio.play('clear');
+
+    const sfxBus = fixture.sfxVolumeGain();
+    expect(fixture.oscillatorCueGain().connect).toHaveBeenCalledWith(sfxBus);
+    expect(sfxBus.connect).toHaveBeenCalledWith(fixture.context.destination);
+  });
+
+  it('retains both user volumes across suspend and resume', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+    const musicBus = fixture.musicVolumeGain();
+    const sfxBus = fixture.sfxVolumeGain();
+
+    await audio.suspend();
+    await audio.resume();
+
+    expect(fixture.musicVolumeGain()).toBe(musicBus);
+    expect(fixture.sfxVolumeGain()).toBe(sfxBus);
+    expect(musicBus.gain.calls).toContainEqual(['set', 0.4, 4]);
+    expect(sfxBus.gain.calls).toContainEqual(['set', 0.8, 4]);
+  });
+
+  it('disconnects both user-volume buses on destroy and ignores later volume changes', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({
+      createContext: () => fixture.context,
+      fetchAudio: async () => new ArrayBuffer(8),
+      resolveSources: createCatalog,
+    });
+
+    audio.setVolumes({ bgm: 0.4, sfx: 0.8 });
+    await audio.unlock();
+    await audio.setMusic('tower');
+    audio.play('clear');
+    await flushMicrotasks();
+    const musicBus = fixture.musicVolumeGain();
+    const sfxBus = fixture.sfxVolumeGain();
+
+    await audio.destroy();
+    const musicCalls = [...musicBus.gain.calls];
+    const sfxCalls = [...sfxBus.gain.calls];
+    audio.setVolumes({ bgm: 1, sfx: 1 });
+
+    expect(musicBus.disconnect).toHaveBeenCalledTimes(1);
+    expect(sfxBus.disconnect).toHaveBeenCalledTimes(1);
+    expect(musicBus.gain.calls).toEqual(musicCalls);
+    expect(sfxBus.gain.calls).toEqual(sfxCalls);
+  });
+
   it('ducks active audible music for an intensity-three cue', async () => {
     const fixture = createContext();
     const audio = createWebAudioPort({
@@ -341,7 +599,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
 
@@ -364,7 +622,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
     fixture.context.currentTime = 4.03;
@@ -402,7 +660,7 @@ describe('createWebAudioPort', () => {
     audio.setEnabled(false);
     audio.setEnabled(true);
     await vi.waitFor(() => expect(fixture.bufferSources).toHaveLength(2));
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     const callsAfterResume = [...musicGain.calls];
 
     cueDecode.resolve({ duration: 0.14 });
@@ -434,7 +692,7 @@ describe('createWebAudioPort', () => {
     await audio.suspend();
     await audio.resume();
     expect(fixture.bufferSources).toHaveLength(2);
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     const callsAfterResume = [...musicGain.calls];
 
     cueDecode.reject(new Error('decode failed'));
@@ -455,7 +713,7 @@ describe('createWebAudioPort', () => {
     await audio.unlock();
     await audio.setMusic('tower');
     await audio.setMusic('early-floors');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     const callsBeforeCue = [...musicGain.calls];
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
@@ -475,7 +733,7 @@ describe('createWebAudioPort', () => {
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
 
-    expect(fixture.gainNodes[0]!.gain.calls).toEqual([['set', 0.2, 4]]);
+    expect(fixture.decodedCueGain().gain.calls).toEqual([['set', 1, 4]]);
   });
 
   it('cancels duck automation before disabling active music', async () => {
@@ -488,7 +746,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
     audio.setEnabled(false);
@@ -509,7 +767,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
     await audio.suspend();
@@ -530,7 +788,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
     await audio.setMusic('early-floors');
@@ -554,7 +812,7 @@ describe('createWebAudioPort', () => {
 
     await audio.unlock();
     await audio.setMusic('tower');
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     audio.play('clear', { intensity: 3, duckMusic: true });
     await flushMicrotasks();
     await audio.destroy();
@@ -580,8 +838,7 @@ describe('createWebAudioPort', () => {
 
     const oldSource = fixture.bufferSources[0]!;
     const replacement = fixture.bufferSources[1]!;
-    const musicGain = fixture.gainNodes[0]!.gain;
-    expect(fixture.gainNodes).toHaveLength(1);
+    const musicGain = fixture.musicDynamicsGain().gain;
     expect(musicGain.calls).toContainEqual(['set', 1, 10]);
     expect(musicGain.calls).toContainEqual(['exponential', 0.0001, 10.15]);
     expect(oldSource.stop).toHaveBeenCalledWith(10.15);
@@ -617,7 +874,7 @@ describe('createWebAudioPort', () => {
     await audio.setMusic('early-floors');
     const towerSource = fixture.bufferSources[0]!;
     const earlySource = fixture.bufferSources[1]!;
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
 
     fixture.context.currentTime = 10.05;
     await audio.setMusic('late-floors');
@@ -666,7 +923,7 @@ describe('createWebAudioPort', () => {
     const firstReplacement = audio.setMusic('early-floors');
     await flushMicrotasks();
     const towerSource = fixture.bufferSources[0]!;
-    const musicGain = fixture.gainNodes[0]!.gain;
+    const musicGain = fixture.musicDynamicsGain().gain;
     const callsDuringFade = musicGain.calls.length;
     fixture.context.currentTime = 10.05;
 
@@ -831,7 +1088,7 @@ describe('createWebAudioPort', () => {
 
     expect(fixture.bufferSources).toHaveLength(1);
     expect(fixture.bufferSources[0]!.buffer).toBe(earlyBuffer);
-    const earlyGainCalls = fixture.gainNodes[0]!.gain.calls.length;
+    const earlyGainCalls = fixture.musicDynamicsGain().gain.calls.length;
 
     towerDecode.resolve(towerBuffer);
     await staleTowerRequest;
@@ -840,7 +1097,7 @@ describe('createWebAudioPort', () => {
     expect(fixture.bufferSources).toHaveLength(1);
     expect(fixture.bufferSources[0]!.buffer).toBe(earlyBuffer);
     expect(fixture.bufferSources[0]!.connect).toHaveBeenCalledTimes(1);
-    expect(fixture.gainNodes[0]!.gain.calls).toHaveLength(earlyGainCalls);
+    expect(fixture.musicDynamicsGain().gain.calls).toHaveLength(earlyGainCalls);
     await audio.setMusic('early-floors');
     expect(fixture.bufferSources).toHaveLength(1);
   });
