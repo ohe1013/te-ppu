@@ -18,6 +18,9 @@
 - Play one `rotate` preview only after a changed SFX interaction ends and only while master sound is enabled.
 - Preserve music crossfade and ducking independently of the user's BGM volume.
 - Preserve master mute, background suspend/resume, 3-2-1 resume, stale-decode cancellation, deterministic gameplay, and non-fatal audio failure boundaries.
+- A full page reload must preserve persisted audio settings and show them in the next match.
+- A background hidden/visible return must independently preserve the chosen volumes and resume the current match through the existing visible 3-2-1 countdown.
+- Restoring the active board or match across a full page reload is explicitly out of scope.
 - Do not regenerate or replace MP3 assets in this change.
 - Do not modify, inspect, stage, or delete the user-owned untracked `tmp/` directory.
 - Keep the dependency-audit review gate separate from feature correctness and release readiness.
@@ -331,7 +334,7 @@ expect(screen.getByText('100%')).toBeVisible();
 
 Use `fireEvent.change()` followed by `fireEvent.pointerUp()` to prove multiple changes preview immediately but save once with the final integer. Assert SFX preview fires once after SFX commit, BGM commit never plays it, unchanged blur does not save, and master sound off disables both sliders and suppresses preview.
 
-Extend the browser settings lifecycle scenario to open `게임 설정`, assert 70/100 defaults, change BGM to 40 and SFX to 80, end each interaction, and assert 40/80 remain visible after close/reopen and page reload with active-run resume. Use role selectors with the exact names `BGM 음량` and `효과음 음량`.
+Extend the browser settings lifecycle coverage to open `게임 설정`, assert 70/100 defaults, change BGM to 40 and SFX to 80, end each interaction, and assert 40/80 remain visible after close/reopen and a full page reload followed by entry into the next match. Separately strengthen the existing background hidden/visible scenario to prove the chosen volumes remain unchanged while the current match resumes through the existing visible 3-2-1 countdown. Do not require the active board or match to survive a full page reload. Use role selectors with the exact names `BGM 음량` and `효과음 음량`.
 
 - [ ] **Step 2: Run focused UI tests and verify RED**
 

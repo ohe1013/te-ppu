@@ -21,8 +21,8 @@ const ASYMMETRIC_SAFE_AREA: Insets = {
   left: 13,
 };
 
-const VOLUME_PERSISTENCE_TEST =
-  'previews and persists independent volumes across close, reopen, and active-run reload';
+const VOLUME_RELOAD_PERSISTENCE_TEST =
+  'persists independent volumes through full reload and shows them in the next match';
 
 async function expectViewportCenteredOverlay(page: Page, insets?: Insets): Promise<void> {
   const geometry = await page.locator('.modal-overlay').evaluate((overlay) => {
@@ -76,14 +76,14 @@ async function expectViewportCenteredOverlay(page: Page, insets?: Insets): Promi
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
-  if (testInfo.title === VOLUME_PERSISTENCE_TEST) return;
+  if (testInfo.title === VOLUME_RELOAD_PERSISTENCE_TEST) return;
   await seedReturningProfile(page, {
     initials: 'RVT',
     characterId: 'hero-engineer',
   });
 });
 
-test(VOLUME_PERSISTENCE_TEST, async ({ context, page }) => {
+test(VOLUME_RELOAD_PERSISTENCE_TEST, async ({ context, page }) => {
   const seedPage = await context.newPage();
   await seedReturningProfile(seedPage, {
     initials: 'RVT',
@@ -190,10 +190,21 @@ test('keeps blank and outside row gestures inert and dispatches the valid row', 
   ]);
 });
 
-test('pauses hidden match time and resumes only after the visible 3-2-1 countdown', async ({ page }) => {
+test('preserves chosen volumes while hidden and resumes only after the visible 3-2-1 countdown', async ({ page }) => {
   await openMatch(page);
   const tick = page.getByTestId('match-tick');
   await expect(tick).not.toHaveText('0');
+
+  await page.getByRole('button', { name: '설정' }).click();
+  const bgm = page.getByRole('slider', { name: 'BGM 음량' });
+  const sfx = page.getByRole('slider', { name: '효과음 음량' });
+  await bgm.fill('40');
+  await bgm.dispatchEvent('pointerup');
+  await sfx.fill('80');
+  await sfx.dispatchEvent('pointerup');
+  await expect(bgm).toHaveValue('40');
+  await expect(sfx).toHaveValue('80');
+  await page.getByRole('button', { name: '설정 닫기' }).click();
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setLifecycle('hidden'));
   await expect(page.getByRole('group', { name: '게임 조작' }))
@@ -212,6 +223,10 @@ test('pauses hidden match time and resumes only after the visible 3-2-1 countdow
   await expect(page.getByRole('group', { name: '게임 조작' }))
     .not.toHaveAttribute('disabled', '');
   await expect(tick).not.toHaveText(hiddenTick ?? '');
+
+  await page.getByRole('button', { name: '설정' }).click();
+  await expect(page.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('40');
+  await expect(page.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
 });
 
 test('pauses for exit, cancels safely, and closes only after confirmation', async ({ page }) => {
