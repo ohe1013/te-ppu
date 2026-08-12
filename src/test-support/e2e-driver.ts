@@ -5,6 +5,7 @@ import type { Floor } from '../progression/index';
 
 export type E2ELifecycleState = 'hidden' | 'visible';
 export type E2ECloseMode = 'resolve' | 'hang';
+export type E2EProgressSaveMode = 'persist' | 'fail';
 
 export interface E2EMatchMetadata {
   readonly floor: Floor;
@@ -19,6 +20,7 @@ export interface TePpuE2EDriver {
   finish(result: MatchResult, durationTicks?: number): Promise<void>;
   setCloseMode(mode: E2ECloseMode): void;
   setLifecycle(state: E2ELifecycleState): void;
+  setProgressSaveMode(mode: E2EProgressSaveMode): void;
 }
 
 declare global {
@@ -39,6 +41,7 @@ export class E2EDriverController {
   #closeCount = 0;
   #closeMode: E2ECloseMode = 'resolve';
   #finishBinding: FinishBinding | null = null;
+  #progressSaveMode: E2EProgressSaveMode = 'persist';
   #visibilityState: E2ELifecycleState = 'visible';
   #installedWindow: Window | null = null;
   #previousVisibilityDescriptor: PropertyDescriptor | undefined;
@@ -69,6 +72,9 @@ export class E2EDriverController {
       },
       setLifecycle(state) {
         controller.#setLifecycle(state);
+      },
+      setProgressSaveMode(mode) {
+        controller.#setProgressSaveMode(mode);
       },
     };
   }
@@ -124,6 +130,10 @@ export class E2EDriverController {
     this.#closeCount += 1;
   }
 
+  shouldFailProgressSave(): boolean {
+    return this.#progressSaveMode === 'fail';
+  }
+
   close(): Promise<void> {
     this.recordClose();
     if (this.#closeMode === 'hang') return new Promise<void>(() => undefined);
@@ -150,5 +160,12 @@ export class E2EDriverController {
       detail: { state },
     }));
     document.dispatchEvent(new Event('visibilitychange'));
+  }
+
+  #setProgressSaveMode(mode: E2EProgressSaveMode): void {
+    if (mode !== 'persist' && mode !== 'fail') {
+      throw new RangeError(`Unsupported E2E progress-save mode: ${String(mode)}`);
+    }
+    this.#progressSaveMode = mode;
   }
 }

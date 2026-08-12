@@ -617,6 +617,49 @@ describe('createWebAudioPort', () => {
     expect(sfxBus.gain.calls).not.toContainEqual(['set', 0.25, 4]);
   });
 
+  it('finishes suspended when backgrounding follows a deferred resume', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({ createContext: () => fixture.context });
+    await audio.unlock();
+    await audio.suspend();
+    const resumed = deferred<void>();
+    vi.mocked(fixture.context.resume).mockImplementationOnce(async () => {
+      await resumed.promise;
+      fixture.context.state = 'running';
+    });
+
+    const foregrounding = audio.resume();
+    await flushMicrotasks();
+    expect(fixture.context.resume).toHaveBeenCalledTimes(2);
+    const backgrounding = audio.suspend();
+    resumed.resolve(undefined);
+    await Promise.all([foregrounding, backgrounding]);
+
+    expect(fixture.context.state).toBe('suspended');
+    expect(fixture.context.suspend).toHaveBeenCalledTimes(2);
+  });
+
+  it('finishes running when foregrounding follows a deferred suspend', async () => {
+    const fixture = createContext();
+    const audio = createWebAudioPort({ createContext: () => fixture.context });
+    await audio.unlock();
+    const suspended = deferred<void>();
+    vi.mocked(fixture.context.suspend).mockImplementationOnce(async () => {
+      await suspended.promise;
+      fixture.context.state = 'suspended';
+    });
+
+    const backgrounding = audio.suspend();
+    await flushMicrotasks();
+    expect(fixture.context.suspend).toHaveBeenCalledTimes(1);
+    const foregrounding = audio.resume();
+    suspended.resolve(undefined);
+    await Promise.all([backgrounding, foregrounding]);
+
+    expect(fixture.context.state).toBe('running');
+    expect(fixture.context.resume).toHaveBeenCalledTimes(2);
+  });
+
   it('disconnects both user-volume buses on destroy and ignores later volume changes', async () => {
     const fixture = createContext();
     const audio = createWebAudioPort({

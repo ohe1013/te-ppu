@@ -134,6 +134,25 @@ test(VOLUME_RELOAD_PERSISTENCE_TEST, async ({ context, page }) => {
   await expect(page.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
 });
 
+test('keeps the settings retry action inside the mobile viewport after save failure', async ({ page }) => {
+  await openMatch(page);
+  await page.getByRole('button', { name: '설정' }).click();
+  await page.evaluate(() => window.__TE_PPU_E2E__.setProgressSaveMode('fail'));
+  const bgm = page.getByRole('slider', { name: 'BGM 음량' });
+  await bgm.fill('40');
+  await bgm.dispatchEvent('pointerup');
+
+  const retry = page.getByRole('button', { name: '설정 저장 다시 시도' });
+  await expect(retry).toBeVisible();
+  const box = await retry.boundingBox();
+  expect(box).not.toBeNull();
+  const viewport = page.viewportSize()!;
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+});
+
 test('dispatches joystick commands in order and rotates exactly once per tap', async ({ page }) => {
   await openMatch(page);
   const joystick = page.getByRole('group', { name: '이동 조이스틱' });

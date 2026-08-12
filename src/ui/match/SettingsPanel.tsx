@@ -45,6 +45,14 @@ const SFX_VOLUME_ID = 'settings-sfx-volume';
 
 type VolumeSetting = 'bgmVolume' | 'sfxVolume';
 
+function ignorePreview(operation: () => void): void {
+  try {
+    operation();
+  } catch {
+    // Audio previews are optional and must not interrupt settings persistence.
+  }
+}
+
 export function SettingsPanel({
   onRetrySave,
   onSettingsChange,
@@ -149,8 +157,10 @@ export function SettingsPanel({
     const committed = setting === 'bgmVolume' ? committedBgmRef : committedSfxRef;
     if (value === committed.current) return;
     committed.current = value;
-    if (setting === 'sfxVolume' && settings.soundEnabled) onSfxPreview();
     update({ [setting]: value });
+    if (setting === 'sfxVolume' && settings.soundEnabled) {
+      ignorePreview(onSfxPreview);
+    }
   }
 
   function finishVolumeInteraction(setting: VolumeSetting): void {
@@ -174,10 +184,10 @@ export function SettingsPanel({
       sfxVolumeRef.current = value;
       setSfxVolume(value);
     }
-    onVolumePreview({
+    ignorePreview(() => onVolumePreview({
       bgmVolume: bgmVolumeRef.current,
       sfxVolume: sfxVolumeRef.current,
-    });
+    }));
   }
 
   return (

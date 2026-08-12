@@ -310,6 +310,54 @@ describe('lifecycle UI', () => {
     expect(onSfxPreview).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps an immediate volume change non-fatal when audio preview throws', () => {
+    const onVolumePreview = vi.fn(() => {
+      throw new Error('preview failed');
+    });
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={onVolumePreview}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+
+    expect(() => fireEvent.change(bgm, { target: { value: '40' } })).not.toThrow();
+    expect(onVolumePreview).toHaveBeenCalledTimes(1);
+    expect(bgm).toHaveValue('40');
+  });
+
+  it('enqueues one SFX save when its commit preview throws', async () => {
+    const onSettingsChange = vi.fn(async () => true);
+    const onSfxPreview = vi.fn(() => {
+      throw new Error('preview failed');
+    });
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={onSfxPreview}
+        onVolumePreview={vi.fn()}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+    fireEvent.change(sfx, { target: { value: '80' } });
+
+    expect(() => fireEvent.pointerUp(sfx)).not.toThrow();
+    expect(() => fireEvent.blur(sfx)).not.toThrow();
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(1));
+    expect(onSettingsChange).toHaveBeenCalledWith({ sfxVolume: 80 });
+    expect(onSfxPreview).toHaveBeenCalledTimes(1);
+  });
+
   it('finalizes keyboard and modal-close values while serializing durable saves', async () => {
     let resolveFirst!: (saved: boolean) => void;
     const firstSave = new Promise<boolean>((resolve) => {

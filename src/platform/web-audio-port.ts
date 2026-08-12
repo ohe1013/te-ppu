@@ -151,6 +151,7 @@ export function createWebAudioPort({
 }: CreateWebAudioPortOptions = {}): AudioPort {
   let context: WebAudioContextPort | null = null;
   let contextResume: Promise<boolean> | null = null;
+  let contextTransition: Promise<void> | null = null;
   let bgmVolume = 0.7;
   let sfxVolume = 1;
   let musicDynamicsGain: WebAudioGainPort | null = null;
@@ -200,6 +201,17 @@ export function createWebAudioPort({
     return isCuePlayable(expectedContext)
       && requestGeneration === generation
       && desiredTrack === track;
+  }
+
+  function serializeContextTransition<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = contextTransition;
+    const next = previous === null ? operation() : previous.then(operation, operation);
+    const settled = next.then(() => undefined, () => undefined);
+    contextTransition = settled;
+    void settled.then(() => {
+      if (contextTransition === settled) contextTransition = null;
+    });
+    return next;
   }
 
   async function ensureContextRunning(expectedContext: WebAudioContextPort): Promise<boolean> {
@@ -550,7 +562,7 @@ export function createWebAudioPort({
       || !unlocked
       || expectedContext === null
     ) return;
-    if (!await ensureContextRunning(expectedContext)) return;
+    if (!await serializeContextTransition(() => ensureContextRunning(expectedContext))) return;
     await startMusicForCurrentRequest(requestGeneration);
   }
 
@@ -565,7 +577,7 @@ export function createWebAudioPort({
         }
       }
       const expectedContext = context;
-      if (!await ensureContextRunning(expectedContext)) return;
+      if (!await serializeContextTransition(() => ensureContextRunning(expectedContext))) return;
       unlocked = true;
       await resumeMusicIfPossible();
     },
@@ -658,8 +670,18 @@ export function createWebAudioPort({
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(true, context?.currentTime ?? 0, true);
       stopCueSources();
-      if (context !== null && context.state !== 'suspended' && context.state !== 'closed') {
-        await settle(() => context!.suspend());
+      const expectedContext = context;
+      if (expectedContext !== null) {
+        await serializeContextTransition(async () => {
+          if (
+            destroyed
+            || !backgrounded
+            || context !== expectedContext
+            || expectedContext.state === 'suspended'
+            || expectedContext.state === 'closed'
+          ) return;
+          await settle(() => expectedContext.suspend());
+        });
       }
     },
 
