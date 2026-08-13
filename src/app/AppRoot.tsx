@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useReducer,
   useRef,
@@ -275,6 +276,10 @@ export function AppRoot({
     : 'hero-engineer';
   const selectedPlayer = PLAYER_CHARACTERS[selectedPlayerId];
   const selectedPlayerAssets = commonAssets?.players[selectedPlayerId];
+  const closeApp = useCallback(
+    () => services.platform.close(),
+    [services.platform],
+  );
 
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
@@ -683,6 +688,7 @@ export function AppRoot({
               setProfileSaveStatus('idle');
               dispatchRoute({ type: 'change-player' });
             }}
+            onExit={closeApp}
             onOpenRanking={openRanking}
             onStartRun={() => {
               if (runActive) {

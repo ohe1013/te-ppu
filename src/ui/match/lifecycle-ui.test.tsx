@@ -14,7 +14,7 @@ import type { PlatformPort } from '../../platform/platform-port';
 import { PLAYER_CHARACTERS } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import { MatchScreen } from '../screens/MatchScreen';
-import { ExitConfirmation } from './ExitConfirmation';
+import { AppExitConfirmation } from './AppExitConfirmation';
 import { ModalOverlay } from './ModalOverlay';
 import { ResumeCountdown } from './ResumeCountdown';
 import { SettingsPanel } from './SettingsPanel';
@@ -184,10 +184,15 @@ describe('lifecycle UI', () => {
     opener.focus();
 
     const result = render(
-      <ExitConfirmation open onCancel={onCancel} onConfirm={onConfirm} />,
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
     );
     const cancel = screen.getByRole('button', { name: '계속하기' });
-    const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
+    const confirm = screen.getByRole('button', { name: '게임 종료 확인' });
     expect(cancel).toHaveFocus();
 
     confirm.focus();
@@ -204,12 +209,17 @@ describe('lifecycle UI', () => {
     await act(async () => finishClose?.());
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫는 중입니다.');
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 종료하는 중입니다.');
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onCancel).not.toHaveBeenCalled();
     result.rerender(
-      <ExitConfirmation open={false} onCancel={onCancel} onConfirm={onConfirm} />,
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open={false}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
     );
     expect(opener).toHaveFocus();
     opener.remove();
@@ -224,9 +234,16 @@ describe('lifecycle UI', () => {
         ? new Promise<void>(() => undefined)
         : Promise.resolve();
     });
-    render(<ExitConfirmation open onCancel={vi.fn()} onConfirm={onConfirm} />);
+    render(
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
 
-    const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
+    const confirm = screen.getByRole('button', { name: '게임 종료 확인' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     await act(async () => undefined);
@@ -235,7 +252,7 @@ describe('lifecycle UI', () => {
     await act(async () => vi.advanceTimersByTimeAsync(400));
 
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'failed');
-    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫지 못했습니다');
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 종료하지 못했습니다');
     expect(confirm).toBeEnabled();
 
     await act(async () => fireEvent.click(confirm));

@@ -9,7 +9,7 @@ import { TitleScreen } from './TitleScreen';
 afterEach(cleanup);
 
 describe('TitleScreen', () => {
-  it('shows brand, owl, player summary, and exactly three primary actions', async () => {
+  it('shows brand, owl, player summary, and exactly four primary actions', async () => {
     const user = userEvent.setup();
     const progress = cloneProgressState(DEFAULT_PROGRESS);
     progress.profile = { initials: 'RVT', characterId: 'hero-engineer' };
@@ -28,12 +28,14 @@ describe('TitleScreen', () => {
     const onStartRun = vi.fn();
     const onOpenRanking = vi.fn();
     const onChangePlayer = vi.fn();
+    const onExit = vi.fn(async () => undefined);
 
     render(
       <TitleScreen
         commonAssets={null}
         notice={null}
         onChangePlayer={onChangePlayer}
+        onExit={onExit}
         onOpenRanking={onOpenRanking}
         onStartRun={onStartRun}
         progress={progress}
@@ -55,7 +57,7 @@ describe('TitleScreen', () => {
     expect(screen.getByText('내 최고 기록')).toBeInTheDocument();
 
     const actions = screen.getByRole('navigation', { name: '주요 메뉴' });
-    expect(within(actions).getAllByRole('button')).toHaveLength(3);
+    expect(within(actions).getAllByRole('button')).toHaveLength(4);
     await user.click(within(actions).getByRole('button', { name: '도전 시작' }));
     await user.click(within(actions).getByRole('button', { name: '랭킹' }));
     await user.click(within(actions).getByRole('button', { name: '플레이어 변경' }));
@@ -64,12 +66,40 @@ describe('TitleScreen', () => {
     expect(onChangePlayer).toHaveBeenCalledOnce();
   });
 
+  it('confirms app shutdown only from the title and warns about an active run', async () => {
+    const user = userEvent.setup();
+    const onExit = vi.fn(async () => undefined);
+
+    render(
+      <TitleScreen
+        commonAssets={null}
+        notice={null}
+        onChangePlayer={vi.fn()}
+        onExit={onExit}
+        onOpenRanking={vi.fn()}
+        onStartRun={vi.fn()}
+        progress={DEFAULT_PROGRESS}
+        runActive
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '게임 종료' }));
+    expect(screen.getByText('앱을 다시 열면 현재 도전은 이어지지 않습니다.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '계속하기' }));
+    expect(onExit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '게임 종료' }));
+    await user.click(screen.getByRole('button', { name: '게임 종료 확인' }));
+    expect(onExit).toHaveBeenCalledOnce();
+  });
+
   it('presents a first player without inventing a profile or score', () => {
     render(
       <TitleScreen
         commonAssets={null}
         notice="Offline progress loaded."
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={() => undefined}
         progress={DEFAULT_PROGRESS}
@@ -97,6 +127,7 @@ describe('TitleScreen', () => {
         commonAssets={null}
         notice={null}
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={() => undefined}
         progress={progress}
@@ -116,6 +147,7 @@ describe('TitleScreen', () => {
         commonAssets={null}
         notice={null}
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={onStartRun}
         progress={progress}
@@ -131,6 +163,7 @@ describe('TitleScreen', () => {
         commonAssets={null}
         notice={null}
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={onStartRun}
         progress={progress}
@@ -147,6 +180,7 @@ describe('TitleScreen', () => {
         commonAssets={null}
         notice={null}
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={() => undefined}
         progress={DEFAULT_PROGRESS}
@@ -163,6 +197,7 @@ describe('TitleScreen', () => {
         commonAssets={null}
         notice={null}
         onChangePlayer={() => undefined}
+        onExit={async () => undefined}
         onOpenRanking={() => undefined}
         onStartRun={() => undefined}
         progress={DEFAULT_PROGRESS}

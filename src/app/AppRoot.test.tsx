@@ -504,6 +504,24 @@ describe('AppRoot', () => {
     expect(shell.lastElementChild).toBe(host);
   });
 
+  it('closes the app only from the title without clearing an active run first', async () => {
+    const user = userEvent.setup();
+    const platform = createTestPlatform();
+    const close = vi.spyOn(platform, 'close');
+    renderGame(new TestProgressRepository(floorOneProgress), platform);
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '게임 종료' }));
+    expect(screen.getByText('앱을 다시 열면 현재 도전은 이어지지 않습니다.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '게임 종료 확인' }));
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(screen.getByRole('button', { name: '도전 계속' })).toBeInTheDocument();
+  });
+
   it('shows title after boot and saves a first profile before entering the tower', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(DEFAULT_PROGRESS);

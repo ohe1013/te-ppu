@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import type { CommonAssets } from '../../assets';
 import { PLAYER_CHARACTERS } from '../../player';
 import type { Difficulty, ProgressState } from '../../progression';
 import { AssetImage } from '../match/AssetImage';
+import { AppExitConfirmation } from '../match/AppExitConfirmation';
 import { ScreenBackdrop } from './ScreenBackdrop';
 
 export interface TitleScreenProps {
@@ -10,6 +12,7 @@ export interface TitleScreenProps {
   readonly onStartRun: () => void;
   readonly onOpenRanking: () => void;
   readonly onChangePlayer: () => void;
+  readonly onExit: () => Promise<void>;
   readonly progress: ProgressState;
   readonly runActive?: boolean;
   readonly syncPending?: boolean;
@@ -27,12 +30,14 @@ export function TitleScreen({
   commonAssets,
   notice,
   onChangePlayer,
+  onExit,
   onOpenRanking,
   onStartRun,
   progress,
   runActive = false,
   syncPending = false,
 }: TitleScreenProps) {
+  const [exitOpen, setExitOpen] = useState(false);
   const profile = progress.profile;
   const localBest = progress.localBestScores[progress.selectedDifficulty];
   const character = profile === null ? null : PLAYER_CHARACTERS[profile.characterId];
@@ -98,7 +103,23 @@ export function TitleScreen({
         <button className="secondary-button title-screen__action" onClick={onChangePlayer} type="button">
           플레이어 변경
         </button>
+        <button
+          className="secondary-button title-screen__action title-screen__action--exit"
+          onClick={() => setExitOpen(true)}
+          type="button"
+        >
+          게임 종료
+        </button>
       </nav>
+      <AppExitConfirmation
+        description={runActive
+          ? '앱을 다시 열면 현재 도전은 이어지지 않습니다.'
+          : '게임 화면을 닫습니다.'}
+        icon={commonAssets?.icons.exit}
+        onCancel={() => setExitOpen(false)}
+        onConfirm={onExit}
+        open={exitOpen}
+      />
     </section>
   );
 }
