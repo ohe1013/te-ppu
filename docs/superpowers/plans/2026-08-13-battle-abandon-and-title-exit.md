@@ -26,6 +26,7 @@
 **Files:**
 - Modify: `src/scoring/score-run-controller.ts`
 - Test: `src/scoring/score-run-controller.test.ts`
+- Modify: `src/app/AppRoot.tsx`
 
 **Interfaces:**
 - Consumes: existing `ScoreRunController.start()`, `recordEvents()`, and `completeMatch()`.
@@ -112,6 +113,12 @@ abandonMatch(): void {
 
 Call `#assertActiveMatch()` before `recordEvents()` and before outcome validation in `completeMatch()`. After a valid outcome is accepted, clear the checkpoint exactly once before returning a continued or ended resolution. An invalid out-of-order outcome must leave the checkpoint active so the caller may abandon it safely.
 
+In `AppRoot`, call `scoreRun.beginMatch()` only after `TowerController.startFloor()`,
+`startEncounter()`, or `startOwlMatch()` succeeds and before dispatching the
+matching route. This updates the existing production consumer in the same task
+as the new required controller contract, so the repository never has a commit
+where normal match scoring throws solely because the caller was not migrated.
+
 - [ ] **Step 4: Run the score tests and verify GREEN**
 
 Run:
@@ -125,7 +132,7 @@ Expected: both files PASS with no warnings.
 - [ ] **Step 5: Commit the score transaction**
 
 ```powershell
-git add -- src/scoring/score-run-controller.ts src/scoring/score-run-controller.test.ts
+git add -- src/scoring/score-run-controller.ts src/scoring/score-run-controller.test.ts src/app/AppRoot.tsx
 git commit -m "feat: checkpoint score per battle"
 ```
 
@@ -342,7 +349,8 @@ Replace `MatchScreen`'s current `ExitConfirmation` with this component, rename t
 
 - [ ] **Step 5: Coordinate the transactional abandon in AppRoot**
 
-Before every successful `dispatchRoute({ type: 'start-match' ... })` or owl equivalent, call `scoreRun.beginMatch()`. Pass `onAbandon` to both floor and owl render paths.
+The successful start paths already call `scoreRun.beginMatch()` from Task 1.
+Pass `onAbandon` to both floor and owl render paths.
 
 Add one synchronous coordinator that validates the current identity and route, then performs this order without awaits:
 
