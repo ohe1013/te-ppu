@@ -31,6 +31,7 @@ function nextFloor(floor: Floor): Floor {
 
 export class ScoreRunController {
   readonly #state: MutableScoreRunState;
+  #matchScoreCheckpoint: number | null = null;
 
   private constructor(difficulty: Difficulty) {
     this.#state = {
@@ -67,14 +68,23 @@ export class ScoreRunController {
     return this.#state.phase === 'active' && floor === this.#state.requiredFloor;
   }
 
-  recordEvents(events: readonly GameEvent[]): void {
+  beginMatch(): void {
     this.#assertActive();
+    if (this.#matchScoreCheckpoint !== null) {
+      throw new RangeError('A score-run match is already active.');
+    }
+    this.#matchScoreCheckpoint = this.#state.score;
+  }
+
+  recordEvents(events: readonly GameEvent[]): void {
+    this.#assertActiveMatch();
     this.#state.score += scorePlayerEvents(events);
   }
 
   completeMatch(outcome: MatchScoreOutcome): ScoreRunResolution {
-    this.#assertActive();
+    this.#assertActiveMatch();
     this.#assertExpectedOutcome(outcome);
+    this.#matchScoreCheckpoint = null;
     this.#state.durationTicks += outcome.durationTicks;
     this.#state.reachedFloor = outcome.floor;
 
@@ -105,8 +115,21 @@ export class ScoreRunController {
     return { kind: 'continued', snapshot: this.snapshot };
   }
 
+  abandonMatch(): void {
+    this.#assertActiveMatch();
+    this.#state.score = this.#matchScoreCheckpoint!;
+    this.#matchScoreCheckpoint = null;
+  }
+
   #assertActive(): void {
     if (this.#state.phase === 'ended') throw new RangeError('Score run has ended.');
+  }
+
+  #assertActiveMatch(): void {
+    this.#assertActive();
+    if (this.#matchScoreCheckpoint === null) {
+      throw new RangeError('No score-run match is active.');
+    }
   }
 
   #assertExpectedOutcome(outcome: MatchScoreOutcome): void {

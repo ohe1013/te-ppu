@@ -369,6 +369,7 @@ export function AppRoot({
       ? controller.startFloor(intro.floor, seed)
       : controller.startEncounter(seed);
     if (started.ok) {
+      scoreRun.beginMatch();
       matchIdentityRef.current = {
         token: Symbol('ranked-floor-match'),
         scoreRun,
@@ -473,6 +474,7 @@ export function AppRoot({
     const seed = createMatchSeed();
     const started = controller.startOwlMatch(seed);
     if (started.ok) {
+      scoreRun.beginMatch();
       matchIdentityRef.current = {
         token: Symbol('ranked-owl-match'),
         scoreRun,
