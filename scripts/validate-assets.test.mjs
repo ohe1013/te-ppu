@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import sharp from 'sharp';
 import { validateAssets } from './validate-assets.mjs';
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -94,23 +95,28 @@ function vp8xWebp(width, height, alpha = true) {
   return riffWebp('VP8X', payload);
 }
 
-function vp8Webp(width, height) {
-  const payload = Buffer.alloc(10);
-  payload[3] = 0x9d;
-  payload[4] = 0x01;
-  payload[5] = 0x2a;
-  payload.writeUInt16LE(width, 6);
-  payload.writeUInt16LE(height, 8);
-  return riffWebp('VP8 ', payload);
+async function decodedWebp(width, height, transparent = false) {
+  const channels = transparent ? 4 : 3;
+  const pixels = Buffer.alloc(width * height * channels, 255);
+  if (transparent) pixels[3] = 0;
+  return sharp(pixels, { raw: { width, height, channels } })
+    .webp({ lossless: true, effort: 0 })
+    .toBuffer();
 }
 
-function vp8lWebp(width, height, alpha = true) {
-  const payload = Buffer.alloc(5);
-  payload[0] = 0x2f;
-  const packed = (width - 1) + ((height - 1) * 0x4000) + (alpha ? 0x10000000 : 0);
-  payload.writeUInt32LE(packed, 1);
-  return riffWebp('VP8L', payload);
+async function alphaFlaggedOpaqueWebp(width, height) {
+  const bytes = await decodedWebp(width, height, false);
+  const payloadStart = bytes.indexOf(Buffer.from('VP8L')) + 8;
+  assert.ok(payloadStart >= 8);
+  const mutated = Buffer.from(bytes);
+  mutated[payloadStart + 4] |= 0x10;
+  return mutated;
 }
+
+const VALID_TRANSPARENT_FULL_WEBP = await decodedWebp(1024, 1024, true);
+const VALID_TRANSPARENT_PORTRAIT_WEBP = await decodedWebp(256, 256, true);
+const VALID_OPAQUE_BACKGROUND_WEBP = await decodedWebp(840, 1480, false);
+const ALPHA_FLAGGED_OPAQUE_PORTRAIT_WEBP = await alphaFlaggedOpaqueWebp(256, 256);
 
 function geometrySvg() {
   return Buffer.from('<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#6c5ce7" d="M2 2h20v20H2z"/></svg>');
@@ -318,15 +324,9 @@ function bytesFor(path) {
   if (path.startsWith('blocks/') || path.startsWith('items/')) return png(64, 64, 6);
   if (path.endsWith('.svg')) return geometrySvg();
   if (path.endsWith('.mp3')) return mp3Frame();
-  if (path.endsWith('/full.webp')) {
-    if (path.startsWith('characters/hero-engineer/')) return vp8lWebp(1024, 1024);
-    return vp8xWebp(1024, 1024);
-  }
-  if (path.includes('/portrait-')) return vp8xWebp(256, 256);
-  if (path.startsWith('backgrounds/')) {
-    if (path === 'backgrounds/tower-exterior.webp') return vp8Webp(840, 1480);
-    return vp8xWebp(840, 1480, false);
-  }
+  if (path.endsWith('/full.webp')) return VALID_TRANSPARENT_FULL_WEBP;
+  if (path.includes('/portrait-')) return VALID_TRANSPARENT_PORTRAIT_WEBP;
+  if (path.startsWith('backgrounds/')) return VALID_OPAQUE_BACKGROUND_WEBP;
   throw new Error('unexpected fixture path ' + path);
 }
 
@@ -374,6 +374,26 @@ test('rejects a floor with duplicate encounter ids', async () => {
   await withWorkspace(async (root) => {
     const manifest = writeCompleteAssets(root);
     manifest.floors[1].encounters[1] = manifest.floors[1].encounters[0];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects an encounter id reused across two floors', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.floors[2].encounters[0] = manifest.floors[1].encounters[0];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects unique encounter ids moved out of their canonical tower slots', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    const firstRival = manifest.floors[1].encounters[0];
+    manifest.floors[1].encounters[0] = manifest.floors[5].encounters[2];
+    manifest.floors[5].encounters[2] = firstRival;
     writeManifest(root, manifest);
     await assert.rejects(() => validateAssets(root), /encounter/i);
   });
@@ -556,6 +576,26 @@ test('rejects wrong transparent WebP dimensions and missing alpha metadata', asy
     writeCompleteAssets(root);
     writeFile(root, 'characters/owl-companion/portrait-idle.webp', vp8xWebp(256, 256, false));
     await assert.rejects(() => validateAssets(root), /alpha/i);
+  });
+});
+
+test('rejects a WebP that declares dimensions and alpha without decodable pixels', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'characters/owl-companion/portrait-idle.webp', vp8xWebp(256, 256));
+    await assert.rejects(() => validateAssets(root), /decode.*WebP/i);
+  });
+});
+
+test('rejects a decoded character WebP with no transparent pixels', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(
+      root,
+      'characters/owl-companion/portrait-idle.webp',
+      ALPHA_FLAGGED_OPAQUE_PORTRAIT_WEBP,
+    );
+    await assert.rejects(() => validateAssets(root), /transparent pixel/i);
   });
 });
 

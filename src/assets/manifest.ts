@@ -26,6 +26,13 @@ const RIVAL_IDS = [
   'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
   'chain-knight', 'night-archivist', 'demon-king',
 ] as const satisfies readonly FloorOpponentId[];
+const FLOOR_RIVAL_IDS = {
+  '1': ['quartermaster', 'clock-moth', 'moss-golem'],
+  '2': ['alchemist', 'glass-oracle', 'spark-slime'],
+  '3': ['guard-captain', 'frost-smith', 'storm-harpy'],
+  '4': ['dark-engineer', 'brass-minotaur', 'cinder-witch'],
+  '5': ['chain-knight', 'night-archivist', 'demon-king'],
+} as const satisfies Readonly<Record<string, readonly FloorOpponentId[]>>;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -136,6 +143,22 @@ export function parseAssetManifest(value: unknown): AssetManifest {
   const atlas = exactObject(common.atlas, ['image', 'data']);
   const audio = exactObject(common.audio, ['sfx', 'bgm']);
   const floors = exactObject(authored.floors, ['1', '2', '3', '4', '5']);
+  const parsedFloors = {
+    '1': parseFloor(floors['1'], 'early-floors'),
+    '2': parseFloor(floors['2'], 'early-floors'),
+    '3': parseFloor(floors['3'], 'late-floors'),
+    '4': parseFloor(floors['4'], 'late-floors'),
+    '5': parseFloor(floors['5'], 'demon-king'),
+  };
+  const encounterIds = Object.values(parsedFloors).flatMap((floor) => floor.encounters);
+  if (encounterIds.length !== RIVAL_IDS.length || new Set(encounterIds).size !== RIVAL_IDS.length) {
+    invalid();
+  }
+  for (const floor of Object.keys(FLOOR_RIVAL_IDS) as Array<keyof typeof FLOOR_RIVAL_IDS>) {
+    if (parsedFloors[floor].encounters.some((id, index) => id !== FLOOR_RIVAL_IDS[floor][index])) {
+      invalid();
+    }
+  }
 
   return {
     schemaVersion: 3,
@@ -174,12 +197,6 @@ export function parseAssetManifest(value: unknown): AssetManifest {
         bgm: parseRefs(audio.bgm, MUSIC_TRACKS),
       },
     },
-    floors: {
-      '1': parseFloor(floors['1'], 'early-floors'),
-      '2': parseFloor(floors['2'], 'early-floors'),
-      '3': parseFloor(floors['3'], 'late-floors'),
-      '4': parseFloor(floors['4'], 'late-floors'),
-      '5': parseFloor(floors['5'], 'demon-king'),
-    },
+    floors: parsedFloors,
   } as AssetManifest;
 }

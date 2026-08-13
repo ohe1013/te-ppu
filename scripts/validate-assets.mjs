@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 export const MAX_RUNTIME_BYTES = 30 * 1024 * 1024;
 const MAX_SVG_BYTES = 64 * 1024;
@@ -230,6 +231,13 @@ const RIVAL_IDS = [
   'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
   'chain-knight', 'night-archivist', 'demon-king',
 ];
+const FLOOR_RIVAL_IDS = [
+  ['quartermaster', 'clock-moth', 'moss-golem'],
+  ['alchemist', 'glass-oracle', 'spark-slime'],
+  ['guard-captain', 'frost-smith', 'storm-harpy'],
+  ['dark-engineer', 'brass-minotaur', 'cinder-witch'],
+  ['chain-knight', 'night-archivist', 'demon-king'],
+];
 
 function collectEncounters(value, context) {
   if (!Array.isArray(value) || value.length !== 3) fail('invalid ' + context + '.encounters');
@@ -239,13 +247,14 @@ function collectEncounters(value, context) {
     }
   }
   if (new Set(value).size !== 3) fail('invalid ' + context + '.encounters: duplicate encounter');
+  return value;
 }
 
 function collectFloor(value, music, references, context) {
   const floor = exactObject(value, ['music', 'background', 'encounters'], context);
   requireLiteral(floor.music, music, context + '.music');
   collectRef(floor.background, references, context + '.background');
-  collectEncounters(floor.encounters, context);
+  return collectEncounters(floor.encounters, context);
 }
 
 function parseManifest(value) {
@@ -303,11 +312,19 @@ function parseManifest(value) {
   collectRefs(audio.bgm, BGM_IDS, references, 'asset manifest.common.audio.bgm');
 
   const floors = exactObject(manifest.floors, ['1', '2', '3', '4', '5'], 'asset manifest.floors');
-  collectFloor(floors['1'], 'early-floors', references, 'asset manifest.floors.1');
-  collectFloor(floors['2'], 'early-floors', references, 'asset manifest.floors.2');
-  collectFloor(floors['3'], 'late-floors', references, 'asset manifest.floors.3');
-  collectFloor(floors['4'], 'late-floors', references, 'asset manifest.floors.4');
-  collectFloor(floors['5'], 'demon-king', references, 'asset manifest.floors.5');
+  const encounterIds = [
+    ...collectFloor(floors['1'], 'early-floors', references, 'asset manifest.floors.1'),
+    ...collectFloor(floors['2'], 'early-floors', references, 'asset manifest.floors.2'),
+    ...collectFloor(floors['3'], 'late-floors', references, 'asset manifest.floors.3'),
+    ...collectFloor(floors['4'], 'late-floors', references, 'asset manifest.floors.4'),
+    ...collectFloor(floors['5'], 'demon-king', references, 'asset manifest.floors.5'),
+  ];
+  if (encounterIds.length !== RIVAL_IDS.length || new Set(encounterIds).size !== RIVAL_IDS.length) {
+    fail('invalid asset manifest floor encounters: duplicate encounter across floors');
+  }
+  if (encounterIds.some((id, index) => id !== FLOOR_RIVAL_IDS.flat()[index])) {
+    fail('invalid asset manifest floor encounters: non-canonical encounter slot');
+  }
   if (
     references.length !== REQUIRED_UNIQUE_ASSET_COUNT
     || new Set(references).size !== REQUIRED_UNIQUE_ASSET_COUNT
@@ -440,6 +457,22 @@ function parseWebp(bytes, label) {
   }
   if (!dimensions || dimensions.width === 0 || dimensions.height === 0) fail('missing WebP dimensions ' + label);
   return { ...dimensions, alpha };
+}
+
+async function decodeWebp(bytes, label) {
+  try {
+    const { data, info } = await sharp(bytes, { failOn: 'error' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let minimumAlpha = 255;
+    for (let offset = info.channels - 1; offset < data.length; offset += info.channels) {
+      minimumAlpha = Math.min(minimumAlpha, data[offset]);
+    }
+    return { width: info.width, height: info.height, minimumAlpha };
+  } catch {
+    fail('unable to decode WebP pixels: ' + label);
+  }
 }
 
 function parseSvg(bytes, label) {
@@ -645,14 +678,24 @@ async function validateReferencedAssets(assetRoot, files, references) {
       assertPngAlpha(image, path);
     } else if (path.endsWith('.webp')) {
       const image = parseWebp(bytes, path);
+      let requiresTransparency = false;
       if (path.startsWith('backgrounds/')) {
         assertDimensions(image, 840, 1480, path);
       } else if (path.endsWith('/full.webp')) {
         assertDimensions(image, 1024, 1024, path);
         if (!image.alpha) fail('expected alpha support for ' + path);
+        requiresTransparency = true;
       } else {
         assertDimensions(image, 256, 256, path);
         if (!image.alpha) fail('expected alpha support for ' + path);
+        requiresTransparency = true;
+      }
+      const decoded = await decodeWebp(bytes, path);
+      if (decoded.width !== image.width || decoded.height !== image.height) {
+        fail('decoded WebP dimensions do not match container: ' + path);
+      }
+      if (requiresTransparency && decoded.minimumAlpha === 255) {
+        fail('expected transparent pixel for ' + path);
       }
     } else if (path.endsWith('.svg')) {
       parseSvg(bytes, path);

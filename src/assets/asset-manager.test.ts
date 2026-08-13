@@ -96,6 +96,22 @@ describe('parseAssetManifest', () => {
     ]);
   });
 
+  it('rejects a regular tower rival reused on another floor', () => {
+    const manifest = cloneManifest();
+    manifest.floors['2'].encounters[0] = manifest.floors['1'].encounters[0];
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
+  it('rejects unique regular rivals moved out of their canonical tower slots', () => {
+    const manifest = cloneManifest();
+    const firstRival = manifest.floors['1'].encounters[0];
+    manifest.floors['1'].encounters[0] = manifest.floors['5'].encounters[2];
+    manifest.floors['5'].encounters[2] = firstRival;
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
   it('rejects the complete legacy authored schema 2 player shape', () => {
     const manifest = cloneManifest();
     manifest.schemaVersion = 2;
