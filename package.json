@@ -23,6 +23,7 @@
     "build:web": "npm run check:assets && vite build --mode browser",
     "build:ait": "npm run check:ait-config && node scripts/build-ait.mjs",
     "test:e2e": "playwright test",
+    "capture:store-media": "playwright test -c playwright.store-media.config.ts",
     "check:ait": "node scripts/verify-ait-package.mjs",
     "check:source-policy": "node scripts/security/check-authored-source-policy.mjs",
     "check:dependency-audit": "npm audit --omit=dev --json | node scripts/security/check-dependency-audit.mjs --baseline security/dependency-audit-baseline.json --lock package-lock.json"
