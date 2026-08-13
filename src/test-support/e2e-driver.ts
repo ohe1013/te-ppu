@@ -20,6 +20,7 @@ export interface TePpuE2EDriver {
   finish(result: MatchResult, durationTicks?: number): Promise<void>;
   setCloseMode(mode: E2ECloseMode): void;
   setLifecycle(state: E2ELifecycleState): void;
+  setMatchPaused(paused: boolean): void;
   setProgressSaveMode(mode: E2EProgressSaveMode): void;
 }
 
@@ -30,6 +31,7 @@ declare global {
 }
 
 type FinishHandler = (outcome: MatchOutcome) => void | Promise<void>;
+type PauseHandler = (paused: boolean) => void;
 
 interface FinishBinding {
   readonly handler: FinishHandler;
@@ -41,6 +43,7 @@ export class E2EDriverController {
   #closeCount = 0;
   #closeMode: E2ECloseMode = 'resolve';
   #finishBinding: FinishBinding | null = null;
+  #pauseHandler: PauseHandler | null = null;
   #progressSaveMode: E2EProgressSaveMode = 'persist';
   #visibilityState: E2ELifecycleState = 'visible';
   #installedWindow: Window | null = null;
@@ -72,6 +75,11 @@ export class E2EDriverController {
       },
       setLifecycle(state) {
         controller.#setLifecycle(state);
+      },
+      setMatchPaused(paused) {
+        const handler = controller.#pauseHandler;
+        if (handler === null) throw new Error('No E2E match loop is currently active.');
+        handler(paused);
       },
       setProgressSaveMode(mode) {
         controller.#setProgressSaveMode(mode);
@@ -107,6 +115,7 @@ export class E2EDriverController {
         );
       }
       this.#finishBinding = null;
+      this.#pauseHandler = null;
       this.#installedWindow = null;
       this.#previousVisibilityDescriptor = undefined;
     };
@@ -119,6 +128,13 @@ export class E2EDriverController {
     this.#finishBinding = { handler, metadata };
     return () => {
       if (this.#finishBinding?.handler === handler) this.#finishBinding = null;
+    };
+  }
+
+  bindPause(handler: PauseHandler): () => void {
+    this.#pauseHandler = handler;
+    return () => {
+      if (this.#pauseHandler === handler) this.#pauseHandler = null;
     };
   }
 
