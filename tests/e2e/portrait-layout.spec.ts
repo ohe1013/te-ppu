@@ -89,6 +89,62 @@ for (const { viewport } of PORTRAITS) {
     expect(towerMetrics.rootWidth).toBeLessThanOrEqual(towerMetrics.rootClientWidth);
     expect(towerMetrics.overflowY).toBe('auto');
 
+    const towerHeaderMetrics = await page.locator('.tower-screen__header').evaluate((header) => {
+      const mascot = header.querySelector<HTMLElement>('.tower-screen__mascot');
+      const title = header.querySelector<HTMLElement>('h1');
+      const home = header.querySelector<HTMLElement>('.tower-screen__back');
+      if (mascot === null || title === null || home === null) {
+        throw new Error('tower header controls are missing');
+      }
+      const overlapArea = (first: DOMRect, second: DOMRect) => Math.max(
+        0,
+        Math.min(first.right, second.right) - Math.max(first.left, second.left),
+      ) * Math.max(
+        0,
+        Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top),
+      );
+      const titleStyle = getComputedStyle(title);
+      const titleRange = document.createRange();
+      titleRange.selectNodeContents(title);
+      const lineBounds = new Map<number, { left: number; right: number }>();
+      for (const rect of titleRange.getClientRects()) {
+        const key = Math.round(rect.top);
+        const current = lineBounds.get(key);
+        lineBounds.set(key, current === undefined
+          ? { left: rect.left, right: rect.right }
+          : { left: Math.min(current.left, rect.left), right: Math.max(current.right, rect.right) });
+      }
+      return {
+        homeWidth: home.getBoundingClientRect().width,
+        homeOverlapsMascot: overlapArea(home.getBoundingClientRect(), mascot.getBoundingClientRect()),
+        homeOverlapsTitle: overlapArea(home.getBoundingClientRect(), title.getBoundingClientRect()),
+        mascotOverlapsTitle: overlapArea(mascot.getBoundingClientRect(), title.getBoundingClientRect()),
+        titleHeight: title.getBoundingClientRect().height,
+        titleLineHeight: Number.parseFloat(titleStyle.lineHeight),
+        titleLineWidths: [...lineBounds.values()].map((line) => line.right - line.left),
+      };
+    });
+    expect.soft(towerHeaderMetrics.homeWidth, 'tower home button should stay compact')
+      .toBeLessThanOrEqual(140);
+    expect.soft(towerHeaderMetrics.homeOverlapsMascot, 'tower home button should not cover the owl')
+      .toBeLessThanOrEqual(0.5);
+    expect.soft(towerHeaderMetrics.homeOverlapsTitle, 'tower home button should not cover the title')
+      .toBeLessThanOrEqual(0.5);
+    expect.soft(towerHeaderMetrics.mascotOverlapsTitle, 'tower title should not cover the owl')
+      .toBeLessThanOrEqual(0.5);
+    if (viewport.width === 360 && viewport.height === 640) {
+      expect.soft(towerHeaderMetrics.titleHeight, 'tower title should use at most two lines at 360px')
+        .toBeLessThanOrEqual(towerHeaderMetrics.titleLineHeight * 2 + 1);
+      expect.soft(towerHeaderMetrics.titleLineWidths.length, 'tower title should use at most two text lines at 360px')
+        .toBeLessThanOrEqual(2);
+      if (towerHeaderMetrics.titleLineWidths.length === 2) {
+        expect.soft(
+          towerHeaderMetrics.titleLineWidths[1],
+          'tower title should not leave an orphaned final word at 360px',
+        ).toBeGreaterThanOrEqual(towerHeaderMetrics.titleLineWidths[0]! * 0.45);
+      }
+    }
+
     const firstFloor = floorCards.first();
     const lastFloor = floorCards.last();
     await expectInsideViewport(lastFloor, viewport, 'top floor card');
@@ -175,6 +231,22 @@ for (const { viewport } of PORTRAITS) {
         visibleText: (node as HTMLElement).innerText.trim(),
       };
     }));
+    const nextQueueMetrics = await nextQueues.evaluateAll((nodes) => nodes.map((node) => {
+      const card = node.closest<HTMLElement>('.battle-hud');
+      if (card === null) throw new Error('NEXT queue is missing its character card');
+      const itemBoxes = [...node.querySelectorAll<HTMLElement>(':scope > li')]
+        .map((item) => item.getBoundingClientRect());
+      if (itemBoxes.length === 0) throw new Error('NEXT queue has no preview tiles');
+      const groupLeft = Math.min(...itemBoxes.map((item) => item.left));
+      const groupRight = Math.max(...itemBoxes.map((item) => item.right));
+      const cardBox = card.getBoundingClientRect();
+      return {
+        centerDeltaX: Math.abs(
+          groupLeft + (groupRight - groupLeft) / 2 - (cardBox.left + cardBox.width / 2),
+        ),
+        side: card.dataset.side,
+      };
+    }));
 
     const matchHeader = await expectInsideViewport(
       page.locator('.match-header'),
@@ -202,6 +274,13 @@ for (const { viewport } of PORTRAITS) {
       viewport,
       'rotate control',
     );
+
+    const rotateWidth = viewport.width <= 360
+      ? { minimum: 75, maximum: 76 }
+      : { minimum: 79, maximum: 80 };
+    expect(rotate.width).toBeGreaterThanOrEqual(rotateWidth.minimum);
+    expect(rotate.width).toBeLessThanOrEqual(rotateWidth.maximum);
+    expect(Math.abs(rotate.width - rotate.height)).toBeLessThanOrEqual(1);
 
     const matchElements = [
       { label: 'match header', box: matchHeader },
@@ -274,7 +353,7 @@ for (const { viewport } of PORTRAITS) {
       expect(image.width, 'portrait image should have visible width').toBeGreaterThan(0);
       expect(image.height, 'portrait image should have visible height').toBeGreaterThan(0);
       expect(image.objectFit).toBe('cover');
-      expect(image.objectPosition).toBe('50% 18%');
+      expect(image.objectPosition).toBe('50% 50%');
     }
     for (const preview of nextPreviewMetrics) {
       expect(preview.cellCount, `${preview.kind} NEXT should render four cells`).toBe(4);
@@ -282,6 +361,10 @@ for (const { viewport } of PORTRAITS) {
       expect(preview.centerDeltaX, `${preview.kind} NEXT should be horizontally centered`)
         .toBeLessThanOrEqual(1);
       expect(preview.centerDeltaY, `${preview.kind} NEXT should be vertically centered`)
+        .toBeLessThanOrEqual(1);
+    }
+    for (const queue of nextQueueMetrics) {
+      expect(queue.centerDeltaX, `${queue.side} NEXT preview group should be centered in its card`)
         .toBeLessThanOrEqual(1);
     }
   });

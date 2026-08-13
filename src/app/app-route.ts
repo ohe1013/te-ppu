@@ -1,5 +1,5 @@
 import { isFinalFloor, type Floor } from '../progression';
-import type { EncounterIndex } from '../progression';
+import type { EncounterIndex, FloorSeriesState } from '../progression';
 
 export type { Floor } from '../progression';
 
@@ -40,6 +40,9 @@ export type AppRouteEvent =
   | { type: 'name-completed'; initials: string }
   | { type: 'character-selected' }
   | { type: 'return-to-title' }
+  | { type: 'resume-run' }
+  | { type: 'resume-floor'; series: FloorSeriesState }
+  | { type: 'resume-owl' }
   | { type: 'select-floor'; floor: Floor }
   | { type: 'start-match'; seed: number }
   | { type: 'match-finished'; result: MatchResult }
@@ -61,6 +64,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     case 'boot':
       return event.type === 'boot-ready' ? { name: 'title' } : route;
     case 'title':
+      if (event.type === 'resume-run') return { name: 'tower' };
       if (event.type === 'start-run') {
         return event.hasProfile
           ? { name: 'tower' }
@@ -85,6 +89,16 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
     case 'ranking':
       return route;
     case 'tower':
+      if (event.type === 'return-to-title') return { name: 'title' };
+      if (event.type === 'resume-floor') {
+        return {
+          name: 'floor-intro',
+          floor: event.series.floor,
+          encounterIndex: event.series.encounterIndex,
+          wins: event.series.wins,
+        };
+      }
+      if (event.type === 'resume-owl') return { name: 'owl-reveal' };
       return event.type === 'select-floor'
         ? { name: 'floor-intro', floor: event.floor, encounterIndex: 0, wins: 0 }
         : route;
@@ -102,6 +116,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
           }
         : route;
     case 'match':
+      if (event.type === 'return-to-tower') return { name: 'tower' };
       return event.type === 'match-finished'
         ? {
             name: 'result',
@@ -131,6 +146,7 @@ export function reduceRoute(route: AppRoute, event: AppRouteEvent): AppRoute {
         ? { name: 'owl-match', seed: event.seed }
         : route;
     case 'owl-match':
+      if (event.type === 'return-to-tower') return { name: 'tower' };
       return event.type === 'owl-match-finished'
         ? { name: 'owl-result', result: event.result }
         : route;

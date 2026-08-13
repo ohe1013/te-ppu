@@ -31,6 +31,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
@@ -55,6 +56,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
@@ -69,10 +71,31 @@ describe('TowerScreen', () => {
     expect(screen.getAllByRole('list', { name: '층별 라이벌 순서' })).toHaveLength(5);
   });
 
+  it('returns to title from the compact tower header control', () => {
+    const onBack = vi.fn();
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={null}
+        notice={null}
+        onBack={onBack}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive={false}
+        runScore={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
   it('keeps floors in logical order while rendering an upward tower route', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={() => undefined}
         onSelectFloor={() => undefined}
@@ -88,6 +111,8 @@ describe('TowerScreen', () => {
     expect(route.querySelector('.tower-route__shaft')).toBeInTheDocument();
     expect([...route.querySelectorAll<HTMLElement>('[data-floor]')].map((node) => node.dataset.floor))
       .toEqual(['1', '2', '3', '4', '5']);
+    expect([...route.querySelectorAll<HTMLElement>('.tower-node__marker')].map((node) => node.textContent))
+      .toEqual(['01층', '02층', '03층', '04층', '05층']);
   });
 
   it('shows locked difficulty choices and selects an unlocked difficulty', () => {
@@ -95,6 +120,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
@@ -106,9 +132,9 @@ describe('TowerScreen', () => {
     );
 
     expect(screen.getByRole('group', { name: '난이도 선택' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'EASY' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'HARD' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '쉬움' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '어려움' })).toBeDisabled();
 
     const unlockedNormal = cloneProgressState(progress);
     unlockedNormal.unlockedDifficulties.normal = true;
@@ -116,6 +142,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
@@ -125,7 +152,7 @@ describe('TowerScreen', () => {
         runScore={0}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
+    fireEvent.click(screen.getByRole('button', { name: '보통' }));
     expect(onSelectDifficulty).toHaveBeenCalledWith('normal');
   });
 
@@ -143,6 +170,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={historicallyUnlocked}
@@ -155,7 +183,7 @@ describe('TowerScreen', () => {
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '5층 선택' })).toBeDisabled();
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -166,6 +194,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         difficultySelectionLocked
         notice={null}
         onSelectDifficulty={vi.fn()}
@@ -177,11 +206,39 @@ describe('TowerScreen', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'EASY' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('RUN DIFFICULTY LOCKED');
+    expect(screen.getByRole('button', { name: '쉬움' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('도전 중에는 난이도를 바꿀 수 없습니다.');
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
+    expect(screen.getByText('기어라이트 타워')).toBeInTheDocument();
+    expect(screen.getByText('잠김')).toBeInTheDocument();
+  });
+
+  it('highlights and labels the exact suspended opponent', () => {
+    const floorTwoProgress = cloneProgressState(progress);
+    floorTwoProgress.difficultyProgress.easy.highestUnlockedFloor = 2;
+
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={{ kind: 'floor', floor: 2, encounterIndex: 1 }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={floorTwoProgress}
+        requiredFloor={2}
+        runActive
+        runScore={6_250}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 2층 2번째 상대 · 점수 006250',
+    );
+    expect(screen.getByRole('button', { name: '2층 2번째 상대부터 계속' })).toBeEnabled();
+    const floorTwo = screen.getByTestId('tower-route').querySelector('[data-floor="2"]');
+    expect(floorTwo?.querySelector('[data-encounter-index="1"]'))
+      .toHaveAttribute('data-encounter-state', 'active');
   });
 });

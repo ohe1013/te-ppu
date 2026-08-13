@@ -36,8 +36,8 @@
 }
 
 .settings-panel {
-  width: min(22rem, calc(100vw - 2rem));
-  max-height: min(34rem, calc(100dvh - 2rem));
+  width: min(22rem, 100%);
+  max-height: min(34rem, 100%);
   padding: 0.8rem;
   border: 2px solid #171239;
   border-radius: 0.8rem;
@@ -55,11 +55,16 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding:
-    max(1rem, var(--safe-area-top, 0px))
-    max(1rem, var(--safe-area-right, 0px))
-    max(1rem, var(--safe-area-bottom, 0px))
-    max(1rem, var(--safe-area-left, 0px));
+  padding-block: max(
+    1rem,
+    var(--safe-area-top, 0px),
+    var(--safe-area-bottom, 0px)
+  );
+  padding-inline: max(
+    1rem,
+    var(--safe-area-left, 0px),
+    var(--safe-area-right, 0px)
+  );
   background: rgb(16 12 31 / 78%);
 }
 
@@ -111,6 +116,28 @@
   accent-color: #65d8ff;
 }
 
+.settings-panel__volume {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.5rem;
+}
+
+.settings-panel__volume label {
+  min-height: 0;
+}
+
+.settings-panel__volume output {
+  color: rgb(255 244 207 / 78%);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.settings-panel input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 1.5rem;
+}
+
 .settings-panel__save-error {
   display: grid;
   gap: 0.45rem;
@@ -120,7 +147,7 @@
 
 .resume-countdown {
   display: grid;
-  width: min(6rem, calc(100vw - 2rem));
+  width: min(6rem, 100%);
   aspect-ratio: 1;
   place-items: center;
 }
@@ -140,7 +167,7 @@
 }
 
 .exit-confirmation {
-  width: min(20rem, calc(100vw - 2rem));
+  width: min(20rem, 100%);
   padding: 1rem;
   border: 2px solid #171239;
   border-radius: 1rem;
@@ -317,7 +344,7 @@
 
 .battle-hud__portrait .asset-image {
   object-fit: cover;
-  object-position: var(--portrait-position, 50% 18%);
+  object-position: center;
 }
 
 .battle-hud__portrait--plate {
@@ -399,6 +426,7 @@
   margin: 0.15rem 0;
   padding: 0;
   display: flex;
+  justify-content: center;
   gap: 0.3rem;
   list-style: none;
 }

@@ -1,4 +1,4 @@
-const DEFAULT_CLOSE_TIMEOUT_MS = 1_200;
+const DEFAULT_CLOSE_TIMEOUT_MS = 400;
 
 export function closeWithTimeout(
   close: () => Promise<void>,
@@ -9,11 +9,6 @@ export function closeWithTimeout(
     : DEFAULT_CLOSE_TIMEOUT_MS;
   return new Promise<void>((resolve, reject) => {
     let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error('CLOSE_TIMEOUT'));
-    }, duration);
     const finish = (error?: unknown) => {
       if (settled) return;
       settled = true;
@@ -21,8 +16,15 @@ export function closeWithTimeout(
       if (error === undefined) resolve();
       else reject(error);
     };
-    Promise.resolve()
-      .then(close)
-      .then(() => finish(), (error: unknown) => finish(error));
+    const timer = setTimeout(() => finish(new Error('CLOSE_TIMEOUT')), duration);
+
+    let request: Promise<void>;
+    try {
+      request = close();
+    } catch (error) {
+      finish(error);
+      return;
+    }
+    void request.then(() => finish(), (error: unknown) => finish(error));
   });
 }

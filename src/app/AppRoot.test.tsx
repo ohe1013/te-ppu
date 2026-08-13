@@ -259,6 +259,7 @@ function createAudioPort(): AudioPort {
     resume: vi.fn(async () => undefined),
     setEnabled: vi.fn(),
     setMusic: vi.fn(async () => undefined),
+    setVolumes: vi.fn(),
     suspend: vi.fn(async () => undefined),
     unlock: vi.fn(async () => undefined),
   };
@@ -272,6 +273,7 @@ function TestMatch({
   floor,
   encounterIndex,
   wins,
+  onAbandon,
   onFinished,
   onScoreEvents,
   player,
@@ -303,9 +305,12 @@ function TestMatch({
       <h3>{player?.name}</h3>
       <p>{player?.title}</p>
       <output data-testid="match-encounter">{encounterIndex}:{wins}</output>
-      <output data-testid="run-score">SCORE {String(runScore).padStart(6, '0')}</output>
+      <output data-testid="run-score">점수 {String(runScore).padStart(6, '0')}</output>
       <button type="button" onClick={() => onScoreEvents(scoreEvents)}>
         emit score events
+      </button>
+      <button type="button" onClick={onAbandon}>
+        타워로 나가기
       </button>
       <button
         type="button"
@@ -338,10 +343,14 @@ function TestMatch({
   );
 }
 
-type RetainedMatchCallbacks = Pick<MatchRouteViewProps, 'onFinished' | 'onScoreEvents'>;
+type RetainedMatchCallbacks = Pick<
+  MatchRouteViewProps,
+  'onAbandon' | 'onFinished' | 'onScoreEvents'
+>;
 
 function retainMatchCallbacks(props: MatchRouteViewProps): RetainedMatchCallbacks {
   return {
+    onAbandon: props.onAbandon,
     onFinished: props.onFinished,
     onScoreEvents: props.onScoreEvents,
   };
@@ -380,7 +389,7 @@ function renderGame(
 async function enterTower(user: ReturnType<typeof userEvent.setup>) {
   if (screen.queryByTestId('tower-screen') === null) {
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
   }
   await screen.findByTestId('tower-screen');
 }
@@ -484,6 +493,35 @@ function expectSelectedMatchPlayer(
 }
 
 describe('AppRoot', () => {
+  it('mounts one modal host after the active title screen', async () => {
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await screen.findByTestId('title-screen');
+    const shell = screen.getByTestId('app-shell');
+    const host = shell.querySelector('[data-modal-root]');
+    expect(host).not.toBeNull();
+    expect(shell.querySelectorAll('[data-modal-root]')).toHaveLength(1);
+    expect(shell.lastElementChild).toBe(host);
+  });
+
+  it('closes the app only from the title without clearing an active run first', async () => {
+    const user = userEvent.setup();
+    const platform = createTestPlatform();
+    const close = vi.spyOn(platform, 'close');
+    renderGame(new TestProgressRepository(floorOneProgress), platform);
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '게임 종료' }));
+    expect(screen.getByText('앱을 다시 열면 현재 도전은 이어지지 않습니다.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '게임 종료 확인' }));
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(screen.getByRole('button', { name: '도전 계속' })).toBeInTheDocument();
+  });
+
   it('shows title after boot and saves a first profile before entering the tower', async () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(DEFAULT_PROGRESS);
@@ -491,7 +529,7 @@ describe('AppRoot', () => {
 
     expect(await screen.findByTestId('title-screen')).toBeVisible();
     expect(screen.queryByTestId('tower-screen')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('name-entry-screen')).toBeVisible();
     await enterInitials(user, 'RVT');
     expect(await screen.findByTestId('character-select-screen')).toBeVisible();
@@ -503,7 +541,7 @@ describe('AppRoot', () => {
       characterId: 'hero-engineer',
     });
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -516,7 +554,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await enterInitials(user, 'ART');
     const selectionScreen = await screen.findByTestId('character-select-screen');
 
@@ -542,13 +580,118 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     expect(await screen.findByTestId('title-screen')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
 
     expect(await screen.findByTestId('tower-screen')).toBeVisible();
     expect(screen.queryByTestId('name-entry-screen')).not.toBeInTheDocument();
     expect(repository.saves).toEqual([]);
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeEnabled();
-    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('점수 000000');
+  });
+
+  it('returns to title and resumes the same active score run', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 2층 · 점수 005000',
+    );
+
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 2층 · 점수 005000',
+    );
+    expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+  });
+
+  it('keeps an active score run when PLAYER CHANGE is cancelled', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 2층 · 점수 005000',
+    );
+  });
+
+  it('keeps an active score run after ranking back', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
+    await user.click(screen.getByRole('button', { name: 'BACK' }));
+
+    expect(await screen.findByRole('button', { name: '도전 계속' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 2층 · 점수 005000',
+    );
+  });
+
+  it('clears an active score run after replacing the player profile', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorOneProgress));
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await enterInitials(user, 'LUM');
+    await chooseCharacter(user, 'cloud-courier');
+
+    expect(await screen.findByRole('button', { name: '도전 시작' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 1층 · 점수 000000',
+    );
+  });
+
+  it('clears an active score run after retrying player replacement', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress, [
+      { ok: true },
+      { ok: false, error: { code: 'WRITE_FAILED', message: 'Progress could not be saved.' } },
+      { ok: true },
+    ]);
+    renderGame(repository);
+
+    await enterMatch(user, 1, 0);
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '다음 층' }));
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await enterInitials(user, 'LUM');
+    await chooseCharacter(user, 'cloud-courier');
+    await user.click(await screen.findByRole('button', { name: 'RETRY SAVE' }));
+
+    expect(await screen.findByRole('button', { name: '도전 시작' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 다음 1층 · 점수 000000',
+    );
   });
 
   it('persists PLAYER CHANGE and returns to title', async () => {
@@ -557,7 +700,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'PLAYER CHANGE' }));
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
     await enterInitials(user, 'LUM');
     await chooseCharacter(user, 'cloud-courier');
 
@@ -569,9 +712,9 @@ describe('AppRoot', () => {
     });
     expect(screen.queryByTestId('tower-run-status')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -581,7 +724,7 @@ describe('AppRoot', () => {
     renderGame(repository);
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await enterInitials(user, 'RVT');
     const selectionScreen = await screen.findByTestId('character-select-screen');
     const starCard = document.querySelector<HTMLButtonElement>(
@@ -670,7 +813,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
 
     expect(await screen.findByTestId('ranking-screen')).toBeVisible();
     expect(screen.getByText('43,210')).toBeInTheDocument();
@@ -713,7 +856,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).queryByText('40,000')).not.toBeInTheDocument();
@@ -773,7 +916,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).getByText(visibleScore)).toBeInTheDocument();
@@ -810,7 +953,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     const table = await screen.findByRole('table', { name: 'TOP 20 ranking' });
 
     expect(within(table).getAllByText('43,210')).toHaveLength(1);
@@ -842,7 +985,7 @@ describe('AppRoot', () => {
     );
 
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('ONLINE RANKING UNAVAILABLE');
     expect(screen.getByText('43,210')).toBeInTheDocument();
@@ -884,14 +1027,14 @@ describe('AppRoot', () => {
 
     await screen.findByTestId('title-screen');
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('status')).toHaveTextContent('ONLINE RANKING SYNC PENDING');
+    expect(screen.getByRole('status')).toHaveTextContent('온라인 랭킹 동기화 대기 중');
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(submitBest).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: 'RANKING' }));
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(getTop).toHaveBeenCalledTimes(1));
     expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
@@ -976,11 +1119,11 @@ describe('AppRoot', () => {
     await enterMatch(user, 1, 800);
 
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '1');
-    expect(screen.getByRole('region', { name: '리벳 battle status' }))
+    expect(screen.getByRole('region', { name: '리벳 대전 상태' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '기어 창고장 battle status' }))
+    expect(screen.getByRole('region', { name: '기어 창고장 대전 상태' }))
       .toBeInTheDocument();
-    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
   });
 
@@ -1140,6 +1283,8 @@ describe('AppRoot', () => {
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     expect(repository.saves[0]?.settings).toEqual({
       hapticsEnabled: true,
+      bgmVolume: 70,
+      sfxVolume: 100,
       soundEnabled: false,
     });
     expect(screen.getByText('false')).toBeInTheDocument();
@@ -1166,7 +1311,7 @@ describe('AppRoot', () => {
     expect(screen.getByRole('button', { name: '1층 선택' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '2층 선택' })).toBeEnabled();
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 2F · SCORE 005000',
+      '도전 중 · 다음 2층 · 점수 005000',
     );
   });
 
@@ -1240,13 +1385,13 @@ describe('AppRoot', () => {
 
     await enterTower(user);
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
-    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+    await user.click(screen.getByRole('button', { name: '보통' }));
 
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
     expect(screen.getByTestId('tower-screen')).toHaveAttribute('data-difficulty', 'normal');
     expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -1262,10 +1407,10 @@ describe('AppRoot', () => {
     await waitFor(() => expect(repository.saves).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '다음 층' }));
 
-    expect(screen.getByRole('button', { name: 'EASY' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('RUN DIFFICULTY LOCKED');
-    fireEvent.click(screen.getByRole('button', { name: 'NORMAL' }));
+    expect(screen.getByRole('button', { name: '쉬움' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '보통' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('도전 중에는 난이도를 바꿀 수 없습니다.');
+    fireEvent.click(screen.getByRole('button', { name: '보통' }));
     expect(repository.saves).toHaveLength(1);
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
     expect(screen.getByTestId('tower-screen')).toHaveAttribute('data-difficulty', 'easy');
@@ -1276,12 +1421,96 @@ describe('AppRoot', () => {
     renderGame(new TestProgressRepository(floorOneProgress));
 
     await enterMatch(user, 1, 0);
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000250');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000250');
     await user.click(screen.getByRole('button', { name: 'finish win' }));
 
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
+  });
+
+  it('returns to the tower and restarts floor two opponent two from its score checkpoint', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    let retained: RetainedMatchCallbacks | undefined;
+    const opponentTwoSeeds = new Set<number>();
+    renderGame(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (props) => {
+        if (props.floor === 2 && props.encounterIndex === 1) {
+          retained = retainMatchCallbacks(props);
+          opponentTwoSeeds.add(props.seed);
+        }
+      },
+    );
+
+    await advanceRunToFloor(user, 2);
+    await enterMatch(user, 2, 0);
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    await finishWin(user);
+    await continueToNextEncounter(user);
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null || retained === undefined) {
+      throw new Error('second-opponent checkpoint was not captured');
+    }
+    const staleMatch = retained;
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('2층 2번째 상대');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+
+    act(() => staleMatch.onScoreEvents([
+      { type: 'lines-cleared', side: 'player', amount: 4 },
+    ]));
+    await expect(act(async () => {
+      await staleMatch.onFinished({ result: 'win', durationTicks: 1 });
+    })).resolves.toBeUndefined();
+    staleMatch.onAbandon();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent('2층 2번째 상대');
+    await user.click(screen.getByRole('button', { name: '2층 2번째 상대부터 계속' }));
+
+    expect(await screen.findByTestId('floor-intro-screen')).toBeVisible();
+    expect(screen.getByText('유리 예언자 프리즘')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(await screen.findByTestId('match-encounter')).toHaveTextContent('1:1');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+    expect([...opponentTwoSeeds]).toHaveLength(2);
+  });
+
+  it('returns to the tower and restarts a suspended owl battle', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorFiveProgress));
+
+    await reachOwlReveal(user);
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('owl score checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent('최종전 계속');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '최종전 계속' }));
+    expect(await screen.findByTestId('owl-reveal-screen')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
   });
 
   it('omits the tower-back action from an intermediate floor intro', async () => {
@@ -1347,7 +1576,7 @@ describe('AppRoot', () => {
       await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
     })).resolves.toBeUndefined();
     expect(screen.getByTestId('match-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
 
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
@@ -1404,7 +1633,7 @@ describe('AppRoot', () => {
       await oldMatch.onFinished({ result: 'loss', durationTicks: 300 });
     })).resolves.toBeUndefined();
     expect(screen.getByTestId('match-screen')).toBeInTheDocument();
-    expect(screen.getByTestId('run-score')).toHaveTextContent('SCORE 000000');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
     expect(repository.saves).toHaveLength(savesBeforeFreshCallbacks);
 
     await user.click(screen.getByRole('button', { name: 'emit score events' }));
@@ -1608,7 +1837,7 @@ describe('AppRoot', () => {
 
     await screen.findByTestId('title-screen');
     await waitFor(() => expect(submitBest).toHaveBeenCalledTimes(2));
-    expect(screen.getByText('ONLINE RANKING SYNC PENDING')).toBeInTheDocument();
+    expect(screen.getByText('온라인 랭킹 동기화 대기 중')).toBeInTheDocument();
 
     await act(async () => {
       secondWrite.resolve({ ok: true, source: 'firestore' });
@@ -1617,7 +1846,7 @@ describe('AppRoot', () => {
     await waitFor(() => expect(progressRepository.saves).toHaveLength(3));
     expect(progressRepository.saves[2]).toEqual(progressRepository.saves[1]);
     await waitFor(() => {
-      expect(screen.queryByText('ONLINE RANKING SYNC PENDING')).not.toBeInTheDocument();
+      expect(screen.queryByText('온라인 랭킹 동기화 대기 중')).not.toBeInTheDocument();
     });
   });
 
@@ -1744,10 +1973,10 @@ describe('AppRoot', () => {
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 000250');
     await user.click(screen.getByRole('button', { name: '도전 종료' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
 
     expect(await screen.findByTestId('tower-run-status')).toHaveTextContent(
-      'RUN ACTIVE · NEXT 1F · SCORE 000000',
+      '도전 중 · 다음 1층 · 점수 000000',
     );
   });
 
@@ -1959,10 +2188,10 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('ending-screen')).toHaveAttribute('data-next-difficulty', 'normal');
     await user.click(screen.getByRole('button', { name: '타이틀로 돌아가기' }));
     await screen.findByTestId('title-screen');
-    await user.click(screen.getByRole('button', { name: 'START RUN' }));
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
     await screen.findByTestId('tower-screen');
-    expect(screen.getByRole('button', { name: 'NORMAL' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'NORMAL' }));
+    expect(screen.getByRole('button', { name: '보통' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '보통' }));
 
     await waitFor(() => expect(screen.getByTestId('app-shell')).toHaveAttribute(
       'data-difficulty',
@@ -2066,6 +2295,27 @@ describe('AppRoot', () => {
     );
 
     expect(await screen.findByTestId('title-screen')).toBeInTheDocument();
+  });
+
+  it('synchronizes loaded master sound and normalized volumes into root-owned audio', async () => {
+    const progress = cloneProgress(floorOneProgress);
+    progress.settings = {
+      ...progress.settings,
+      bgmVolume: 35,
+      sfxVolume: 80,
+    };
+    const audioPort = createAudioPort();
+
+    renderGame(
+      new TestProgressRepository(progress),
+      createTestPlatform(),
+      createAssetManager(),
+      audioPort,
+    );
+
+    await screen.findByTestId('title-screen');
+    expect(audioPort.setEnabled).toHaveBeenLastCalledWith(true);
+    expect(audioPort.setVolumes).toHaveBeenLastCalledWith({ bgm: 0.35, sfx: 0.8 });
   });
 
   it('owns tower-route music and app foreground audio without mounting MatchScreen', async () => {

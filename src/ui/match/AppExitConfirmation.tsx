@@ -9,11 +9,12 @@ import { closeWithTimeout } from '../../platform/close-with-timeout';
 import { AssetIcon } from './AssetIcon';
 import { ModalOverlay } from './ModalOverlay';
 
-export interface ExitConfirmationProps {
-  readonly open: boolean;
+export interface AppExitConfirmationProps {
+  readonly description: string;
+  readonly icon?: LoadedImageRef;
   readonly onCancel: () => void;
   readonly onConfirm: () => Promise<void>;
-  readonly icon?: LoadedImageRef;
+  readonly open: boolean;
 }
 
 const FOCUSABLE = [
@@ -25,12 +26,13 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
-export function ExitConfirmation({
+export function AppExitConfirmation({
+  description,
   icon,
   onCancel,
   onConfirm,
   open,
-}: ExitConfirmationProps) {
+}: AppExitConfirmationProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmPendingRef = useRef(false);
   const closeSucceededRef = useRef(false);
@@ -52,9 +54,7 @@ export function ExitConfirmation({
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const dialog = dialogRef.current;
-    const first = dialog?.querySelector<HTMLElement>(FOCUSABLE);
-    first?.focus();
+    dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     return () => previouslyFocused?.focus();
   }, [open]);
 
@@ -108,9 +108,10 @@ export function ExitConfirmation({
   return (
     <ModalOverlay className="modal-overlay--exit">
       <div
-        aria-labelledby="exit-confirmation-title"
+        aria-describedby="app-exit-confirmation-description"
+        aria-labelledby="app-exit-confirmation-title"
         aria-modal="true"
-        className="modal-overlay__surface exit-confirmation"
+        className="modal-overlay__surface exit-confirmation app-exit-confirmation"
         data-close-state={
           closeSucceeded || confirmPending ? 'closing' : closeFailed ? 'failed' : 'idle'
         }
@@ -119,15 +120,15 @@ export function ExitConfirmation({
         role="dialog"
         tabIndex={-1}
       >
-        <h2 id="exit-confirmation-title">게임을 나갈까요?</h2>
-        <p>현재 대전은 저장되지 않습니다.</p>
+        <h2 id="app-exit-confirmation-title">게임을 종료할까요?</h2>
+        <p id="app-exit-confirmation-description">{description}</p>
         {closeFailed ? (
           <p aria-live="polite" className="exit-confirmation__error" role="status">
-            게임을 닫지 못했습니다. 다시 시도해 주세요.
+            게임을 종료하지 못했습니다. 다시 시도해 주세요.
           </p>
         ) : null}
         {closeSucceeded ? (
-          <p aria-live="polite" role="status">게임을 닫는 중입니다.</p>
+          <p aria-live="polite" role="status">게임을 종료하는 중입니다.</p>
         ) : null}
         <div className="exit-confirmation__actions">
           <button
@@ -143,7 +144,7 @@ export function ExitConfirmation({
             type="button"
           >
             <AssetIcon className="asset-icon" fallback="↩" image={icon} />
-            게임 나가기 확인
+            게임 종료 확인
           </button>
         </div>
       </div>

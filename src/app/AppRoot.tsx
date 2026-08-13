@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useReducer,
   useRef,
@@ -75,6 +76,7 @@ export interface MatchRouteViewProps {
   readonly difficulty: ProgressState['selectedDifficulty'];
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
+  readonly onAbandon: () => void;
   readonly onFinished: (outcome: MatchOutcome) => Promise<void>;
   readonly onScoreEvents: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -266,12 +268,18 @@ export function AppRoot({
     },
   });
   const scoreRunSnapshot = scoreRunRef.current?.snapshot ?? null;
+  const runActive = scoreRunSnapshot?.phase === 'active';
+  const suspendedBattle = controller?.suspendedBattle ?? null;
   const profileCharacterId = controller?.progress.profile?.characterId;
   const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
     ? profileCharacterId
     : 'hero-engineer';
   const selectedPlayer = PLAYER_CHARACTERS[selectedPlayerId];
   const selectedPlayerAssets = commonAssets?.players[selectedPlayerId];
+  const closeApp = useCallback(
+    () => services.platform.close(),
+    [services.platform],
+  );
 
   useEffect(() => {
     if (boot.status === 'ready') dispatchRoute({ type: 'boot-ready' });
@@ -311,10 +319,20 @@ export function AppRoot({
   }, [route, services.audioPort]);
 
   useEffect(() => {
-    if (controller !== null) {
-      services.audioPort.setEnabled(controller.progress.settings.soundEnabled);
-    }
-  }, [controller, controller?.progress.settings.soundEnabled, services.audioPort]);
+    if (controller === null) return;
+    const { soundEnabled, bgmVolume, sfxVolume } = controller.progress.settings;
+    services.audioPort.setEnabled(soundEnabled);
+    services.audioPort.setVolumes({
+      bgm: bgmVolume / 100,
+      sfx: sfxVolume / 100,
+    });
+  }, [
+    controller,
+    controller?.progress.settings.soundEnabled,
+    controller?.progress.settings.bgmVolume,
+    controller?.progress.settings.sfxVolume,
+    services.audioPort,
+  ]);
 
   useEffect(() => {
     const manager = services.assetManager;
@@ -352,12 +370,18 @@ export function AppRoot({
     intro: Extract<AppRoute, { name: 'floor-intro' }>,
   ) {
     const scoreRun = scoreRunRef.current;
-    if (controller === null || scoreRun === null) return;
+    if (
+      controller === null
+      || scoreRun === null
+      || matchIdentityRef.current !== null
+      || completionPendingRef.current
+    ) return;
     const seed = createMatchSeed();
     const started = intro.encounterIndex === 0
       ? controller.startFloor(intro.floor, seed)
       : controller.startEncounter(seed);
     if (started.ok) {
+      scoreRun.beginMatch();
       matchIdentityRef.current = {
         token: Symbol('ranked-floor-match'),
         scoreRun,
@@ -396,6 +420,27 @@ export function AppRoot({
     if (!isCurrentMatch(identity) || identity.scoreRun.snapshot.phase !== 'active') return;
     identity.scoreRun.recordEvents(events);
     refreshControllerView();
+  }
+
+  function abandonMatch(identity: RankedMatchIdentity): void {
+    const routeMatchesIdentity = identity.kind === 'floor'
+      ? route.name === 'match'
+        && route.floor === identity.floor
+        && route.encounterIndex === identity.encounterIndex
+        && route.seed === identity.seed
+      : route.name === 'owl-match' && route.seed === identity.seed;
+    if (
+      controller === null
+      || !routeMatchesIdentity
+      || !isCurrentMatch(identity)
+      || completionPendingRef.current
+    ) return;
+    matchIdentityRef.current = null;
+    identity.scoreRun.abandonMatch();
+    const suspended = controller.abandonMatch();
+    if (suspended === null) return;
+    refreshControllerView();
+    dispatchRoute({ type: 'return-to-tower' });
   }
 
   async function saveFinalScore(record: ScoreRecord) {
@@ -458,10 +503,16 @@ export function AppRoot({
 
   function startOwlMatch(): void {
     const scoreRun = scoreRunRef.current;
-    if (controller === null || scoreRun === null) return;
+    if (
+      controller === null
+      || scoreRun === null
+      || matchIdentityRef.current !== null
+      || completionPendingRef.current
+    ) return;
     const seed = createMatchSeed();
     const started = controller.startOwlMatch(seed);
     if (started.ok) {
+      scoreRun.beginMatch();
       matchIdentityRef.current = {
         token: Symbol('ranked-owl-match'),
         scoreRun,
@@ -564,10 +615,14 @@ export function AppRoot({
     setResultSaveFailed(false);
   }
 
-  function returnToTitle(): void {
+  function showTitle(): void {
     setProfileSaveStatus('idle');
-    clearScoreRun();
     dispatchRoute({ type: 'return-to-title' });
+  }
+
+  function finishRunAndShowTitle(): void {
+    clearScoreRun();
+    showTitle();
   }
 
   function finishEndedRun(): void {
@@ -603,6 +658,7 @@ export function AppRoot({
     }
     setProfileSaveStatus('idle');
     if (route.intent === 'start-run') startScoreRun();
+    else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
 
@@ -624,6 +680,7 @@ export function AppRoot({
     }
     setProfileSaveStatus('idle');
     if (route.intent === 'start-run') startScoreRun();
+    else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
 
@@ -641,13 +698,19 @@ export function AppRoot({
               setProfileSaveStatus('idle');
               dispatchRoute({ type: 'change-player' });
             }}
+            onExit={closeApp}
             onOpenRanking={openRanking}
             onStartRun={() => {
+              if (runActive) {
+                dispatchRoute({ type: 'resume-run' });
+                return;
+              }
               const hasProfile = controller.progress.profile !== null;
               if (hasProfile) startScoreRun();
               dispatchRoute({ type: 'start-run', hasProfile });
             }}
             progress={controller.progress}
+            runActive={runActive}
             syncPending={Object.values(leaderboard.pendingDifficulties).some(Boolean)}
           />
         );
@@ -657,7 +720,7 @@ export function AppRoot({
           <NameEntryScreen
             backdrop={commonAssets?.towerBackdrop}
             initialValue=""
-            onBack={returnToTitle}
+            onBack={showTitle}
             onComplete={(initials) => dispatchRoute({ type: 'name-completed', initials })}
           />
         );
@@ -674,7 +737,7 @@ export function AppRoot({
               initialCharacterId={controller.progress.profile?.characterId ?? 'hero-engineer'}
               interactionLocked={profileSaveStatus !== 'idle'}
               onBack={() => {
-                if (profileSaveStatus === 'idle') returnToTitle();
+                if (profileSaveStatus === 'idle') showTitle();
               }}
               onComplete={(characterId) => { void completeProfile(characterId); }}
             />
@@ -740,7 +803,7 @@ export function AppRoot({
           <RankingScreen
             difficulty={rankingDifficulty}
             entries={entries}
-            onBack={returnToTitle}
+            onBack={showTitle}
             onSelectDifficulty={(difficulty) => {
               setRankingDifficulty(difficulty);
               void leaderboard.load(difficulty);
@@ -756,17 +819,34 @@ export function AppRoot({
         content = (
           <TowerScreen
             commonAssets={commonAssets}
+            continuation={suspendedBattle?.kind === 'floor'
+              ? {
+                  kind: 'floor',
+                  floor: suspendedBattle.series.floor,
+                  encounterIndex: suspendedBattle.series.encounterIndex,
+                }
+              : suspendedBattle?.kind === 'owl'
+                ? { kind: 'owl' }
+                : null}
             difficultySelectionLocked={scoreRunSnapshot !== null
               && !isPristineRun(scoreRunSnapshot)}
             notice={boot.notice}
+            onBack={showTitle}
             progress={controller.progress}
             onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
             onSelectFloor={(floor) => {
               if (scoreRunRef.current?.canSelectFloor(floor) !== true) return;
-              dispatchRoute({ type: 'select-floor', floor });
+              const suspended = suspendedBattle;
+              if (suspended?.kind === 'floor' && suspended.series.floor === floor) {
+                dispatchRoute({ type: 'resume-floor', series: suspended.series });
+              } else if (suspended?.kind === 'owl' && floor === FINAL_FLOOR) {
+                dispatchRoute({ type: 'resume-owl' });
+              } else {
+                dispatchRoute({ type: 'select-floor', floor });
+              }
             }}
             requiredFloor={scoreRunSnapshot?.requiredFloor ?? 1}
-            runActive={scoreRunSnapshot?.phase === 'active'}
+            runActive={runActive}
             runScore={scoreRunSnapshot?.score ?? 0}
           />
         );
@@ -800,6 +880,9 @@ export function AppRoot({
           player: selectedPlayer,
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
+          onAbandon: () => {
+            if (matchIdentity !== null) abandonMatch(matchIdentity);
+          },
           onFinished: (outcome) => matchIdentity === null
             ? Promise.resolve()
             : finishOwlMatch(matchIdentity, outcome),
@@ -876,6 +959,9 @@ export function AppRoot({
           player: selectedPlayer,
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
+          onAbandon: () => {
+            if (matchIdentity !== null) abandonMatch(matchIdentity);
+          },
           onFinished: (outcome) => matchIdentity === null
             ? Promise.resolve()
             : finishMatch(matchIdentity, outcome),
@@ -926,7 +1012,7 @@ export function AppRoot({
             commonAssets={commonAssets}
             difficulty={controller.progress.selectedDifficulty}
             floorAssets={floorAssets}
-            onReturnToTitle={returnToTitle}
+            onReturnToTitle={finishRunAndShowTitle}
             player={selectedPlayer}
             playerAssets={selectedPlayerAssets}
             score={scoreRunSnapshot?.score ?? 0}
@@ -954,6 +1040,7 @@ export function AppRoot({
       }}
     >
       {content}
+      <div data-modal-root="" id="modal-root" />
     </main>
   );
 }

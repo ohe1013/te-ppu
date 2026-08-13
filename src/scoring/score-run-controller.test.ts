@@ -1,18 +1,49 @@
 import { describe, expect, it } from 'vitest';
 import { ScoreRunController } from './score-run-controller';
 
+function complete(
+  run: ScoreRunController,
+  outcome: Parameters<ScoreRunController['completeMatch']>[0],
+) {
+  run.beginMatch();
+  return run.completeMatch(outcome);
+}
+
 describe('ScoreRunController', () => {
+  it('rolls back only the active opponent score and allows a fresh restart', () => {
+    const run = ScoreRunController.start('easy');
+    run.beginMatch();
+    run.recordEvents([{ type: 'lines-cleared', side: 'player', amount: 1 }]);
+    run.completeMatch({
+      floor: 1,
+      encounterIndex: 0,
+      isOwl: false,
+      result: 'win',
+      durationTicks: 300,
+    });
+    const confirmed = run.snapshot;
+
+    run.beginMatch();
+    run.recordEvents([{ type: 'lines-cleared', side: 'player', amount: 4 }]);
+    expect(run.snapshot.score).toBeGreaterThan(confirmed.score);
+    run.abandonMatch();
+
+    expect(run.snapshot).toEqual(confirmed);
+    run.beginMatch();
+    expect(run.snapshot).toEqual(confirmed);
+  });
+
   it('forces floor one, advances after each three-win floor, and ends on loss', () => {
     const run = ScoreRunController.start('easy');
     expect(run.canSelectFloor(1)).toBe(true);
     expect(run.canSelectFloor(2)).toBe(false);
 
-    run.completeMatch({ floor: 1, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 600 });
-    run.completeMatch({ floor: 1, encounterIndex: 1, isOwl: false, result: 'win', durationTicks: 500 });
-    run.completeMatch({ floor: 1, encounterIndex: 2, isOwl: false, result: 'win', durationTicks: 400 });
+    complete(run, { floor: 1, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 600 });
+    complete(run, { floor: 1, encounterIndex: 1, isOwl: false, result: 'win', durationTicks: 500 });
+    complete(run, { floor: 1, encounterIndex: 2, isOwl: false, result: 'win', durationTicks: 400 });
     expect(run.snapshot).toMatchObject({ score: 5_000, requiredFloor: 2, encountersWon: 3 });
 
-    const ended = run.completeMatch({
+    const ended = complete(run, {
       floor: 2, encounterIndex: 0, isOwl: false, result: 'loss', durationTicks: 300,
     });
     expect(ended.kind).toBe('ended');
@@ -23,7 +54,7 @@ describe('ScoreRunController', () => {
     const run = ScoreRunController.start('easy');
     for (const floor of [1, 2, 3, 4, 5] as const) {
       for (const encounterIndex of [0, 1, 2] as const) {
-        run.completeMatch({
+        complete(run, {
           floor,
           encounterIndex,
           isOwl: false,
@@ -32,7 +63,7 @@ describe('ScoreRunController', () => {
         });
       }
     }
-    const result = run.completeMatch({
+    const result = complete(run, {
       floor: 5, encounterIndex: 2, isOwl: true, result: 'win', durationTicks: 240,
     });
     expect(result).toMatchObject({ kind: 'ended', summary: { owlDefeated: true, encountersWon: 16 } });
@@ -49,6 +80,8 @@ describe('ScoreRunController', () => {
       { type: 'piece-locked' as const, side: 'player' as const },
     ];
 
+    easy.beginMatch();
+    hard.beginMatch();
     easy.recordEvents(events);
     hard.recordEvents(events);
 
@@ -58,6 +91,7 @@ describe('ScoreRunController', () => {
 
   it('rejects out-of-order outcomes and calls after a run ends', () => {
     const run = ScoreRunController.start('normal');
+    run.beginMatch();
     expect(() => run.completeMatch({
       floor: 2, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 1,
     })).toThrow(RangeError);
@@ -73,6 +107,28 @@ describe('ScoreRunController', () => {
     expect(() => run.completeMatch({
       floor: 1, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 1,
     })).toThrow(RangeError);
+  });
+
+  it('requires one active score transaction for record, completion, and abandon', () => {
+    const run = ScoreRunController.start('normal');
+    const outcome = {
+      floor: 1 as const,
+      encounterIndex: 0 as const,
+      isOwl: false,
+      result: 'win' as const,
+      durationTicks: 1,
+    };
+
+    expect(() => run.recordEvents([
+      { type: 'item-used', side: 'player', item: 'freeze' },
+    ])).toThrow(RangeError);
+    expect(() => run.completeMatch(outcome)).toThrow(RangeError);
+    expect(() => run.abandonMatch()).toThrow(RangeError);
+
+    run.beginMatch();
+    expect(() => run.beginMatch()).toThrow(RangeError);
+    run.completeMatch(outcome);
+    expect(() => run.abandonMatch()).toThrow(RangeError);
   });
 
   it('returns snapshots detached from its private mutable state', () => {

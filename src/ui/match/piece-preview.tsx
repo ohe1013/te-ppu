@@ -49,7 +49,7 @@ export function PiecePreview({ image, kind }: PiecePreviewProps) {
   const shape = normalizePreviewCells(kind);
   return (
     <span
-      aria-label={`${kind} 블록`}
+      aria-label="블록 모양"
       className="battle-hud__piece-preview"
       data-piece-preview
       data-piece-kind={kind}

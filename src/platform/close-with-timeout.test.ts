@@ -12,18 +12,21 @@ describe('closeWithTimeout', () => {
     vi.useRealTimers();
   });
 
-  it('rejects with CLOSE_TIMEOUT when the platform close does not settle', async () => {
+  it('invokes close synchronously and rejects after the 400 ms default', async () => {
     vi.useFakeTimers();
-    const close = vi.fn(() => new Promise<void>(() => undefined));
-    const pending = closeWithTimeout(close);
+    let invoked = false;
 
-    await vi.advanceTimersByTimeAsync(1_199);
-    await expect(Promise.race([
-      pending.then(() => 'resolved', () => 'settled'),
-      Promise.resolve('pending'),
-    ])).resolves.toBe('pending');
+    const pending = closeWithTimeout(() => {
+      invoked = true;
+      return new Promise<void>(() => undefined);
+    });
+
+    expect(invoked).toBe(true);
+    const timeout = expect(pending).rejects.toThrow('CLOSE_TIMEOUT');
+    await vi.advanceTimersByTimeAsync(399);
+    expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).rejects.toThrow('CLOSE_TIMEOUT');
+    await timeout;
     vi.useRealTimers();
   });
 

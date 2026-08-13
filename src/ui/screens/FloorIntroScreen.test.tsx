@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getFloorEncounter } from '../../progression';
@@ -88,5 +88,25 @@ describe('FloorIntroScreen', () => {
     expect(buttons).toHaveLength(2);
     await user.click(buttons[0]!);
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('submits the match start only once while the route is changing', () => {
+    const onStart = vi.fn();
+    render(
+      <FloorIntroScreen
+        encounter={getFloorEncounter(1, 0)}
+        floor={1}
+        onStart={onStart}
+        player={player}
+        series={{ floor: 1, encounterIndex: 0, wins: 0 }}
+      />,
+    );
+
+    const start = screen.getByRole('button', { name: '대전 시작' });
+    fireEvent.click(start);
+    fireEvent.click(start);
+
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(start).toBeDisabled();
   });
 });

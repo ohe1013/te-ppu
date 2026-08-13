@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,8 @@ import type { PlatformPort } from '../../platform/platform-port';
 import { PLAYER_CHARACTERS } from '../../player';
 import type { ProgressState } from '../../progression/index';
 import { MatchScreen } from '../screens/MatchScreen';
-import { ExitConfirmation } from './ExitConfirmation';
+import { AppExitConfirmation } from './AppExitConfirmation';
+import { ModalOverlay } from './ModalOverlay';
 import { ResumeCountdown } from './ResumeCountdown';
 import { SettingsPanel } from './SettingsPanel';
 
@@ -44,6 +45,8 @@ vi.mock('../../render/BattleCanvas', () => ({
 const enabledSettings: ProgressState['settings'] = {
   hapticsEnabled: true,
   soundEnabled: true,
+  bgmVolume: 70,
+  sfxVolume: 100,
 };
 
 const defaultPlayer = PLAYER_CHARACTERS['hero-engineer'];
@@ -55,6 +58,7 @@ function createAudio(): AudioPort {
     resume: vi.fn(async () => undefined),
     setEnabled: vi.fn(),
     setMusic: vi.fn(async () => undefined),
+    setVolumes: vi.fn(),
     suspend: vi.fn(async () => undefined),
     unlock: vi.fn(async () => undefined),
   };
@@ -103,6 +107,36 @@ describe('lifecycle UI', () => {
     vi.restoreAllMocks();
   });
 
+  it('portals an overlay into the app modal host when one exists', () => {
+    const host = document.createElement('div');
+    host.id = 'modal-root';
+    host.dataset.modalRoot = '';
+    document.body.append(host);
+
+    const view = render(
+      <ModalOverlay testId="test-overlay">
+        <div>overlay content</div>
+      </ModalOverlay>,
+    );
+
+    try {
+      expect(screen.getByTestId('test-overlay').parentElement).toBe(host);
+    } finally {
+      view.unmount();
+      host.remove();
+    }
+  });
+
+  it('renders an overlay inline when no app modal host exists', () => {
+    const view = render(
+      <ModalOverlay testId="test-overlay">
+        <div>overlay content</div>
+      </ModalOverlay>,
+    );
+
+    expect(screen.getByTestId('test-overlay').parentElement).toBe(view.container);
+  });
+
   it('renders only the current resume countdown value', () => {
     const result = render(<ResumeCountdown count={null} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -122,6 +156,8 @@ describe('lifecycle UI', () => {
       <SettingsPanel
         onRetrySave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={vi.fn()}
         saveFailed={false}
         settings={enabledSettings}
       />,
@@ -148,10 +184,15 @@ describe('lifecycle UI', () => {
     opener.focus();
 
     const result = render(
-      <ExitConfirmation open onCancel={onCancel} onConfirm={onConfirm} />,
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
     );
     const cancel = screen.getByRole('button', { name: '계속하기' });
-    const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
+    const confirm = screen.getByRole('button', { name: '게임 종료 확인' });
     expect(cancel).toHaveFocus();
 
     confirm.focus();
@@ -168,12 +209,17 @@ describe('lifecycle UI', () => {
     await act(async () => finishClose?.());
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫는 중입니다.');
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 종료하는 중입니다.');
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onCancel).not.toHaveBeenCalled();
     result.rerender(
-      <ExitConfirmation open={false} onCancel={onCancel} onConfirm={onConfirm} />,
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open={false}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
     );
     expect(opener).toHaveFocus();
     opener.remove();
@@ -188,20 +234,270 @@ describe('lifecycle UI', () => {
         ? new Promise<void>(() => undefined)
         : Promise.resolve();
     });
-    render(<ExitConfirmation open onCancel={vi.fn()} onConfirm={onConfirm} />);
+    render(
+      <AppExitConfirmation
+        description="게임 화면을 닫습니다."
+        open
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
 
-    const confirm = screen.getByRole('button', { name: '게임 나가기 확인' });
+    const confirm = screen.getByRole('button', { name: '게임 종료 확인' });
     fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await act(async () => undefined);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
-    await act(async () => vi.advanceTimersByTimeAsync(1_200));
+    await act(async () => vi.advanceTimersByTimeAsync(400));
 
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'failed');
-    expect(screen.getByRole('status')).toHaveTextContent('게임을 닫지 못했습니다');
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 종료하지 못했습니다');
     expect(confirm).toBeEnabled();
 
     await act(async () => fireEvent.click(confirm));
     expect(onConfirm).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('dialog')).toHaveAttribute('data-close-state', 'closing');
+  });
+
+  it('renders ordered master, BGM, SFX, and haptic controls with persisted percentages', async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={vi.fn()}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '설정' }));
+
+    expect(screen.getByRole('checkbox', { name: '전체 소리' })).toBeChecked();
+    expect(screen.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('70');
+    expect(screen.getByRole('slider', { name: '효과음 음량' })).toHaveValue('100');
+    expect(screen.getByText('70%')).toBeVisible();
+    expect(screen.getByText('100%')).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: '진동' })).toBeChecked();
+  });
+
+  it('previews every change but deduplicates pointer-up and blur into one final save', async () => {
+    const onSettingsChange = vi.fn(async () => true);
+    const onSfxPreview = vi.fn();
+    const onVolumePreview = vi.fn();
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={onSfxPreview}
+        onVolumePreview={onVolumePreview}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+
+    fireEvent.blur(bgm);
+    expect(onSettingsChange).not.toHaveBeenCalled();
+    fireEvent.change(bgm, { target: { value: '60' } });
+    fireEvent.change(bgm, { target: { value: '40' } });
+    expect(onVolumePreview).toHaveBeenNthCalledWith(1, {
+      bgmVolume: 60,
+      sfxVolume: 100,
+    });
+    expect(onVolumePreview).toHaveBeenNthCalledWith(2, {
+      bgmVolume: 40,
+      sfxVolume: 100,
+    });
+    fireEvent.pointerUp(bgm);
+    fireEvent.blur(bgm);
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(1));
+    expect(onSettingsChange).toHaveBeenLastCalledWith({ bgmVolume: 40 });
+    expect(onSfxPreview).not.toHaveBeenCalled();
+
+    fireEvent.change(sfx, { target: { value: '80' } });
+    fireEvent.pointerUp(sfx);
+    fireEvent.blur(sfx);
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(2));
+    expect(onSettingsChange).toHaveBeenLastCalledWith({ sfxVolume: 80 });
+    expect(onSfxPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an immediate volume change non-fatal when audio preview throws', () => {
+    const onVolumePreview = vi.fn(() => {
+      throw new Error('preview failed');
+    });
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={vi.fn(async () => true)}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={onVolumePreview}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+
+    expect(() => fireEvent.change(bgm, { target: { value: '40' } })).not.toThrow();
+    expect(onVolumePreview).toHaveBeenCalledTimes(1);
+    expect(bgm).toHaveValue('40');
+  });
+
+  it('enqueues one SFX save when its commit preview throws', async () => {
+    const onSettingsChange = vi.fn(async () => true);
+    const onSfxPreview = vi.fn(() => {
+      throw new Error('preview failed');
+    });
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={onSfxPreview}
+        onVolumePreview={vi.fn()}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+    fireEvent.change(sfx, { target: { value: '80' } });
+
+    expect(() => fireEvent.pointerUp(sfx)).not.toThrow();
+    expect(() => fireEvent.blur(sfx)).not.toThrow();
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(1));
+    expect(onSettingsChange).toHaveBeenCalledWith({ sfxVolume: 80 });
+    expect(onSfxPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalizes keyboard and modal-close values while serializing durable saves', async () => {
+    let resolveFirst!: (saved: boolean) => void;
+    const firstSave = new Promise<boolean>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const onSettingsChange = vi.fn()
+      .mockImplementationOnce(() => firstSave)
+      .mockResolvedValue(true);
+    const onSfxPreview = vi.fn();
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={onSfxPreview}
+        onVolumePreview={vi.fn()}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+
+    fireEvent.change(bgm, { target: { value: '40' } });
+    fireEvent.keyUp(bgm, { key: 'ArrowLeft' });
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(1));
+    fireEvent.change(sfx, { target: { value: '80' } });
+    fireEvent.click(screen.getByRole('button', { name: '설정 닫기' }));
+
+    expect(screen.queryByRole('dialog', { name: '게임 설정' })).not.toBeInTheDocument();
+    expect(onSettingsChange).toHaveBeenCalledTimes(1);
+    expect(onSfxPreview).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveFirst(true));
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledTimes(2));
+    expect(onSettingsChange).toHaveBeenNthCalledWith(1, { bgmVolume: 40 });
+    expect(onSettingsChange).toHaveBeenNthCalledWith(2, { sfxVolume: 80 });
+  });
+
+  it('keeps the latest local volume and exposes retry when its save fails', async () => {
+    const onSettingsChange = vi.fn(async () => false);
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={vi.fn()}
+        saveFailed={false}
+        settings={enabledSettings}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+
+    fireEvent.change(bgm, { target: { value: '40' } });
+    fireEvent.pointerUp(bgm);
+
+    expect(await screen.findByText('설정은 적용됐지만 저장하지 못했습니다.'))
+      .toBeVisible();
+    expect(screen.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('40');
+    expect(screen.getByText('40%')).toBeVisible();
+    expect(screen.getByRole('button', { name: '설정 저장 다시 시도' })).toBeEnabled();
+  });
+
+  it('disables muted sliders and suppresses their previews and commits', () => {
+    const onSettingsChange = vi.fn(async () => true);
+    const onSfxPreview = vi.fn();
+    const onVolumePreview = vi.fn();
+    render(
+      <SettingsPanel
+        onRetrySave={vi.fn(async () => true)}
+        onSettingsChange={onSettingsChange}
+        onSfxPreview={onSfxPreview}
+        onVolumePreview={onVolumePreview}
+        saveFailed={false}
+        settings={{ ...enabledSettings, soundEnabled: false }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+    const sfx = screen.getByRole('slider', { name: '효과음 음량' });
+
+    expect(bgm).toBeDisabled();
+    expect(sfx).toBeDisabled();
+    fireEvent.change(bgm, { target: { value: '40' } });
+    fireEvent.change(sfx, { target: { value: '80' } });
+    fireEvent.pointerUp(sfx);
+    expect(onVolumePreview).not.toHaveBeenCalled();
+    expect(onSfxPreview).not.toHaveBeenCalled();
+    expect(onSettingsChange).not.toHaveBeenCalled();
+  });
+
+  it('syncs external volume settings only when that slider is not actively dragging', () => {
+    const props = {
+      onRetrySave: vi.fn(async () => true),
+      onSettingsChange: vi.fn(async () => true),
+      onSfxPreview: vi.fn(),
+      onVolumePreview: vi.fn(),
+      saveFailed: false,
+    } as const;
+    const result = render(<SettingsPanel {...props} settings={enabledSettings} />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    const bgm = screen.getByRole('slider', { name: 'BGM 음량' });
+
+    fireEvent.pointerDown(bgm);
+    fireEvent.change(bgm, { target: { value: '40' } });
+    result.rerender(
+      <SettingsPanel
+        {...props}
+        settings={{ ...enabledSettings, bgmVolume: 90, sfxVolume: 80 }}
+      />,
+    );
+    expect(screen.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('40');
+    expect(screen.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
+
+    fireEvent.pointerUp(screen.getByRole('slider', { name: 'BGM 음량' }));
+    result.rerender(
+      <SettingsPanel
+        {...props}
+        settings={{ ...enabledSettings, bgmVolume: 60, sfxVolume: 80 }}
+      />,
+    );
+    expect(screen.getByRole('slider', { name: 'BGM 음량' })).toHaveValue('60');
   });
 
   it('keeps settings closed on entry and persists explicit sound and haptic changes', async () => {
@@ -212,6 +508,8 @@ describe('lifecycle UI', () => {
       <SettingsPanel
         onRetrySave={onRetrySave}
         onSettingsChange={onSettingsChange}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={vi.fn()}
         saveFailed={false}
         settings={enabledSettings}
       />,
@@ -221,7 +519,7 @@ describe('lifecycle UI', () => {
       .not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '설정' }));
     expect(screen.getByRole('dialog', { name: '게임 설정' })).toBeVisible();
-    await user.click(screen.getByRole('checkbox', { name: '효과음' }));
+    await user.click(screen.getByRole('checkbox', { name: '전체 소리' }));
     await user.click(screen.getByRole('checkbox', { name: '진동' }));
     expect(onSettingsChange).toHaveBeenNthCalledWith(1, { soundEnabled: false });
     expect(onSettingsChange).toHaveBeenNthCalledWith(2, { hapticsEnabled: false });
@@ -230,8 +528,10 @@ describe('lifecycle UI', () => {
       <SettingsPanel
         onRetrySave={onRetrySave}
         onSettingsChange={onSettingsChange}
+        onSfxPreview={vi.fn()}
+        onVolumePreview={vi.fn()}
         saveFailed
-        settings={{ hapticsEnabled: false, soundEnabled: false }}
+        settings={{ hapticsEnabled: false, soundEnabled: false, bgmVolume: 70, sfxVolume: 100 }}
       />,
     );
     await user.click(screen.getByRole('button', { name: '설정 저장 다시 시도' }));
@@ -247,11 +547,13 @@ describe('lifecycle UI', () => {
     const loop = createLoop();
     const platform = createPlatform();
     const audio = createAudio();
+    const onAbandon = vi.fn();
     useMatchLoopMock.mockReturnValue(loop);
     render(
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={onAbandon}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -288,17 +590,22 @@ describe('lifecycle UI', () => {
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
     expect(audio.unlock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', true);
-    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'aria-describedby',
+      'battle-abandon-confirmation-description',
+    );
+    expect(screen.getByText('이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.'))
+      .toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '계속하기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', false);
     expect(platform.close).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기 확인' }));
-    await act(async () => undefined);
-    expect(platform.close).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기 확인' }));
+    expect(onAbandon).toHaveBeenCalledOnce();
+    expect(platform.close).not.toHaveBeenCalled();
   });
 
   it('does not unlock or destroy borrowed audio during StrictMode or match unmount', async () => {
@@ -309,6 +616,7 @@ describe('lifecycle UI', () => {
         <MatchScreen
           audioPort={audio}
           floor={1}
+          onAbandon={vi.fn()}
           onFinished={vi.fn()}
           onRetrySettingsSave={vi.fn(async () => true)}
           onSettingsChange={vi.fn(async () => true)}
@@ -360,6 +668,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={createAudio()}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -384,8 +693,8 @@ describe('lifecycle UI', () => {
   it('maps game events only when the matching sound and haptic settings are enabled', () => {
     const events: MatchLoopView['events'] = [
       { type: 'piece-locked', side: 'player' },
-      { type: 'lines-cleared', side: 'player', amount: 2, rows: [18, 19] },
-      { type: 'attack-sent', side: 'player', amount: 3 },
+      { type: 'lines-cleared', side: 'player', amount: 1, rows: [19] },
+      { type: 'attack-sent', side: 'player', amount: 1 },
       { type: 'item-used', side: 'player', item: 'freeze' },
     ];
     const loop = createLoop(events);
@@ -399,6 +708,7 @@ describe('lifecycle UI', () => {
     const props = {
       audioPort: audio,
       floor: 1 as const,
+      onAbandon: vi.fn(),
       onFinished: vi.fn(),
       onRetrySettingsSave: vi.fn(async () => true),
       onSettingsChange: vi.fn(async () => true),
@@ -410,10 +720,10 @@ describe('lifecycle UI', () => {
 
     const result = render(<MatchScreen {...props} settings={enabledSettings} />);
     act(() => loopOptions?.onEvents?.(events, loop.view));
-    expect(audio.play).toHaveBeenCalledWith('land');
-    expect(audio.play).toHaveBeenCalledWith('clear');
-    expect(audio.play).toHaveBeenCalledWith('attack');
-    expect(audio.play).toHaveBeenCalledWith('item');
+    expect(audio.play).toHaveBeenCalledWith('land', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('clear', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('attack', { intensity: 0, duckMusic: false });
+    expect(audio.play).toHaveBeenCalledWith('item', { intensity: 0, duckMusic: false });
     expect(platform.haptic).toHaveBeenCalled();
 
     vi.clearAllMocks();
@@ -427,7 +737,7 @@ describe('lifecycle UI', () => {
     result.rerender(
       <MatchScreen
         {...props}
-        settings={{ hapticsEnabled: false, soundEnabled: false }}
+        settings={{ hapticsEnabled: false, soundEnabled: false, bgmVolume: 70, sfxVolume: 100 }}
       />,
     );
     act(() => loopOptions?.onEvents?.([...events], loop.view));
@@ -480,6 +790,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -493,7 +804,10 @@ describe('lifecycle UI', () => {
     act(() => loopOptions?.onEvents?.(events, terminalLoop.view));
 
     expect(audio.play).toHaveBeenCalledTimes(1);
-    expect(audio.play).toHaveBeenCalledWith(expectedCue);
+    expect(audio.play).toHaveBeenCalledWith(expectedCue, {
+      intensity: 0,
+      duckMusic: false,
+    });
     expect(platform.haptic).toHaveBeenCalledTimes(1);
     expect(platform.haptic).toHaveBeenCalledWith(expectedHaptic);
   });
@@ -519,6 +833,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}

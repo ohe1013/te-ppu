@@ -30,7 +30,9 @@ function progressUnlockedThrough(floor: 1 | 2 | 3 | 4 | 5): ProgressState {
 
 function unlockedProgress(): ProgressState {
   const progress = progressUnlockedThrough(3);
-  progress.settings = { soundEnabled: false, hapticsEnabled: true };
+  progress.settings = {
+    soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true,
+  };
   return progress;
 }
 
@@ -86,7 +88,9 @@ describe('tower progression transitions', () => {
 
   it('unlocks floor 5 from floor 4 while preserving every prior clear and setting', () => {
     const beforeFloorFour = progressUnlockedThrough(4);
-    beforeFloorFour.settings = { soundEnabled: false, hapticsEnabled: true };
+    beforeFloorFour.settings = {
+      soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true,
+    };
 
     expect(canSelectFloor(beforeFloorFour, 4)).toBe(true);
     expect(canSelectFloor(beforeFloorFour, 5)).toBe(false);
@@ -98,7 +102,9 @@ describe('tower progression transitions', () => {
       clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
       owlDefeated: false,
     });
-    expect(afterFloorFour.settings).toEqual({ soundEnabled: false, hapticsEnabled: true });
+    expect(afterFloorFour.settings).toEqual({
+      soundEnabled: false, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: true,
+    });
     expect(canSelectFloor(afterFloorFour, 4)).toBe(true);
     expect(canSelectFloor(afterFloorFour, 5)).toBe(true);
   });
@@ -120,7 +126,9 @@ describe('tower progression transitions', () => {
 
   it('clears floor 5 without advancing beyond the tower cap', () => {
     const beforeFloorFive = progressUnlockedThrough(5);
-    beforeFloorFive.settings = { soundEnabled: true, hapticsEnabled: false };
+    beforeFloorFive.settings = {
+      soundEnabled: true, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: false,
+    };
 
     const next = applyFloorResult(beforeFloorFive, 5, 'WIN');
 

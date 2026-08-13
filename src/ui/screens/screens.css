@@ -71,7 +71,7 @@
   pointer-events: none;
 }
 
-.screen-shell > :not(.screen-backdrop) {
+.screen-shell > :not(.screen-backdrop):not(.modal-overlay) {
   position: relative;
   z-index: 1;
 }
@@ -187,9 +187,15 @@
 
 .tower-screen__header h1 {
   color: var(--arcade-cream);
-  font-size: clamp(1.6rem, 7vw, 2.35rem);
+  font-size: clamp(1.2rem, 5.4vw, 2rem);
   line-height: 1;
   text-shadow: 3px 3px 0 var(--arcade-pink), 5px 5px 0 var(--arcade-purple);
+}
+
+.tower-screen__back {
+  justify-self: start;
+  min-height: 2.35rem !important;
+  padding: 0.42rem 0.78rem !important;
 }
 
 .tower-screen__subtitle {
@@ -516,7 +522,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: var(--portrait-position, 50% 18%);
+  object-position: center;
 }
 
 .selected-player-identity {

@@ -47,6 +47,7 @@ const borrowedAudioPort = {
   resume: vi.fn(async () => undefined),
   setEnabled: vi.fn(),
   setMusic: vi.fn(async () => undefined),
+  setVolumes: vi.fn(),
   suspend: vi.fn(async () => undefined),
   unlock: vi.fn(async () => undefined),
 };
@@ -521,6 +522,7 @@ describe('MatchScreen', () => {
       <MatchScreen
         audioPort={borrowedAudioPort}
         floor={2}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onScoreEvents={vi.fn()}
         onRetrySettingsSave={async () => true}
@@ -544,7 +546,7 @@ describe('MatchScreen', () => {
         }}
         runScore={0}
         seed={73}
-        settings={{ hapticsEnabled: true, soundEnabled: true }}
+        settings={{ hapticsEnabled: true, soundEnabled: true, bgmVolume: 70, sfxVolume: 100 }}
         settingsSaveFailed={false}
       />,
     );
@@ -552,7 +554,7 @@ describe('MatchScreen', () => {
     expect(aiSpies.createAiController).toHaveBeenCalledWith(AI_FLOOR_PROFILES[1], 73);
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '2');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
-    expect(screen.getByTestId('match-status')).toHaveTextContent('countdown');
+    expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
 
     unmount();
     expect(clock.pendingFrames).toBe(0);

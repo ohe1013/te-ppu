@@ -46,7 +46,12 @@ function validProgress(patch: ProgressPatch = {}): ProgressState {
     },
     owlDefeated: false,
   };
-  state.settings = patch.settings ?? { soundEnabled: false, hapticsEnabled: true };
+  state.settings = patch.settings ?? {
+    soundEnabled: false,
+    bgmVolume: 70,
+    sfxVolume: 100,
+    hapticsEnabled: true,
+  };
   return state;
 }
 
@@ -73,7 +78,7 @@ describe('local progress repository factory', () => {
     const progressB = validProgress({
       highestUnlockedFloor: 3,
       clearedFloors: { 1: true, 2: true, 3: false, 4: false, 5: false },
-      settings: { soundEnabled: true, hapticsEnabled: false },
+      settings: { soundEnabled: true, bgmVolume: 70, sfxVolume: 100, hapticsEnabled: false },
     });
 
     const repositoryA = factory.forIdentity(userA);

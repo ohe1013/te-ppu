@@ -30,7 +30,7 @@ import type {
   PublicMatchView,
 } from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
-import type { AudioPort, SoundCue } from '../../platform/audio-port';
+import type { AudioPort } from '../../platform/audio-port';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
@@ -54,7 +54,7 @@ import {
   type PortraitPresentation,
   type PortraitRole,
 } from '../match/portrait-state';
-import { ExitConfirmation } from '../match/ExitConfirmation';
+import { BattleAbandonConfirmation } from '../match/BattleAbandonConfirmation';
 import { InputResetBus } from '../match/input-reset-bus';
 import { ItemControls } from '../match/ItemControls';
 import { Joystick } from '../match/Joystick';
@@ -62,16 +62,26 @@ import { ResumeCountdown } from '../match/ResumeCountdown';
 import { RotateButton } from '../match/RotateButton';
 import { RowSelector } from '../match/RowSelector';
 import { SettingsPanel } from '../match/SettingsPanel';
+import { soundFeedbackForEvents } from '../match/sound-feedback';
 import '../match/match-layout.css';
 
+const MATCH_STATUS_LABELS: Readonly<Record<MatchStatus, string>> = {
+  countdown: '대전 준비',
+  playing: '대전 진행 중',
+  'player-won': '플레이어 승리',
+  'opponent-won': '상대 승리',
+  draw: '무승부',
+};
+
 export interface MatchScreenProps {
-  readonly audioPort: Pick<AudioPort, 'play'>;
+  readonly audioPort: Pick<AudioPort, 'play' | 'setVolumes'>;
   readonly floor: Floor;
   readonly encounterIndex?: EncounterIndex;
   readonly wins?: 0 | 1 | 2;
   readonly difficulty?: Difficulty;
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
+  readonly onAbandon: () => void;
   readonly onFinished: (outcome: MatchOutcome) => void | Promise<void>;
   readonly onScoreEvents?: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -102,22 +112,6 @@ function portraitUrls(records: object | undefined): Partial<Record<PortraitState
     Object.entries(records as Record<string, LoadedImageRef | undefined>)
       .flatMap(([state, image]) => image === undefined ? [] : [[state, image.url]]),
   ) as Partial<Record<PortraitState, string>>;
-}
-
-function cueForEvent(event: GameEvent, status: MatchStatus): SoundCue | null {
-  if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
-  if (event.type === 'lines-cleared') return 'clear';
-  if (event.type === 'attack-sent') return 'attack';
-  if (
-    event.type === 'item-acquired'
-    || event.type === 'item-used'
-    || event.type === 'freeze-applied'
-  ) return 'item';
-  if (event.type === 'match-ended') {
-    if (status === 'player-won') return 'win';
-    if (status === 'opponent-won') return 'loss';
-  }
-  return null;
 }
 
 function hapticForEvent(event: GameEvent, status: MatchStatus): HapticType | null {
@@ -250,6 +244,7 @@ export function MatchScreen({
   encounterIndex = 0,
   floor,
   wins = 0,
+  onAbandon,
   onFinished,
   onScoreEvents,
   onRetrySettingsSave,
@@ -282,20 +277,18 @@ export function MatchScreen({
     view: PublicMatchView,
   ) => {
     const feedback = feedbackRef.current;
-    const playedCues = new Set<SoundCue>();
-    const sentHaptics = new Set<HapticType>();
-    for (const event of events) {
-      if (feedback.settings.soundEnabled) {
-        const cue = cueForEvent(event, view.status);
-        if (cue !== null && !playedCues.has(cue)) {
-          playedCues.add(cue);
-          try {
-            feedback.audio.play(cue);
-          } catch {
-            // Audio ports are optional and isolated from gameplay.
-          }
+    if (feedback.settings.soundEnabled) {
+      for (const sound of soundFeedbackForEvents(events, view)) {
+        try {
+          feedback.audio.play(sound.cue, sound.options);
+        } catch {
+          // Audio ports are optional and isolated from gameplay.
         }
       }
+    }
+
+    const sentHaptics = new Set<HapticType>();
+    for (const event of events) {
       if (feedback.settings.hapticsEnabled) {
         const haptic = hapticForEvent(event, view.status);
         if (haptic !== null && !sentHaptics.has(haptic)) {
@@ -432,19 +425,19 @@ export function MatchScreen({
       <header className="match-header">
         <div className="match-header__series">
           <span className="match-header__series-badge">
-            {isOwlMatch ? 'HIDDEN BOSS' : `${floor}F · ${encounterIndex + 1}/3`}
+            {isOwlMatch ? '숨겨진 보스' : `${floor}층 · ${encounterIndex + 1}/3`}
           </span>
           <span className="match-header__series-wins">
-            {isOwlMatch ? 'OWL' : `승리 ${wins ?? 0}/3`}
+            {isOwlMatch ? '부엉이' : `승리 ${wins ?? 0}/3`}
             <span className="match-header__run-score" data-testid="run-score">
-              SCORE {String(runScore).padStart(6, '0')}
+              점수 {String(runScore).padStart(6, '0')}
             </span>
           </span>
         </div>
         <div className="match-header__actions">
           <div className="match-meta match-meta--live">
             <span aria-live="polite" data-testid="match-status">
-              {match.view.status}
+              {MATCH_STATUS_LABELS[match.view.status]}
             </span>
             <span className="match-meta__telemetry" data-testid="match-tick">{match.view.tick}</span>
           </div>
@@ -458,6 +451,11 @@ export function MatchScreen({
             }}
             onRetrySave={onRetrySettingsSave}
             onSettingsChange={onSettingsChange}
+            onSfxPreview={() => audio.play('rotate')}
+            onVolumePreview={({ bgmVolume, sfxVolume }) => audio.setVolumes({
+              bgm: bgmVolume / 100,
+              sfx: sfxVolume / 100,
+            })}
             saveFailed={settingsSaveFailed}
             settings={settings}
           />
@@ -467,7 +465,7 @@ export function MatchScreen({
             type="button"
           >
             <AssetIcon className="asset-icon" fallback="↩" image={commonAssets?.icons.exit} />
-            게임 나가기
+            타워로 나가기
           </button>
         </div>
       </header>
@@ -528,10 +526,10 @@ export function MatchScreen({
         </div>
       </fieldset>
       <ResumeCountdown count={resumeCountdown} />
-      <ExitConfirmation
+      <BattleAbandonConfirmation
         icon={commonAssets?.icons.exit}
         onCancel={cancelExitConfirmation}
-        onConfirm={() => platform.close()}
+        onConfirm={onAbandon}
         open={exitOpen}
       />
     </section>

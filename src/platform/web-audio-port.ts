@@ -2,11 +2,15 @@ import type {
   AudioPort,
   AudioSourceCatalog,
   AudioSourceRef,
+  AudioVolumes,
+  CueIntensity,
   MusicTrack,
   SoundCue,
+  SoundPlaybackOptions,
 } from './audio-port';
 
 export interface WebAudioParamPort {
+  cancelScheduledValues(cancelTime: number): void;
   setValueAtTime(value: number, startTime: number): void;
   exponentialRampToValueAtTime(value: number, endTime: number): void;
 }
@@ -29,6 +33,7 @@ export interface WebAudioBufferSourcePort {
   buffer: WebAudioBufferPort | null;
   loop: boolean;
   onended: ((event: Event) => void) | null;
+  playbackRate: WebAudioParamPort;
   connect(destination: unknown): unknown;
   disconnect(): void;
   start(when?: number, offset?: number): void;
@@ -73,6 +78,13 @@ type ActiveCueSource = {
   readonly stop: (when?: number) => void;
 };
 
+type CuePlaybackProfile = {
+  readonly duckMusic: boolean;
+  readonly gain: number;
+  readonly oscillatorGainMultiplier: number;
+  readonly rate: number;
+};
+
 const CUES: Readonly<Record<SoundCue, CueShape>> = {
   move: { duration: 0.045, frequency: 220, gain: 0.045, type: 'square' },
   rotate: { duration: 0.07, frequency: 360, gain: 0.065, type: 'triangle' },
@@ -87,6 +99,14 @@ const CUES: Readonly<Record<SoundCue, CueShape>> = {
 const MUSIC_FADE_SECONDS = 0.15;
 const MIN_GAIN = 0.0001;
 const MUSIC_FADE_IN_SECONDS = 0.012;
+const INTENSITY_RATES = [1, 1.04, 1.09, 1.15] as const;
+const SAMPLE_GAINS = [0.75, 0.84, 0.92, 1] as const;
+const OSCILLATOR_GAIN_MULTIPLIERS = [1, 1.12, 1.24, 1.36] as const;
+const ROTATE_RATES = [1, 2 ** (2 / 12), 2 ** (4 / 12)] as const;
+const DUCK_GAIN = 0.65;
+const DUCK_ATTACK_SECONDS = 0.02;
+const DUCK_HOLD_SECONDS = 0.09;
+const DUCK_RELEASE_SECONDS = 0.18;
 
 function defaultCreateContext(): WebAudioContextPort {
   const scope = globalThis as typeof globalThis & {
@@ -118,6 +138,11 @@ function modulo(value: number, duration: number): number {
   return remainder < 0 ? remainder + duration : remainder;
 }
 
+function clampVolume(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(1, value));
+}
+
 export function createWebAudioPort({
   createContext = defaultCreateContext,
   enabled: initiallyEnabled = true,
@@ -126,7 +151,12 @@ export function createWebAudioPort({
 }: CreateWebAudioPortOptions = {}): AudioPort {
   let context: WebAudioContextPort | null = null;
   let contextResume: Promise<boolean> | null = null;
-  let musicGain: WebAudioGainPort | null = null;
+  let contextTransition: Promise<void> | null = null;
+  let bgmVolume = 0.7;
+  let sfxVolume = 1;
+  let musicDynamicsGain: WebAudioGainPort | null = null;
+  let musicVolumeGain: WebAudioGainPort | null = null;
+  let sfxVolumeGain: WebAudioGainPort | null = null;
   let desiredTrack: MusicTrack | null = null;
   let activeTrack: MusicTrack | null = null;
   let activeSource: WebAudioBufferSourcePort | null = null;
@@ -135,6 +165,7 @@ export function createWebAudioPort({
   let startedAt = 0;
   let earliestMusicStart = 0;
   let requestGeneration = 0;
+  let cueEpoch = 0;
   let unlocked = false;
   let enabled = initiallyEnabled;
   let backgrounded = false;
@@ -142,6 +173,7 @@ export function createWebAudioPort({
   const decodedBuffers = new Map<string, Promise<WebAudioBufferPort>>();
   const fadingMusicSources = new Set<WebAudioBufferSourcePort>();
   const activeCueSources = new Set<ActiveCueSource>();
+  let rotateVariant = 0;
 
   function catalog(): AudioSourceCatalog | null {
     try {
@@ -169,6 +201,17 @@ export function createWebAudioPort({
     return isCuePlayable(expectedContext)
       && requestGeneration === generation
       && desiredTrack === track;
+  }
+
+  function serializeContextTransition<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = contextTransition;
+    const next = previous === null ? operation() : previous.then(operation, operation);
+    const settled = next.then(() => undefined, () => undefined);
+    contextTransition = settled;
+    void settled.then(() => {
+      if (contextTransition === settled) contextTransition = null;
+    });
+    return next;
   }
 
   async function ensureContextRunning(expectedContext: WebAudioContextPort): Promise<boolean> {
@@ -206,6 +249,63 @@ export function createWebAudioPort({
       && context.currentTime >= startedAt;
   }
 
+  function profileFor(
+    cue: SoundCue,
+    options: SoundPlaybackOptions | undefined,
+  ): CuePlaybackProfile {
+    const intensity = Math.max(0, Math.min(3, options?.intensity ?? 0)) as CueIntensity;
+    const rotateRate = cue === 'rotate'
+      ? ROTATE_RATES[rotateVariant++ % ROTATE_RATES.length]!
+      : 1;
+    return {
+      duckMusic: options?.duckMusic === true,
+      gain: SAMPLE_GAINS[intensity],
+      oscillatorGainMultiplier: OSCILLATOR_GAIN_MULTIPLIERS[intensity],
+      rate: INTENSITY_RATES[intensity] * rotateRate,
+    };
+  }
+
+  function applyUserVolume(gain: WebAudioGainPort, value: number, now: number): void {
+    try {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(value, now);
+    } catch {
+      // User volume changes remain non-fatal if automation is unavailable.
+    }
+  }
+
+  function cancelMusicDynamicsAutomation(now: number): void {
+    if (musicDynamicsGain === null) return;
+    try {
+      musicDynamicsGain.gain.cancelScheduledValues(now);
+      musicDynamicsGain.gain.setValueAtTime(1, now);
+    } catch {
+      // Music cleanup remains non-fatal if automation is unavailable.
+    }
+  }
+
+  function duckActiveMusic(start: number): void {
+    if (
+      musicDynamicsGain === null
+      || activeSource === null
+      || activeTrack === null
+      || desiredTrack !== activeTrack
+      || !isActiveMusicAudible()
+    ) return;
+    try {
+      musicDynamicsGain.gain.cancelScheduledValues(start);
+      musicDynamicsGain.gain.setValueAtTime(1, start);
+      musicDynamicsGain.gain.exponentialRampToValueAtTime(DUCK_GAIN, start + DUCK_ATTACK_SECONDS);
+      musicDynamicsGain.gain.setValueAtTime(DUCK_GAIN, start + DUCK_HOLD_SECONDS);
+      musicDynamicsGain.gain.exponentialRampToValueAtTime(
+        1,
+        start + DUCK_HOLD_SECONDS + DUCK_RELEASE_SECONDS,
+      );
+    } catch {
+      // Ducking is optional and must not interrupt a cue.
+    }
+  }
+
   function disconnectMusicSource(source: WebAudioBufferSourcePort): void {
     try {
       source.disconnect();
@@ -238,11 +338,11 @@ export function createWebAudioPort({
     const source = activeSource;
     if (context === null || source === null) return;
     const start = context.currentTime;
+    cancelMusicDynamicsAutomation(start);
     const end = start + MUSIC_FADE_SECONDS;
-    const gain = musicGain;
+    const gain = musicDynamicsGain;
     if (gain !== null) {
       try {
-        gain.gain.setValueAtTime(1, start);
         gain.gain.exponentialRampToValueAtTime(MIN_GAIN, end);
       } catch {
         // Keep the replacement non-fatal if an audio implementation rejects ramps.
@@ -283,13 +383,30 @@ export function createWebAudioPort({
     activeCueSources.clear();
   }
 
-  function getMusicGain(expectedContext: WebAudioContextPort): WebAudioGainPort | null {
-    if (musicGain !== null) return musicGain;
+  function getMusicDynamicsGain(expectedContext: WebAudioContextPort): WebAudioGainPort | null {
+    if (musicDynamicsGain !== null) return musicDynamicsGain;
     try {
-      const gain = expectedContext.createGain();
-      gain.connect(expectedContext.destination);
-      musicGain = gain;
-      return gain;
+      const dynamics = expectedContext.createGain();
+      const volume = expectedContext.createGain();
+      dynamics.connect(volume);
+      volume.connect(expectedContext.destination);
+      applyUserVolume(volume, bgmVolume, expectedContext.currentTime);
+      musicDynamicsGain = dynamics;
+      musicVolumeGain = volume;
+      return dynamics;
+    } catch {
+      return null;
+    }
+  }
+
+  function getSfxVolumeGain(expectedContext: WebAudioContextPort): WebAudioGainPort | null {
+    if (sfxVolumeGain !== null) return sfxVolumeGain;
+    try {
+      const volume = expectedContext.createGain();
+      volume.connect(expectedContext.destination);
+      applyUserVolume(volume, sfxVolume, expectedContext.currentTime);
+      sfxVolumeGain = volume;
+      return volume;
     } catch {
       return null;
     }
@@ -310,13 +427,15 @@ export function createWebAudioPort({
     return loading;
   }
 
-  function createOscillatorCue(cue: SoundCue): void {
+  function createOscillatorCue(cue: SoundCue, profile: CuePlaybackProfile): void {
     if (!isCuePlayable()) return;
     const expectedContext = context!;
     try {
       const shape = CUES[cue];
       const start = expectedContext.currentTime;
       const end = start + shape.duration;
+      const volume = getSfxVolumeGain(expectedContext);
+      if (volume === null) return;
       const oscillator = expectedContext.createOscillator();
       const gain = expectedContext.createGain();
       const active: ActiveCueSource = {
@@ -331,17 +450,21 @@ export function createWebAudioPort({
         stop: (when) => oscillator.stop(when),
       };
       oscillator.type = shape.type;
-      oscillator.frequency.setValueAtTime(shape.frequency, start);
+      oscillator.frequency.setValueAtTime(shape.frequency * profile.rate, start);
       gain.gain.setValueAtTime(MIN_GAIN, start);
-      gain.gain.exponentialRampToValueAtTime(shape.gain, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(
+        shape.gain * profile.oscillatorGainMultiplier,
+        start + 0.012,
+      );
       gain.gain.exponentialRampToValueAtTime(MIN_GAIN, end);
       oscillator.connect(gain);
-      gain.connect(expectedContext.destination);
+      gain.connect(volume);
       oscillator.onended = () => {
         activeCueSources.delete(active);
         active.disconnect();
       };
       activeCueSources.add(active);
+      if (profile.duckMusic) duckActiveMusic(start);
       oscillator.start(start);
       oscillator.stop(end);
     } catch {
@@ -349,10 +472,12 @@ export function createWebAudioPort({
     }
   }
 
-  function createSampleCue(buffer: WebAudioBufferPort): void {
+  function createSampleCue(buffer: WebAudioBufferPort, profile: CuePlaybackProfile): void {
     if (!isCuePlayable()) return;
     const expectedContext = context!;
     try {
+      const volume = getSfxVolumeGain(expectedContext);
+      if (volume === null) return;
       const source = expectedContext.createBufferSource();
       const gain = expectedContext.createGain();
       const start = expectedContext.currentTime;
@@ -369,14 +494,16 @@ export function createWebAudioPort({
       };
       source.buffer = buffer;
       source.loop = false;
-      gain.gain.setValueAtTime(0.16, start);
+      source.playbackRate.setValueAtTime(profile.rate, start);
+      gain.gain.setValueAtTime(profile.gain, start);
       source.connect(gain);
-      gain.connect(expectedContext.destination);
+      gain.connect(volume);
       source.onended = () => {
         activeCueSources.delete(active);
         active.disconnect();
       };
       activeCueSources.add(active);
+      if (profile.duckMusic) duckActiveMusic(start);
       source.start(start);
       if (buffer.duration > 0) source.stop(start + buffer.duration);
     } catch {
@@ -403,7 +530,7 @@ export function createWebAudioPort({
     if (!isCurrentMusicRequest(track, generation, expectedContext)) return;
     if (activeSource !== null && activeTrack === track) return;
 
-    const gain = getMusicGain(expectedContext);
+    const gain = getMusicDynamicsGain(expectedContext);
     if (gain === null) return;
     const offset = modulo(pausedOffset, buffer.duration);
     const start = Math.max(expectedContext.currentTime, earliestMusicStart);
@@ -435,7 +562,7 @@ export function createWebAudioPort({
       || !unlocked
       || expectedContext === null
     ) return;
-    if (!await ensureContextRunning(expectedContext)) return;
+    if (!await serializeContextTransition(() => ensureContextRunning(expectedContext))) return;
     await startMusicForCurrentRequest(requestGeneration);
   }
 
@@ -450,25 +577,31 @@ export function createWebAudioPort({
         }
       }
       const expectedContext = context;
-      if (!await ensureContextRunning(expectedContext)) return;
+      if (!await serializeContextTransition(() => ensureContextRunning(expectedContext))) return;
       unlocked = true;
       await resumeMusicIfPossible();
     },
 
-    play(cue: SoundCue): void {
+    play(cue: SoundCue, options?: SoundPlaybackOptions): void {
       if (!isCuePlayable()) return;
+      const expectedCueEpoch = cueEpoch;
+      const profile = profileFor(cue, options);
       const source = catalog()?.sfx[cue];
       if (source === undefined) {
-        createOscillatorCue(cue);
+        createOscillatorCue(cue, profile);
         return;
       }
       const expectedContext = context!;
       void loadBuffer(source, expectedContext)
         .then((buffer) => {
-          if (isCuePlayable(expectedContext)) createSampleCue(buffer);
+          if (cueEpoch === expectedCueEpoch && isCuePlayable(expectedContext)) {
+            createSampleCue(buffer, profile);
+          }
         })
         .catch(() => {
-          if (isCuePlayable(expectedContext)) createOscillatorCue(cue);
+          if (cueEpoch === expectedCueEpoch && isCuePlayable(expectedContext)) {
+            createOscillatorCue(cue, profile);
+          }
         });
     },
 
@@ -481,6 +614,7 @@ export function createWebAudioPort({
       const changedToTrack = track !== null && track !== desiredTrack;
       desiredTrack = track;
       if (track === null) {
+        cancelMusicDynamicsAutomation(context?.currentTime ?? 0);
         stopFadingMusic(context?.currentTime ?? 0, true);
         clearActiveMusic(false, context?.currentTime ?? 0, true);
         return;
@@ -499,10 +633,27 @@ export function createWebAudioPort({
       if (generation !== requestGeneration) return;
     },
 
+    setVolumes(volumes: AudioVolumes): void {
+      if (destroyed) return;
+      const nextBgmVolume = clampVolume(volumes.bgm);
+      const nextSfxVolume = clampVolume(volumes.sfx);
+      const now = context?.currentTime ?? 0;
+      if (nextBgmVolume !== null && nextBgmVolume !== bgmVolume) {
+        bgmVolume = nextBgmVolume;
+        if (musicVolumeGain !== null) applyUserVolume(musicVolumeGain, bgmVolume, now);
+      }
+      if (nextSfxVolume !== null && nextSfxVolume !== sfxVolume) {
+        sfxVolume = nextSfxVolume;
+        if (sfxVolumeGain !== null) applyUserVolume(sfxVolumeGain, sfxVolume, now);
+      }
+    },
+
     setEnabled(nextEnabled: boolean): void {
       if (destroyed || enabled === nextEnabled) return;
       enabled = nextEnabled;
       if (!enabled) {
+        cueEpoch += 1;
+        cancelMusicDynamicsAutomation(context?.currentTime ?? 0);
         stopFadingMusic(context?.currentTime ?? 0, true);
         clearActiveMusic(true, context?.currentTime ?? 0, true);
         stopCueSources();
@@ -513,12 +664,24 @@ export function createWebAudioPort({
 
     async suspend(): Promise<void> {
       if (destroyed) return;
+      cueEpoch += 1;
       backgrounded = true;
+      cancelMusicDynamicsAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(true, context?.currentTime ?? 0, true);
       stopCueSources();
-      if (context !== null && context.state !== 'suspended' && context.state !== 'closed') {
-        await settle(() => context!.suspend());
+      const expectedContext = context;
+      if (expectedContext !== null) {
+        await serializeContextTransition(async () => {
+          if (
+            destroyed
+            || !backgrounded
+            || context !== expectedContext
+            || expectedContext.state === 'suspended'
+            || expectedContext.state === 'closed'
+          ) return;
+          await settle(() => expectedContext.suspend());
+        });
       }
     },
 
@@ -532,6 +695,8 @@ export function createWebAudioPort({
       if (destroyed) return;
       destroyed = true;
       requestGeneration += 1;
+      cueEpoch += 1;
+      cancelMusicDynamicsAutomation(context?.currentTime ?? 0);
       stopFadingMusic(context?.currentTime ?? 0, true);
       clearActiveMusic(false, context?.currentTime ?? 0, true);
       stopCueSources();
@@ -541,14 +706,17 @@ export function createWebAudioPort({
       desiredTrack = null;
       activeTrack = null;
       activeBuffer = null;
-      if (musicGain !== null) {
+      for (const gain of [musicDynamicsGain, musicVolumeGain, sfxVolumeGain]) {
+        if (gain === null) continue;
         try {
-          musicGain.disconnect();
+          gain.disconnect();
         } catch {
           // Gain cleanup must not prevent context cleanup.
         }
       }
-      musicGain = null;
+      musicDynamicsGain = null;
+      musicVolumeGain = null;
+      sfxVolumeGain = null;
       if (closingContext !== null && closingContext.state !== 'closed') {
         await settle(() => closingContext.close());
       }

@@ -18,9 +18,9 @@ export interface ItemControlsProps {
 }
 
 const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
-  'row-clear': 'CLEAR',
-  freeze: 'FREEZE',
-  'queue-swap': 'SWAP',
+  'row-clear': '행 제거',
+  freeze: '빙결',
+  'queue-swap': '교체',
 };
 
 export function ItemControls({
@@ -45,12 +45,12 @@ export function ItemControls({
     <section aria-label="아이템" className="item-controls">
       {rowSelectionActive ? (
         <button
-          aria-label="행 선택 취소"
+          aria-label="취소"
           className="item-control item-control--cancel"
           type="button"
           onClick={() => onRowSelectionChange(false)}
         >
-          <span className="item-control__label">CANCEL</span>
+          <span className="item-control__label">취소</span>
         </button>
       ) : (
         <button
@@ -72,7 +72,7 @@ export function ItemControls({
         </button>
       )}
       <button
-        aria-label={`상대 정지 · ${player.inventory.freeze}회`}
+        aria-label={`빙결 · ${player.inventory.freeze}회`}
         className="item-control"
         data-item="freeze"
         disabled={!canUseFreeze}
@@ -80,7 +80,7 @@ export function ItemControls({
         onClick={() => dispatch({ type: 'use-freeze' })}
       >
         <AssetImage
-          alt="상대 정지 아이템"
+          alt="빙결 아이템"
           className="item-control__image"
           url={items?.freeze?.url}
         />
@@ -88,7 +88,7 @@ export function ItemControls({
         <span aria-hidden="true" className="item-control__count">{player.inventory.freeze}회</span>
       </button>
       <button
-        aria-label={`다음 교환 · ${player.inventory.queueSwap}회`}
+        aria-label={`교체 · ${player.inventory.queueSwap}회`}
         className="item-control"
         data-item="queue-swap"
         disabled={!canUseQueueSwap}
@@ -96,7 +96,7 @@ export function ItemControls({
         onClick={() => dispatch({ type: 'use-queue-swap' })}
       >
         <AssetImage
-          alt="다음 교환 아이템"
+          alt="교체 아이템"
           className="item-control__image"
           url={items?.['queue-swap']?.url}
         />

@@ -39,6 +39,10 @@ export type TowerRoute =
   | 'OWL_RESULT'
   | 'ENDING';
 
+export type SuspendedBattle =
+  | { readonly kind: 'floor'; readonly series: FloorSeriesState }
+  | { readonly kind: 'owl' };
+
 export type StartFloorResult =
   | {
       readonly ok: true;
@@ -46,7 +50,10 @@ export type StartFloorResult =
       readonly encounter: FloorEncounter;
       readonly series: FloorSeriesState;
     }
-  | { readonly ok: false; readonly reason: 'LOCKED_FLOOR' | 'NO_SELECTED_FLOOR' };
+  | {
+      readonly ok: false;
+      readonly reason: 'LOCKED_FLOOR' | 'MATCH_ALREADY_ACTIVE' | 'NO_SELECTED_FLOOR';
+    };
 
 export type StartEncounterResult =
   | {
@@ -57,7 +64,7 @@ export type StartEncounterResult =
     }
   | {
       readonly ok: false;
-      readonly reason: 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
+      readonly reason: 'MATCH_ALREADY_ACTIVE' | 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
   };
 
 export type StartOwlMatchResult =
@@ -127,9 +134,13 @@ function isSettingsUpdate(
   }
 
   return Object.entries(settings).every(([key, value]) => (
-    (key === 'soundEnabled' || key === 'hapticsEnabled')
-    && typeof value === 'boolean'
+    ((key === 'soundEnabled' || key === 'hapticsEnabled') && typeof value === 'boolean')
+    || ((key === 'bgmVolume' || key === 'sfxVolume') && isVolume(value))
   ));
+}
+
+function isVolume(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 100;
 }
 
 export class TowerController {
@@ -138,6 +149,7 @@ export class TowerController {
   private currentSeriesState: FloorSeriesState | null = null;
   private currentMatch: MatchState | null = null;
   private currentAi: AiController | null = null;
+  private currentSuspendedBattle: SuspendedBattle | null = null;
   private currentRoute: TowerRoute = 'TOWER';
   private currentSaveError: 'SAVE_FAILED' | null = null;
   private pendingSave: ProgressState | null = null;
@@ -175,6 +187,13 @@ export class TowerController {
     return this.currentAi;
   }
 
+  get suspendedBattle(): SuspendedBattle | null {
+    const suspended = this.currentSuspendedBattle;
+    return suspended?.kind === 'floor'
+      ? { kind: 'floor', series: { ...suspended.series } }
+      : suspended;
+  }
+
   get route(): TowerRoute {
     return this.currentRoute;
   }
@@ -184,9 +203,13 @@ export class TowerController {
   }
 
   startFloor(floor: Floor, matchSeed: number): StartFloorResult {
+    if (this.currentMatch !== null || this.currentAi !== null) {
+      return { ok: false, reason: 'MATCH_ALREADY_ACTIVE' };
+    }
     if (!canSelectFloor(this.currentProgress, floor)) {
       return { ok: false, reason: 'LOCKED_FLOOR' };
     }
+    this.currentSuspendedBattle = null;
     this.currentSelectedFloor = floor;
     this.currentSeriesState = startFloorSeries(floor);
     const started = this.startEncounter(matchSeed);
@@ -195,6 +218,9 @@ export class TowerController {
   }
 
   startEncounter(matchSeed: number): StartEncounterResult {
+    if (this.currentMatch !== null || this.currentAi !== null) {
+      return { ok: false, reason: 'MATCH_ALREADY_ACTIVE' };
+    }
     const floor = this.currentSelectedFloor;
     const series = this.currentSeriesState;
     if (floor === null) return { ok: false, reason: 'NO_SELECTED_FLOOR' };
@@ -208,6 +234,7 @@ export class TowerController {
       deriveAiSeed(matchSeed),
       'opponent',
     );
+    this.currentSuspendedBattle = null;
     this.currentRoute = 'MATCH';
     return {
       ok: true,
@@ -221,11 +248,19 @@ export class TowerController {
     if (this.currentSelectedFloor === null) {
       return { ok: false, reason: 'NO_SELECTED_FLOOR' };
     }
+    this.currentMatch = null;
+    this.currentAi = null;
     return this.startFloor(this.currentSelectedFloor, matchSeed);
   }
 
   startOwlMatch(matchSeed: number): StartOwlMatchResult {
-    if (this.currentRoute !== 'OWL_REVEAL' && this.currentRoute !== 'OWL_RESULT') {
+    const resumesSuspendedOwl = this.currentRoute === 'TOWER'
+      && this.currentSuspendedBattle?.kind === 'owl';
+    if (
+      this.currentRoute !== 'OWL_REVEAL'
+      && this.currentRoute !== 'OWL_RESULT'
+      && !resumesSuspendedOwl
+    ) {
       return { ok: false, reason: 'NO_OWL_REVEAL' };
     }
     this.currentMatch = createMatch({ matchSeed });
@@ -234,6 +269,7 @@ export class TowerController {
       deriveAiSeed(matchSeed),
       'opponent',
     );
+    this.currentSuspendedBattle = null;
     this.currentRoute = 'OWL_MATCH';
     return { ok: true, match: this.currentMatch };
   }
@@ -270,6 +306,7 @@ export class TowerController {
     }
 
     const resolution = resolveEncounter(series, result);
+    this.currentSuspendedBattle = null;
     this.currentMatch = null;
     this.currentAi = null;
     if (resolution.kind === 'next-encounter') {
@@ -313,6 +350,7 @@ export class TowerController {
 
     this.currentMatch = null;
     this.currentAi = null;
+    this.currentSuspendedBattle = null;
     if (result !== 'WIN') {
       this.currentRoute = 'OWL_RESULT';
       return { ok: true, route: this.currentRoute };
@@ -350,13 +388,27 @@ export class TowerController {
     this.currentMatch = null;
     this.currentAi = null;
     this.currentSeriesState = null;
+    this.currentSuspendedBattle = null;
     return this.persistCurrentProgress();
   }
 
-  abandonMatch(): void {
+  abandonMatch(): SuspendedBattle | null {
+    if (this.currentMatch === null || this.currentAi === null) return null;
+    let suspended: SuspendedBattle;
+    if (this.currentRoute === 'MATCH' && this.currentSeriesState !== null) {
+      suspended = { kind: 'floor', series: { ...this.currentSeriesState } };
+    } else if (this.currentRoute === 'OWL_MATCH') {
+      suspended = { kind: 'owl' };
+    } else {
+      return null;
+    }
     this.currentMatch = null;
     this.currentAi = null;
-    this.currentRoute = 'FLOOR_INTRO';
+    this.currentSuspendedBattle = suspended;
+    this.currentRoute = 'TOWER';
+    return suspended.kind === 'floor'
+      ? { kind: 'floor', series: { ...suspended.series } }
+      : suspended;
   }
 
   async selectDifficulty(difficulty: ProgressState['selectedDifficulty']): Promise<TowerSaveResult> {
@@ -371,6 +423,7 @@ export class TowerController {
     this.currentSeriesState = null;
     this.currentMatch = null;
     this.currentAi = null;
+    this.currentSuspendedBattle = null;
     this.currentRoute = 'TOWER';
     return this.persistCurrentProgress();
   }
@@ -382,6 +435,12 @@ export class TowerController {
       characterId: profile.characterId,
     };
     this.currentProgress = next;
+    this.currentSelectedFloor = null;
+    this.currentSeriesState = null;
+    this.currentMatch = null;
+    this.currentAi = null;
+    this.currentSuspendedBattle = null;
+    this.currentRoute = 'TOWER';
     return this.persistCurrentProgress();
   }
 

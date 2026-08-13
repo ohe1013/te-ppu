@@ -8,6 +8,13 @@ export type SoundCue =
   | 'win'
   | 'loss';
 
+export type CueIntensity = 0 | 1 | 2 | 3;
+
+export interface SoundPlaybackOptions {
+  readonly intensity?: CueIntensity;
+  readonly duckMusic?: boolean;
+}
+
 export type MusicTrack =
   | 'tower'
   | 'early-floors'
@@ -25,10 +32,16 @@ export interface AudioSourceCatalog {
   readonly bgm: Readonly<Record<MusicTrack, AudioSourceRef>>;
 }
 
+export interface AudioVolumes {
+  readonly bgm: number;
+  readonly sfx: number;
+}
+
 export interface AudioPort {
   unlock(): Promise<void>;
-  play(cue: SoundCue): void;
+  play(cue: SoundCue, options?: SoundPlaybackOptions): void;
   setMusic(track: MusicTrack | null): Promise<void>;
+  setVolumes(volumes: AudioVolumes): void;
   setEnabled(enabled: boolean): void;
   suspend(): Promise<void>;
   resume(): Promise<void>;

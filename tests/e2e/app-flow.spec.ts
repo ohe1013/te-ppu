@@ -9,6 +9,8 @@ import {
   test,
 } from './helpers';
 
+const forbiddenGameCopy = /START RUN|RUN ACTIVE|NEXT \dF|SCORE|EASY|NORMAL|HARD|HIDDEN BOSS|READY|DANGER|countdown|playing|player-won|opponent-won|draw/i;
+
 const RETURNING_PROFILE = {
   initials: 'RVT',
   characterId: 'hero-engineer',
@@ -18,7 +20,8 @@ test('registers arcade initials and a character before the first easy run', asyn
   await page.goto('/');
 
   await expect(page.getByTestId('title-screen')).toBeVisible();
-  await page.getByRole('button', { name: 'START RUN' }).click();
+  await expect(page.getByTestId('title-screen')).not.toContainText(forbiddenGameCopy);
+  await page.getByRole('button', { name: '도전 시작' }).click();
   await expect(page.getByTestId('name-entry-screen')).toBeVisible();
   await expect(page.getByRole('button', { name: 'END' })).toBeDisabled();
   await chooseArcadeLetters(page, 'LUM');
@@ -32,8 +35,9 @@ test('registers arcade initials and a character before the first easy run', asyn
   await expect(page.getByTestId('tower-screen')).toBeVisible();
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
   await expect(page.getByTestId('tower-run-status')).toHaveText(
-    'RUN ACTIVE · NEXT 1F · SCORE 000000',
+    '도전 중 · 다음 1층 · 점수 000000',
   );
+  await expect(page.getByTestId('tower-screen')).not.toContainText(forbiddenGameCopy);
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
   for (const floor of [2, 3, 4, 5]) {
     await expect(page.getByRole('button', { name: `${floor}층 선택` })).toBeDisabled();
@@ -74,13 +78,14 @@ test('records a partial run and shows it on local ranking', async ({ page }) => 
   );
   await page.getByRole('button', { name: '대전 시작' }).click();
   await expect(page.getByTestId('match-screen')).toBeVisible();
+  await expect(page.getByTestId('match-screen')).not.toContainText(forbiddenGameCopy);
   await page.evaluate(async () => window.__TE_PPU_E2E__.finish('loss'));
   await expect(page.getByRole('button', { name: '도전 종료' })).toBeEnabled();
   await page.getByRole('button', { name: '도전 종료' }).click();
 
   await expect(page.getByTestId('title-screen')).toBeVisible();
   await expect(page.getByTestId('tower-screen')).toHaveCount(0);
-  await page.getByRole('button', { name: 'RANKING' }).click();
+  await page.getByRole('button', { name: '랭킹' }).click();
   await expect(page.getByTestId('ranking-screen')).toBeVisible();
   await expect(page.getByText('LOCAL RECORDS')).toBeVisible();
   const record = page.getByRole('row').filter({ hasText: 'RVT' });
@@ -89,9 +94,9 @@ test('records a partial run and shows it on local ranking', async ({ page }) => 
   await expect(page.getByText('ONLINE RANKING SYNC PENDING')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'BACK' }).click();
-  await page.getByRole('button', { name: 'START RUN' }).click();
+  await page.getByRole('button', { name: '도전 시작' }).click();
   await expect(page.getByTestId('tower-run-status')).toHaveText(
-    'RUN ACTIVE · NEXT 1F · SCORE 000000',
+    '도전 중 · 다음 1층 · 점수 000000',
   );
 });
 
@@ -101,6 +106,73 @@ test('shows a usable tower screen in under ten seconds', async ({ page }) => {
 
   expect(elapsedMs).toBeLessThan(10_000);
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+});
+
+test('resumes the same active run after visiting the title', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (let encounterIndex = 0; encounterIndex < 3; encounterIndex += 1) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  const status = await page.getByTestId('tower-run-status').textContent();
+
+  await page.getByRole('button', { name: '처음으로' }).click();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: '도전 계속' }).click();
+
+  await expect(page.getByTestId('tower-run-status')).toHaveText(status ?? '');
+  await expect(page.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeDisabled();
+});
+
+test('returns from floor two opponent two and restarts that opponent fresh', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (const encounterIndex of [0, 1, 2] as const) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  await page.getByRole('button', { name: '2층 선택' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+  await page.getByRole('button', { name: '다음 상대' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  const confirmedScore = await page.getByTestId('run-score').textContent();
+  expect(confirmedScore).not.toBeNull();
+
+  await page.getByRole('button', { name: '타워로 나가기' }).click();
+  await page.getByRole('button', { name: '타워로 나가기 확인' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByTestId('tower-run-status')).toContainText('2층 2번째 상대');
+  await expect(page.getByTestId('tower-run-status')).toContainText(confirmedScore!);
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
+
+  await page.getByRole('button', { name: '2층 2번째 상대부터 계속' }).click();
+  await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+    'data-encounter-index',
+    '1',
+  );
+  await expect(page.getByText('유리 예언자 프리즘', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  await expect(page.getByTestId('run-score')).toHaveText(confirmedScore!);
 });
 
 test('shows the mascot and all three ordered floor-one rivals', async ({ page }) => {
@@ -153,6 +225,7 @@ test('keeps historically unlocked floors behind the active ranked-run order', as
 });
 
 test('climbs all five floors in order, defeats the owl, and unlocks Normal', async ({ page }) => {
+  test.setTimeout(30_000);
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openMatch(page);
 
@@ -179,7 +252,8 @@ test('climbs all five floors in order, defeats the owl, and unlocks Normal', asy
       } else if (floor < 5) {
         await page.getByRole('button', { name: '다음 층' }).click();
         await expect(page.getByTestId('tower-screen')).toBeVisible();
-        await expect(page.getByTestId('tower-run-status')).toContainText(`NEXT ${floor + 1}F`);
+        await expect(page.getByTestId('tower-run-status')).toContainText(`다음 ${floor + 1}층`);
+        await expect(page.getByTestId('tower-screen')).not.toContainText(forbiddenGameCopy);
         await page.getByRole('button', { name: `${floor + 1}층 선택` }).click();
         await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
           'data-encounter-index',
@@ -206,10 +280,10 @@ test('climbs all five floors in order, defeats the owl, and unlocks Normal', asy
   await expect(page.getByText('NORMAL 난이도 해금')).toBeVisible();
   await page.getByRole('button', { name: '타이틀로 돌아가기' }).click();
   await expect(page.getByTestId('title-screen')).toBeVisible();
-  await page.getByRole('button', { name: 'START RUN' }).click();
+  await page.getByRole('button', { name: '도전 시작' }).click();
   await expect(page.getByTestId('tower-screen')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'NORMAL' })).toBeEnabled();
-  await page.getByRole('button', { name: 'NORMAL' }).click();
+  await expect(page.getByRole('button', { name: '보통' })).toBeEnabled();
+  await page.getByRole('button', { name: '보통' }).click();
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
 });
 

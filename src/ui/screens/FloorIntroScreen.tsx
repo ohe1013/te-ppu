@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import type { Floor } from '../../app/app-route';
 import type { LoadedImageRef, PlayerCharacterAssets, RivalCharacterAssets } from '../../assets';
 import type { PlayerCharacterDefinition } from '../../player';
@@ -30,6 +31,22 @@ export function FloorIntroScreen({
   rival,
   series,
 }: FloorIntroScreenProps) {
+  const startPendingRef = useRef(false);
+  const [startPending, setStartPending] = useState(false);
+
+  function startMatch(): void {
+    if (startPendingRef.current) return;
+    startPendingRef.current = true;
+    setStartPending(true);
+    try {
+      onStart();
+    } catch (error) {
+      startPendingRef.current = false;
+      setStartPending(false);
+      throw error;
+    }
+  }
+
   return (
     <section
       className="screen-shell floor-intro-screen"
@@ -69,7 +86,7 @@ export function FloorIntroScreen({
         {encounter.index === 0 && onBack !== undefined ? (
           <button className="secondary-button" type="button" onClick={onBack}>타워로</button>
         ) : null}
-        <button type="button" onClick={onStart}>대전 시작</button>
+        <button disabled={startPending} type="button" onClick={startMatch}>대전 시작</button>
       </div>
     </section>
   );

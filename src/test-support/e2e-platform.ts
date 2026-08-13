@@ -8,6 +8,13 @@ const E2E_SAFE_AREA: SafeArea = {
   left: 4,
 };
 
+function configuredSafeArea(): SafeArea {
+  const configured = (globalThis as typeof globalThis & {
+    __TE_PPU_E2E_SAFE_AREA__?: SafeArea;
+  }).__TE_PPU_E2E_SAFE_AREA__;
+  return configured ?? E2E_SAFE_AREA;
+}
+
 export function createE2EPlatform(
   controller: E2EDriverController,
 ): PlatformPort {
@@ -17,7 +24,7 @@ export function createE2EPlatform(
       return { kind: 'local', key: 'local-browser' };
     },
     getInitialSafeArea() {
-      return E2E_SAFE_AREA;
+      return configuredSafeArea();
     },
     subscribeSafeArea() {
       return () => undefined;

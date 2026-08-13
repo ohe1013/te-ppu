@@ -406,6 +406,26 @@ describe('tower controller', () => {
     expect(controller.route).toBe('MATCH');
   });
 
+  it('rejects duplicate floor starts without replacing the live match', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    const started = controller.startFloor(1, 10);
+    if (!started.ok) throw new Error('floor 1 should start');
+    const liveMatch = controller.match;
+    const liveAi = controller.ai;
+
+    expect(controller.startFloor(1, 11)).toEqual({
+      ok: false,
+      reason: 'MATCH_ALREADY_ACTIVE',
+    });
+    expect(controller.startEncounter(12)).toEqual({
+      ok: false,
+      reason: 'MATCH_ALREADY_ACTIVE',
+    });
+    expect(controller.match).toBe(liveMatch);
+    expect(controller.ai).toBe(liveAi);
+    expect(controller.match?.matchSeed).toBe(10);
+  });
+
   it('restarts with a fresh match and resets all battle-owned state', () => {
     const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
     const first = controller.startFloor(1, 10);
@@ -585,18 +605,77 @@ describe('tower controller', () => {
     expect(controller.startFloor(2, 20)).toEqual({ ok: false, reason: 'LOCKED_FLOOR' });
   });
 
-  it('abandons only live battle state and returns to the selected floor intro', () => {
+  it('suspends the current opponent at the tower without saving', async () => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
     controller.startFloor(1, 10);
+    await controller.completeEncounter('WIN');
+    controller.startEncounter(11);
 
-    controller.abandonMatch();
+    expect(controller.abandonMatch()).toEqual({
+      kind: 'floor',
+      series: { floor: 1, encounterIndex: 1, wins: 1 },
+    });
 
-    expect(controller.route).toBe('FLOOR_INTRO');
+    expect(controller.route).toBe('TOWER');
     expect(controller.selectedFloor).toBe(1);
+    expect(controller.currentSeries).toEqual({ floor: 1, encounterIndex: 1, wins: 1 });
+    expect(controller.suspendedBattle).toEqual({
+      kind: 'floor',
+      series: { floor: 1, encounterIndex: 1, wins: 1 },
+    });
     expect(controller.match).toBeNull();
     expect(controller.ai).toBeNull();
     expect(repository.saved).toEqual([]);
+  });
+
+  it('returns detached suspension snapshots and consumes one on a fresh restart', async () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    controller.startFloor(1, 10);
+    await controller.completeEncounter('WIN');
+    controller.startEncounter(11);
+    controller.abandonMatch();
+
+    const leaked = controller.suspendedBattle;
+    if (leaked?.kind !== 'floor') throw new Error('floor battle should be suspended');
+    (leaked.series as { encounterIndex: number }).encounterIndex = 2;
+
+    expect(controller.suspendedBattle).toEqual({
+      kind: 'floor',
+      series: { floor: 1, encounterIndex: 1, wins: 1 },
+    });
+    const restarted = controller.startEncounter(12);
+    expect(restarted).toMatchObject({
+      ok: true,
+      match: { matchSeed: 12 },
+      series: { floor: 1, encounterIndex: 1, wins: 1 },
+    });
+    expect(controller.suspendedBattle).toBeNull();
+  });
+
+  it('suspends and freshly restarts the hidden owl battle', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(progressUnlockedThrough(5), repository);
+    controller.startFloor(5, 50);
+    for (let index = 0; index < 3; index += 1) {
+      if (index > 0) controller.startEncounter(50 + index);
+      await controller.completeEncounter('WIN');
+    }
+    controller.startOwlMatch(77);
+    const savedBeforeAbandon = repository.saved.length;
+
+    expect(controller.abandonMatch()).toEqual({ kind: 'owl' });
+    expect(controller.route).toBe('TOWER');
+    expect(controller.suspendedBattle).toEqual({ kind: 'owl' });
+    expect(controller.match).toBeNull();
+    expect(controller.ai).toBeNull();
+    expect(repository.saved).toHaveLength(savedBeforeAbandon);
+
+    expect(controller.startOwlMatch(78)).toMatchObject({
+      ok: true,
+      match: { matchSeed: 78 },
+    });
+    expect(controller.suspendedBattle).toBeNull();
   });
 
   it('rejects completion after abandon or an already completed match', async () => {
@@ -608,7 +687,7 @@ describe('tower controller', () => {
     expect(await abandoned.completeFloor('WIN')).toEqual({
       ok: false,
       reason: 'NO_ACTIVE_MATCH',
-      route: 'FLOOR_INTRO',
+      route: 'TOWER',
     });
     expect(abandoned.progress).toEqual(DEFAULT_PROGRESS);
     expect(abandonedRepository.saved).toEqual([]);
@@ -657,13 +736,21 @@ describe('tower controller', () => {
     ]);
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
 
-    expect(await controller.updateSettings({ soundEnabled: false })).toEqual({
+    expect(await controller.updateSettings({ soundEnabled: false, bgmVolume: 40, sfxVolume: 80 })).toEqual({
       ok: false,
       reason: 'SAVE_FAILED',
       route: 'TOWER',
     });
     expect(controller.progress.settings).toEqual({
       soundEnabled: false,
+      bgmVolume: 40,
+      sfxVolume: 80,
+      hapticsEnabled: true,
+    });
+    expect(repository.saved[0]?.settings).toEqual({
+      soundEnabled: false,
+      bgmVolume: 40,
+      sfxVolume: 80,
       hapticsEnabled: true,
     });
     expect(await controller.retrySave()).toEqual({ ok: true, route: 'TOWER' });
@@ -673,6 +760,11 @@ describe('tower controller', () => {
   it.each([
     { soundEnabled: undefined },
     { hapticsEnabled: 'yes' },
+    { bgmVolume: -1 },
+    { bgmVolume: 101 },
+    { sfxVolume: 1.5 },
+    { sfxVolume: Number.NaN },
+    { unknown: true },
   ])('rejects invalid runtime settings without mutating or persisting them: %j', async (settings) => {
     const repository = new RecordingRepository();
     const controller = new TowerController(DEFAULT_PROGRESS, repository);
@@ -706,6 +798,8 @@ describe('tower controller', () => {
     expect(repository.saved).toHaveLength(2);
     expect(repository.saved[1]?.settings).toEqual({
       soundEnabled: false,
+      bgmVolume: 70,
+      sfxVolume: 100,
       hapticsEnabled: false,
     });
 
