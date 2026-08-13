@@ -22,7 +22,9 @@ const LIEUTENANT_PORTRAITS = ['idle', 'smug', 'attack', 'hit', 'panic', 'defeat'
 const DEMON_KING_PORTRAITS = ['idle', 'attack', 'hit', 'rage', 'defeat'] as const;
 const RIVAL_IDS = [
   'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
-  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'spark-slime',
+  'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
+  'chain-knight', 'night-archivist', 'demon-king',
 ] as const satisfies readonly FloorOpponentId[];
 
 type UnknownRecord = Record<string, unknown>;
@@ -154,6 +156,13 @@ export function parseAssetManifest(value: unknown): AssetManifest {
         'clock-moth': parseCharacter(characters['clock-moth'], LIEUTENANT_PORTRAITS),
         'glass-oracle': parseCharacter(characters['glass-oracle'], LIEUTENANT_PORTRAITS),
         'moss-golem': parseCharacter(characters['moss-golem'], LIEUTENANT_PORTRAITS),
+        'spark-slime': parseCharacter(characters['spark-slime'], LIEUTENANT_PORTRAITS),
+        'frost-smith': parseCharacter(characters['frost-smith'], LIEUTENANT_PORTRAITS),
+        'storm-harpy': parseCharacter(characters['storm-harpy'], LIEUTENANT_PORTRAITS),
+        'brass-minotaur': parseCharacter(characters['brass-minotaur'], LIEUTENANT_PORTRAITS),
+        'cinder-witch': parseCharacter(characters['cinder-witch'], LIEUTENANT_PORTRAITS),
+        'chain-knight': parseCharacter(characters['chain-knight'], LIEUTENANT_PORTRAITS),
+        'night-archivist': parseCharacter(characters['night-archivist'], LIEUTENANT_PORTRAITS),
         'demon-king': parseCharacter(characters['demon-king'], DEMON_KING_PORTRAITS),
       },
       tiles: parseRefs(common.tiles, TILE_IDS),

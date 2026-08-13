@@ -84,6 +84,18 @@ describe('parseAssetManifest', () => {
     }
   });
 
+  it('accepts every authored regular tower rival as a complete character bundle', () => {
+    const parsed = parseAssetManifest(COMPLETE_ASSET_MANIFEST);
+    if (parsed.mode !== 'assets') throw new Error('expected authored assets');
+
+    expect(Object.keys(parsed.common.characters).slice(4)).toEqual([
+      'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
+      'clock-moth', 'glass-oracle', 'moss-golem', 'spark-slime',
+      'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
+      'chain-knight', 'night-archivist', 'demon-king',
+    ]);
+  });
+
   it('rejects the complete legacy authored schema 2 player shape', () => {
     const manifest = cloneManifest();
     manifest.schemaVersion = 2;

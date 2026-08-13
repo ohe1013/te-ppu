@@ -68,6 +68,13 @@ export const COMPLETE_ASSET_MANIFEST = {
       'clock-moth': lieutenant('clock-moth'),
       'glass-oracle': lieutenant('glass-oracle'),
       'moss-golem': lieutenant('moss-golem'),
+      'spark-slime': lieutenant('spark-slime'),
+      'frost-smith': lieutenant('frost-smith'),
+      'storm-harpy': lieutenant('storm-harpy'),
+      'brass-minotaur': lieutenant('brass-minotaur'),
+      'cinder-witch': lieutenant('cinder-witch'),
+      'chain-knight': lieutenant('chain-knight'),
+      'night-archivist': lieutenant('night-archivist'),
       'demon-king': demonKing(),
     },
     tiles: {
@@ -123,22 +130,22 @@ export const COMPLETE_ASSET_MANIFEST = {
     '2': {
       music: 'early-floors',
       background: { path: 'backgrounds/floor-02.webp' },
-      encounters: ['alchemist', 'glass-oracle', 'clock-moth'],
+      encounters: ['alchemist', 'glass-oracle', 'spark-slime'],
     },
     '3': {
       music: 'late-floors',
       background: { path: 'backgrounds/floor-03.webp' },
-      encounters: ['guard-captain', 'moss-golem', 'glass-oracle'],
+      encounters: ['guard-captain', 'frost-smith', 'storm-harpy'],
     },
     '4': {
       music: 'late-floors',
       background: { path: 'backgrounds/floor-04.webp' },
-      encounters: ['dark-engineer', 'quartermaster', 'alchemist'],
+      encounters: ['dark-engineer', 'brass-minotaur', 'cinder-witch'],
     },
     '5': {
       music: 'demon-king',
       background: { path: 'backgrounds/floor-05.webp' },
-      encounters: ['clock-moth', 'glass-oracle', 'demon-king'],
+      encounters: ['chain-knight', 'night-archivist', 'demon-king'],
     },
   },
 } as const satisfies AssetManifestV1;

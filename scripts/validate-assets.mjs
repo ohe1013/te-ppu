@@ -105,6 +105,16 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.common.characters.moss-golem.portraits.hit', 'characters/moss-golem/portrait-hit.webp'],
   ['asset manifest.common.characters.moss-golem.portraits.panic', 'characters/moss-golem/portrait-panic.webp'],
   ['asset manifest.common.characters.moss-golem.portraits.defeat', 'characters/moss-golem/portrait-defeat.webp'],
+  ...[
+    'spark-slime', 'frost-smith', 'storm-harpy', 'brass-minotaur',
+    'cinder-witch', 'chain-knight', 'night-archivist',
+  ].flatMap((character) => [
+    ['asset manifest.common.characters.' + character + '.fullArt', 'characters/' + character + '/full.webp'],
+    ...LIEUTENANT_PORTRAITS.map((portrait) => [
+      'asset manifest.common.characters.' + character + '.portraits.' + portrait,
+      'characters/' + character + '/portrait-' + portrait + '.webp',
+    ]),
+  ]),
   ['asset manifest.common.characters.demon-king.fullArt', 'characters/demon-king/full.webp'],
   ['asset manifest.common.characters.demon-king.portraits.idle', 'characters/demon-king/portrait-idle.webp'],
   ['asset manifest.common.characters.demon-king.portraits.attack', 'characters/demon-king/portrait-attack.webp'],
@@ -145,47 +155,13 @@ const CANONICAL_ASSET_PATHS = [
   ['asset manifest.common.audio.bgm.demon-king', 'audio/bgm/demon-king.mp3'],
   ['asset manifest.common.audio.bgm.ending', 'audio/bgm/ending.mp3'],
   ['asset manifest.floors.1.background', 'backgrounds/floor-01.webp'],
-  ['asset manifest.floors.1.character.fullArt', 'characters/quartermaster/full.webp'],
-  ['asset manifest.floors.1.character.portraits.idle', 'characters/quartermaster/portrait-idle.webp'],
-  ['asset manifest.floors.1.character.portraits.smug', 'characters/quartermaster/portrait-smug.webp'],
-  ['asset manifest.floors.1.character.portraits.attack', 'characters/quartermaster/portrait-attack.webp'],
-  ['asset manifest.floors.1.character.portraits.hit', 'characters/quartermaster/portrait-hit.webp'],
-  ['asset manifest.floors.1.character.portraits.panic', 'characters/quartermaster/portrait-panic.webp'],
-  ['asset manifest.floors.1.character.portraits.defeat', 'characters/quartermaster/portrait-defeat.webp'],
   ['asset manifest.floors.2.background', 'backgrounds/floor-02.webp'],
-  ['asset manifest.floors.2.character.fullArt', 'characters/alchemist/full.webp'],
-  ['asset manifest.floors.2.character.portraits.idle', 'characters/alchemist/portrait-idle.webp'],
-  ['asset manifest.floors.2.character.portraits.smug', 'characters/alchemist/portrait-smug.webp'],
-  ['asset manifest.floors.2.character.portraits.attack', 'characters/alchemist/portrait-attack.webp'],
-  ['asset manifest.floors.2.character.portraits.hit', 'characters/alchemist/portrait-hit.webp'],
-  ['asset manifest.floors.2.character.portraits.panic', 'characters/alchemist/portrait-panic.webp'],
-  ['asset manifest.floors.2.character.portraits.defeat', 'characters/alchemist/portrait-defeat.webp'],
   ['asset manifest.floors.3.background', 'backgrounds/floor-03.webp'],
-  ['asset manifest.floors.3.character.fullArt', 'characters/guard-captain/full.webp'],
-  ['asset manifest.floors.3.character.portraits.idle', 'characters/guard-captain/portrait-idle.webp'],
-  ['asset manifest.floors.3.character.portraits.smug', 'characters/guard-captain/portrait-smug.webp'],
-  ['asset manifest.floors.3.character.portraits.attack', 'characters/guard-captain/portrait-attack.webp'],
-  ['asset manifest.floors.3.character.portraits.hit', 'characters/guard-captain/portrait-hit.webp'],
-  ['asset manifest.floors.3.character.portraits.panic', 'characters/guard-captain/portrait-panic.webp'],
-  ['asset manifest.floors.3.character.portraits.defeat', 'characters/guard-captain/portrait-defeat.webp'],
   ['asset manifest.floors.4.background', 'backgrounds/floor-04.webp'],
-  ['asset manifest.floors.4.character.fullArt', 'characters/dark-engineer/full.webp'],
-  ['asset manifest.floors.4.character.portraits.idle', 'characters/dark-engineer/portrait-idle.webp'],
-  ['asset manifest.floors.4.character.portraits.smug', 'characters/dark-engineer/portrait-smug.webp'],
-  ['asset manifest.floors.4.character.portraits.attack', 'characters/dark-engineer/portrait-attack.webp'],
-  ['asset manifest.floors.4.character.portraits.hit', 'characters/dark-engineer/portrait-hit.webp'],
-  ['asset manifest.floors.4.character.portraits.panic', 'characters/dark-engineer/portrait-panic.webp'],
-  ['asset manifest.floors.4.character.portraits.defeat', 'characters/dark-engineer/portrait-defeat.webp'],
   ['asset manifest.floors.5.background', 'backgrounds/floor-05.webp'],
-  ['asset manifest.floors.5.character.fullArt', 'characters/demon-king/full.webp'],
-  ['asset manifest.floors.5.character.portraits.idle', 'characters/demon-king/portrait-idle.webp'],
-  ['asset manifest.floors.5.character.portraits.attack', 'characters/demon-king/portrait-attack.webp'],
-  ['asset manifest.floors.5.character.portraits.hit', 'characters/demon-king/portrait-hit.webp'],
-  ['asset manifest.floors.5.character.portraits.rage', 'characters/demon-king/portrait-rage.webp'],
-  ['asset manifest.floors.5.character.portraits.defeat', 'characters/demon-king/portrait-defeat.webp'],
 ];
 const CANONICAL_PATH_BY_SLOT = new Map(CANONICAL_ASSET_PATHS);
-const REQUIRED_UNIQUE_ASSET_COUNT = 120;
+const REQUIRED_UNIQUE_ASSET_COUNT = 169;
 
 function fail(message) {
   throw new Error(message);
@@ -250,7 +226,9 @@ function collectCharacter(value, portraitIds, references, context) {
 
 const RIVAL_IDS = [
   'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
-  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'spark-slime',
+  'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
+  'chain-knight', 'night-archivist', 'demon-king',
 ];
 
 function collectEncounters(value, context) {

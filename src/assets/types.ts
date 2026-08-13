@@ -6,7 +6,10 @@ import type { Floor } from '../progression';
 export type CharacterId = PlayerCharacterId
   | 'owl-companion' | 'quartermaster' | 'alchemist'
   | 'guard-captain' | 'dark-engineer' | 'clock-moth'
-  | 'glass-oracle' | 'moss-golem' | 'demon-king';
+  | 'glass-oracle' | 'moss-golem' | 'spark-slime'
+  | 'frost-smith' | 'storm-harpy' | 'brass-minotaur'
+  | 'cinder-witch' | 'chain-knight' | 'night-archivist'
+  | 'demon-king';
 
 export type PortraitState =
   | 'idle' | 'focus' | 'attack' | 'hit' | 'win' | 'loss'
@@ -52,6 +55,13 @@ interface AuthoredAssetManifestV3 {
       readonly 'clock-moth': CharacterManifest<LieutenantPortraits>;
       readonly 'glass-oracle': CharacterManifest<LieutenantPortraits>;
       readonly 'moss-golem': CharacterManifest<LieutenantPortraits>;
+      readonly 'spark-slime': CharacterManifest<LieutenantPortraits>;
+      readonly 'frost-smith': CharacterManifest<LieutenantPortraits>;
+      readonly 'storm-harpy': CharacterManifest<LieutenantPortraits>;
+      readonly 'brass-minotaur': CharacterManifest<LieutenantPortraits>;
+      readonly 'cinder-witch': CharacterManifest<LieutenantPortraits>;
+      readonly 'chain-knight': CharacterManifest<LieutenantPortraits>;
+      readonly 'night-archivist': CharacterManifest<LieutenantPortraits>;
       readonly 'demon-king': CharacterManifest<DemonKingPortraits>;
     };
     readonly tiles: Readonly<Record<PieceKind | 'garbage', ManifestRef>>;
@@ -169,7 +179,9 @@ export interface CommonAssets {
 export type FloorOpponentId =
   | 'quartermaster' | 'alchemist' | 'guard-captain'
   | 'dark-engineer' | 'clock-moth' | 'glass-oracle'
-  | 'moss-golem' | 'demon-king';
+  | 'moss-golem' | 'spark-slime' | 'frost-smith'
+  | 'storm-harpy' | 'brass-minotaur' | 'cinder-witch'
+  | 'chain-knight' | 'night-archivist' | 'demon-king';
 
 export interface FloorAssetBundle {
   readonly floor: Floor;

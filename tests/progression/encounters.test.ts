@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { FLOORS, getFloorEncounter, getFloorEncounters } from '../../src/progression';
 
 describe('floor encounter catalog', () => {
+  it('assigns a unique rival to every regular tower encounter', () => {
+    const encounters = FLOORS.flatMap((floor) => [...getFloorEncounters(floor)]);
+
+    expect(encounters).toHaveLength(15);
+    expect(new Set(encounters.map(({ characterId }) => characterId)).size).toBe(15);
+  });
+
   it('contains three ordered encounters for every floor', () => {
     for (const floor of FLOORS) {
       const encounters = getFloorEncounters(floor);

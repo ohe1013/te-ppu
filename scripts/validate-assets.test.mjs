@@ -173,6 +173,13 @@ function completeManifest() {
         'clock-moth': rival('clock-moth'),
         'glass-oracle': rival('glass-oracle'),
         'moss-golem': rival('moss-golem'),
+        'spark-slime': rival('spark-slime'),
+        'frost-smith': rival('frost-smith'),
+        'storm-harpy': rival('storm-harpy'),
+        'brass-minotaur': rival('brass-minotaur'),
+        'cinder-witch': rival('cinder-witch'),
+        'chain-knight': rival('chain-knight'),
+        'night-archivist': rival('night-archivist'),
         'demon-king': {
           fullArt: ref('characters/demon-king/full.webp'),
           portraits: portraits('demon-king', ['idle', 'attack', 'hit', 'rage', 'defeat']),
@@ -226,22 +233,22 @@ function completeManifest() {
       2: {
         music: 'early-floors',
         background: ref('backgrounds/floor-02.webp'),
-        encounters: ['alchemist', 'glass-oracle', 'clock-moth'],
+        encounters: ['alchemist', 'glass-oracle', 'spark-slime'],
       },
       3: {
         music: 'late-floors',
         background: ref('backgrounds/floor-03.webp'),
-        encounters: ['guard-captain', 'moss-golem', 'glass-oracle'],
+        encounters: ['guard-captain', 'frost-smith', 'storm-harpy'],
       },
       4: {
         music: 'late-floors',
         background: ref('backgrounds/floor-04.webp'),
-        encounters: ['dark-engineer', 'quartermaster', 'alchemist'],
+        encounters: ['dark-engineer', 'brass-minotaur', 'cinder-witch'],
       },
       5: {
         music: 'demon-king',
         background: ref('backgrounds/floor-05.webp'),
-        encounters: ['clock-moth', 'glass-oracle', 'demon-king'],
+        encounters: ['chain-knight', 'night-archivist', 'demon-king'],
       },
     },
   };

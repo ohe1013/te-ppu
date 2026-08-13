@@ -28,9 +28,9 @@ built-in image generation, Vite, Playwright, Apps-in-Toss AIT packaging
 - Modify: `tests/progression/encounters.test.ts`
 - Create: design and implementation documents for this change
 
-- [ ] Add a regression that flattens all five encounter lists, requires exactly
+- [x] Add a regression that flattens all five encounter lists, requires exactly
   fifteen entries, and requires fifteen unique character IDs.
-- [ ] Run only that test and confirm it fails against the current eight-ID roster.
+- [x] Run only that test and confirm it fails against the current eight-ID roster.
 
 ### Task 2: Extend the asset and manifest contracts
 
@@ -41,21 +41,21 @@ built-in image generation, Vite, Playwright, Apps-in-Toss AIT packaging
 - Modify: `scripts/validate-assets.mjs`
 - Modify related asset tests when their literal catalog changes
 
-- [ ] Add `spark-slime`, `frost-smith`, `storm-harpy`, `brass-minotaur`,
+- [x] Add `spark-slime`, `frost-smith`, `storm-harpy`, `brass-minotaur`,
   `cinder-witch`, `chain-knight`, and `night-archivist` everywhere the authored
   character catalog is declared or parsed.
-- [ ] Add failing manifest/validator assertions before production manifest edits.
+- [x] Add failing manifest/validator assertions before production manifest edits.
 
 ### Task 3: Author and validate seven full-body masters
 
 **Files:**
 - Create: `public/assets/characters/<new-id>/full.webp` for all seven IDs
 
-- [ ] Use the existing rivals as style/composition references and issue one
+- [x] Use the existing rivals as style/composition references and issue one
   built-in image-generation call per distinct character.
-- [ ] Generate each subject on a uniform chroma field, remove it with the
+- [x] Generate each subject on a uniform chroma field, remove it with the
   installed helper, and normalize only canvas size/format.
-- [ ] Inspect each source and final at original resolution; require complete
+- [x] Inspect each source and final at original resolution; require complete
   head, feet, prop, transparent corners, and a readable distinct silhouette.
 
 ### Task 4: Derive portrait states and wire the roster
@@ -66,12 +66,12 @@ built-in image generation, Vite, Playwright, Apps-in-Toss AIT packaging
 - Modify: `src/progression/encounters.ts`
 - Create: six portrait WebPs below each new character directory
 
-- [ ] Register the seven lieutenant portrait specs and derive `idle`, `smug`,
+- [x] Register the seven lieutenant portrait specs and derive `idle`, `smug`,
   `attack`, `hit`, `panic`, and `defeat` from each accepted full master.
-- [ ] Add all full/portrait paths to the manifest.
-- [ ] Replace only the seven repeated encounter rows with the new IDs, names,
+- [x] Add all full/portrait paths to the manifest.
+- [x] Replace only the seven repeated encounter rows with the new IDs, names,
   titles, and story lines.
-- [ ] Run the uniqueness test and focused asset tests to GREEN.
+- [x] Run the uniqueness test and focused asset tests to GREEN.
 
 ### Task 5: Verify runtime presentation and delivery
 
@@ -79,18 +79,17 @@ built-in image generation, Vite, Playwright, Apps-in-Toss AIT packaging
 - Temporary task-owned capture/spec files only; remove them before commit
 - Rebuild: `artifacts/ait/game.ait`
 
-- [ ] Run image dimension/alpha diagnostics for all 49 new files.
-- [ ] Run the portrait generator twice and require stable hashes.
-- [ ] Run progression tests, asset tests, asset validation, source policy,
+- [x] Run image dimension/alpha diagnostics for all 49 new files.
+- [x] Run the portrait generator twice and require stable hashes.
+- [x] Run progression tests, asset tests, asset validation, source policy,
   typecheck, full Vitest, web build, and delivery gates.
-- [ ] Exercise a 360x640 tower-to-match path for the new opponents and inspect
+- [x] Exercise a 360x640 tower-to-match path for the new opponents and inspect
   representative floor-intro and battle captures.
-- [ ] Build the AIT artifact and explicitly verify
+- [x] Build the AIT artifact and explicitly verify
   `artifacts/ait/game.ait`.
 
 ### Task 6: Review and commit
 
-- [ ] Inspect `git diff`, confirm no existing character or `tmp/` content changed,
+- [x] Inspect `git diff`, confirm no existing character or `tmp/` content changed,
   and stage only task-owned files.
-- [ ] Commit with `feat: add unique tower rivals`.
-
+- [x] Commit with `feat: add unique tower rivals`.

@@ -46,6 +46,32 @@ existing opponent in that floor.
 - State variants share one crop and identity; existing overlays provide the
   expression/action emphasis without inventing separate inconsistent masters.
 
+## Generation Prompt Set
+
+Each master used the built-in image generator with this shared direction:
+"Original mobile puzzle-battle rival, polished Japanese arcade character art,
+complete centered full body and signature prop, crisp thick deep-navy outline,
+clean cel shading, readable face, strong silhouette, square 1024 canvas, flat
+`#00ff00` background only, no text, logo, watermark, scenery, floor, cast
+shadow, cropped anatomy, or frame contact."
+
+The seven subject prompts were:
+
+- `spark-slime`: round cyan electric slime experiment inside a copper coil
+  harness, tiny conductor baton, playful sparks, mischievous grin.
+- `frost-smith`: broad navy-and-ice artisan, crystal beard and eyebrows,
+  oversized blocky translucent hammer, sturdy boots and apron.
+- `storm-harpy`: lean teal sky duelist, solid feather wing-blades, swept silver
+  hair, taloned boots, yellow wind ribbons and confident expression.
+- `brass-minotaur`: heavy red-brown furnace guardian, brass plate armor, piston
+  horns, glowing orange vents, broad planted stance and massive gauntlets.
+- `cinder-witch`: triangular coal-black mantle, ember-orange hair, pointed hat,
+  glowing coal familiar and crooked fire staff, sly caster pose.
+- `chain-knight`: tall cobalt castle jailer, narrow visor, shield-like chain
+  reel, heavy links, long armored silhouette and disciplined stance.
+- `night-archivist`: floating violet royal scribe, crescent spellbook, ink-blue
+  robes, gold trim, luminous seals and calm severe expression.
+
 ## Data and Loading Contract
 
 Extend `FloorOpponentId`, the authored manifest schema/parser/fixture, the
@@ -73,4 +99,3 @@ The progression contract becomes:
   missing-asset fallback, clipped head/feet, or oversized portrait.
 - No existing character art, gameplay rules, save schema, audio, or user-owned
   untracked files are changed.
-
