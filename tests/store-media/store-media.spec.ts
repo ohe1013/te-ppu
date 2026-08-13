@@ -3,7 +3,9 @@ import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, seedReturningProfile, test } from '../e2e/helpers';
 
-const MEDIA_ROOT = resolve('artifacts/apps-in-toss/store-media');
+const MEDIA_ROOT = resolve(
+  process.env.STORE_MEDIA_OUTPUT_DIR ?? 'artifacts/apps-in-toss/store-media',
+);
 const VIEWPORT = { width: 636, height: 1048 } as const;
 
 async function waitForVisuals(page: Page): Promise<void> {
@@ -67,5 +69,9 @@ test('captures title, tower, and populated battle upload screenshots', async ({ 
     await hardDropWithJoystick(page);
     await page.waitForTimeout(300);
   }
+  await page.evaluate(() => window.__TE_PPU_E2E__.setMatchPaused(true));
+  const pausedTick = await page.getByTestId('match-tick').textContent();
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId('match-tick')).toHaveText(pausedTick ?? '');
   await capture(page, 'screenshot-03-battle.png');
 });

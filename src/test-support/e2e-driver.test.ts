@@ -96,4 +96,21 @@ describe('E2E driver', () => {
 
     expect(seen).toEqual(['hidden', 'visible']);
   });
+
+  it('routes capture pause requests only to the active match loop', () => {
+    const controller = new E2EDriverController();
+    cleanups.push(controller.install());
+    const setPaused = vi.fn<(paused: boolean) => void>();
+    const unbindPause = controller.bindPause(setPaused);
+
+    window.__TE_PPU_E2E__.setMatchPaused(true);
+    window.__TE_PPU_E2E__.setMatchPaused(false);
+
+    expect(setPaused).toHaveBeenNthCalledWith(1, true);
+    expect(setPaused).toHaveBeenNthCalledWith(2, false);
+    unbindPause();
+    expect(() => window.__TE_PPU_E2E__.setMatchPaused(true)).toThrow(
+      'No E2E match loop is currently active.',
+    );
+  });
 });

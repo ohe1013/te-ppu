@@ -87,5 +87,20 @@ function E2EMatchRoute({
     }),
     [controller, props.encounterIndex, props.floor, props.onFinished, props.wins],
   );
-  return <MatchScreen {...props} useMatchLoopImpl={useMatchLoopImpl} />;
+  const loopRef = useMemo<{ current: MatchLoopView['setPaused'] | null }>(
+    () => ({ current: null }),
+    [],
+  );
+  const wrappedLoop = useCallback<MatchLoopHook>((options) => {
+    const loop = useMatchLoopImpl(options);
+    loopRef.current = loop.setPaused;
+    return loop;
+  }, [loopRef, useMatchLoopImpl]);
+  useEffect(
+    () => controller.bindPause((paused) => {
+      loopRef.current?.('background', paused);
+    }),
+    [controller, loopRef],
+  );
+  return <MatchScreen {...props} useMatchLoopImpl={wrappedLoop} />;
 }
