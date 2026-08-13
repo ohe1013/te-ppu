@@ -1,6 +1,8 @@
 # Rivet Character Scale Design
 
-**Status:** Revised after mobile visual review on 2026-08-13.
+**Status:** Superseded on 2026-08-13 by
+`2026-08-13-rivet-full-art-regeneration-design.md` after full-resolution review
+confirmed that the source illustration itself was already cropped.
 
 ## Problem
 
