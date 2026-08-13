@@ -592,7 +592,10 @@ describe('lifecycle UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '타워로 나가기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', true);
-    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByRole('dialog')).toHaveAttribute(
+      'aria-describedby',
+      'battle-abandon-confirmation-description',
+    );
     expect(screen.getByText('이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.'))
       .toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '계속하기' }));

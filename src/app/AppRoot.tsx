@@ -370,7 +370,12 @@ export function AppRoot({
     intro: Extract<AppRoute, { name: 'floor-intro' }>,
   ) {
     const scoreRun = scoreRunRef.current;
-    if (controller === null || scoreRun === null) return;
+    if (
+      controller === null
+      || scoreRun === null
+      || matchIdentityRef.current !== null
+      || completionPendingRef.current
+    ) return;
     const seed = createMatchSeed();
     const started = intro.encounterIndex === 0
       ? controller.startFloor(intro.floor, seed)
@@ -498,7 +503,12 @@ export function AppRoot({
 
   function startOwlMatch(): void {
     const scoreRun = scoreRunRef.current;
-    if (controller === null || scoreRun === null) return;
+    if (
+      controller === null
+      || scoreRun === null
+      || matchIdentityRef.current !== null
+      || completionPendingRef.current
+    ) return;
     const seed = createMatchSeed();
     const started = controller.startOwlMatch(seed);
     if (started.ok) {

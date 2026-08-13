@@ -50,7 +50,10 @@ export type StartFloorResult =
       readonly encounter: FloorEncounter;
       readonly series: FloorSeriesState;
     }
-  | { readonly ok: false; readonly reason: 'LOCKED_FLOOR' | 'NO_SELECTED_FLOOR' };
+  | {
+      readonly ok: false;
+      readonly reason: 'LOCKED_FLOOR' | 'MATCH_ALREADY_ACTIVE' | 'NO_SELECTED_FLOOR';
+    };
 
 export type StartEncounterResult =
   | {
@@ -61,7 +64,7 @@ export type StartEncounterResult =
     }
   | {
       readonly ok: false;
-      readonly reason: 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
+      readonly reason: 'MATCH_ALREADY_ACTIVE' | 'NO_SELECTED_FLOOR' | 'NO_ACTIVE_SERIES';
   };
 
 export type StartOwlMatchResult =
@@ -200,6 +203,9 @@ export class TowerController {
   }
 
   startFloor(floor: Floor, matchSeed: number): StartFloorResult {
+    if (this.currentMatch !== null || this.currentAi !== null) {
+      return { ok: false, reason: 'MATCH_ALREADY_ACTIVE' };
+    }
     if (!canSelectFloor(this.currentProgress, floor)) {
       return { ok: false, reason: 'LOCKED_FLOOR' };
     }
@@ -212,6 +218,9 @@ export class TowerController {
   }
 
   startEncounter(matchSeed: number): StartEncounterResult {
+    if (this.currentMatch !== null || this.currentAi !== null) {
+      return { ok: false, reason: 'MATCH_ALREADY_ACTIVE' };
+    }
     const floor = this.currentSelectedFloor;
     const series = this.currentSeriesState;
     if (floor === null) return { ok: false, reason: 'NO_SELECTED_FLOOR' };
@@ -239,6 +248,8 @@ export class TowerController {
     if (this.currentSelectedFloor === null) {
       return { ok: false, reason: 'NO_SELECTED_FLOOR' };
     }
+    this.currentMatch = null;
+    this.currentAi = null;
     return this.startFloor(this.currentSelectedFloor, matchSeed);
   }
 

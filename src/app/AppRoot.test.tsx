@@ -1433,6 +1433,7 @@ describe('AppRoot', () => {
     const user = userEvent.setup();
     const repository = new TestProgressRepository(floorOneProgress);
     let retained: RetainedMatchCallbacks | undefined;
+    const opponentTwoSeeds = new Set<number>();
     renderGame(
       repository,
       undefined,
@@ -1442,6 +1443,7 @@ describe('AppRoot', () => {
       (props) => {
         if (props.floor === 2 && props.encounterIndex === 1) {
           retained = retainMatchCallbacks(props);
+          opponentTwoSeeds.add(props.seed);
         }
       },
     );
@@ -1485,6 +1487,7 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '대전 시작' }));
     expect(await screen.findByTestId('match-encounter')).toHaveTextContent('1:1');
     expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+    expect([...opponentTwoSeeds]).toHaveLength(2);
   });
 
   it('returns to the tower and restarts a suspended owl battle', async () => {

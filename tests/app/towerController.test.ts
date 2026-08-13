@@ -406,6 +406,26 @@ describe('tower controller', () => {
     expect(controller.route).toBe('MATCH');
   });
 
+  it('rejects duplicate floor starts without replacing the live match', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    const started = controller.startFloor(1, 10);
+    if (!started.ok) throw new Error('floor 1 should start');
+    const liveMatch = controller.match;
+    const liveAi = controller.ai;
+
+    expect(controller.startFloor(1, 11)).toEqual({
+      ok: false,
+      reason: 'MATCH_ALREADY_ACTIVE',
+    });
+    expect(controller.startEncounter(12)).toEqual({
+      ok: false,
+      reason: 'MATCH_ALREADY_ACTIVE',
+    });
+    expect(controller.match).toBe(liveMatch);
+    expect(controller.ai).toBe(liveAi);
+    expect(controller.match?.matchSeed).toBe(10);
+  });
+
   it('restarts with a fresh match and resets all battle-owned state', () => {
     const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
     const first = controller.startFloor(1, 10);

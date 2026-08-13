@@ -81,6 +81,7 @@ export function BattleAbandonConfirmation({
   return (
     <ModalOverlay className="modal-overlay--exit">
       <div
+        aria-describedby="battle-abandon-confirmation-description"
         aria-labelledby="battle-abandon-confirmation-title"
         aria-modal="true"
         className="modal-overlay__surface exit-confirmation battle-abandon-confirmation"
@@ -91,7 +92,9 @@ export function BattleAbandonConfirmation({
       >
         <h2 id="battle-abandon-confirmation-title">현재 전투를 포기할까요?</h2>
         <p>타워로 돌아갑니다.</p>
-        <p>이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.</p>
+        <p id="battle-abandon-confirmation-description">
+          이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.
+        </p>
         <div className="exit-confirmation__actions">
           <button onClick={onCancel} type="button">
             계속하기
