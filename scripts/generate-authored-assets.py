@@ -326,7 +326,7 @@ PORTRAITS = {
 
 
 PORTRAIT_FRAMES = {
-    "hero-engineer": (0.50, 0.18, 0.56),
+    "hero-engineer": (0.50, 0.18, 0.72),
     "cloud-courier": (0.48, 0.18, 0.56),
     "star-alchemist": (0.45, 0.18, 0.56),
     "owl-companion": (0.50, 0.24, 0.56),

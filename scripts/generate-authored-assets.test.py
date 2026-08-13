@@ -145,6 +145,30 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
             self.assertGreater(size_fraction, 0)
             self.assertLessEqual(size_fraction, 1)
 
+    def test_rivet_portrait_crop_keeps_character_scale_below_the_approved_limit(self) -> None:
+        generator = load_generator()
+        source_path = (
+            PROJECT_ROOT
+            / "public"
+            / "assets"
+            / "characters"
+            / "hero-engineer"
+            / "full.webp"
+        )
+
+        with Image.open(source_path).convert("RGBA") as source:
+            visible_bounds = generator.alpha_content_bbox(source)
+
+        crop_box = generator.portrait_crop_box(
+            visible_bounds,
+            generator.PORTRAIT_FRAMES["hero-engineer"],
+        )
+        source_width = visible_bounds[2] - visible_bounds[0]
+        source_height = visible_bounds[3] - visible_bounds[1]
+        minimum_crop_size = round(min(source_width, source_height) * 0.70)
+
+        self.assertGreaterEqual(crop_box[2] - crop_box[0], minimum_crop_size)
+
     def test_portrait_crop_box_supports_an_off_center_frame(self) -> None:
         generator = load_generator()
 
