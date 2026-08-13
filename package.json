@@ -18,6 +18,7 @@
     "generate:audio": "node scripts/generate-authored-audio.cjs",
     "validate:ai": "node --expose-gc ./node_modules/tsx/dist/cli.mjs scripts/validate-ai-simulations.ts",
     "check:assets": "node scripts/validate-assets.mjs",
+    "check:store-media": "node scripts/qa/store-media.mjs",
     "check:ait-config": "node scripts/qa/check-ait-icon-env.mjs",
     "build:web": "npm run check:assets && vite build --mode browser",
     "build:ait": "npm run check:ait-config && node scripts/build-ait.mjs",
