@@ -1,7 +1,6 @@
 # Rivet Full-Art Regeneration Design
 
-**Status:** Direction A approved by the user on 2026-08-13; detailed spec
-awaiting user review before implementation.
+**Status:** Approved by the user for implementation on 2026-08-13.
 
 **Supersedes:** `2026-08-13-rivet-portrait-framing-design.md` as the visual
 source-of-truth for Rivet.
