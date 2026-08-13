@@ -4,7 +4,7 @@ Character masters are produced separately and placed under
 public/assets/characters/<id>/full.webp.  This script creates the strict
 16x16 pixel tiles, item cells, battle atlas, UI SVGs, and portrait derivatives
 used by the authored arcade pack. AI-authored backgrounds and character
-masters are preserved except for explicit, idempotent player-scale corrections.
+masters are always preserved when present.
 """
 
 from __future__ import annotations
@@ -23,10 +23,6 @@ ASSETS = ROOT / "public" / "assets"
 CHARACTERS = ASSETS / "characters"
 CONTENT_ALPHA_THRESHOLD = 32
 PORTRAIT_CROP_BUFFER_FRACTION = 0.04
-FULL_ART_ALPHA_COVERAGE_TOLERANCE = 0.005
-FULL_ART_ALPHA_COVERAGE_TARGETS = {
-    "hero-engineer": 0.32,
-}
 
 
 def rgba(hex_value: str, alpha: int = 255) -> tuple[int, int, int, int]:
@@ -330,7 +326,7 @@ PORTRAITS = {
 
 
 PORTRAIT_FRAMES = {
-    "hero-engineer": (0.50, 0.18, 0.72),
+    "hero-engineer": (0.50, 0.18, 0.80),
     "cloud-courier": (0.48, 0.18, 0.56),
     "star-alchemist": (0.45, 0.18, 0.56),
     "owl-companion": (0.50, 0.24, 0.56),
@@ -342,11 +338,6 @@ PORTRAIT_FRAMES = {
     "glass-oracle": (0.49, 0.20, 0.48),
     "moss-golem": (0.52, 0.25, 0.50),
     "demon-king": (0.51, 0.14, 0.45),
-}
-
-
-PORTRAIT_RENDER_SCALES = {
-    "hero-engineer": 0.88,
 }
 
 
@@ -389,60 +380,6 @@ def alpha_coverage(
     return visible_pixels / (image.width * image.height)
 
 
-def normalize_full_art_to_alpha_coverage(
-    image: Image.Image,
-    target_coverage: float,
-    tolerance: float = FULL_ART_ALPHA_COVERAGE_TOLERANCE,
-) -> Image.Image:
-    """Shrink oversized art onto its original canvas to a visible-area target.
-
-    Art that is already at or below the target is returned unchanged, making
-    repeated generator runs safe and preventing cumulative downscaling.
-    """
-    source = image.convert("RGBA")
-    current_coverage = alpha_coverage(source)
-    if current_coverage <= target_coverage + tolerance:
-        return source.copy()
-
-    scale = math.sqrt(target_coverage / current_coverage)
-    width = max(1, round(source.width * scale))
-    height = max(1, round(source.height * scale))
-    resized = source.resize((width, height), Image.Resampling.LANCZOS)
-    normalized = Image.new("RGBA", source.size, (0, 0, 0, 0))
-    normalized.alpha_composite(
-        resized,
-        ((source.width - width) // 2, (source.height - height) // 2),
-    )
-    return normalized
-
-
-def normalize_character_full_art(
-    characters: Iterable[str] | None = None,
-) -> list[str]:
-    """Apply declared player scale corrections and return changed characters."""
-    selected = (
-        set(FULL_ART_ALPHA_COVERAGE_TARGETS)
-        if characters is None
-        else set(characters) & set(FULL_ART_ALPHA_COVERAGE_TARGETS)
-    )
-    changed: list[str] = []
-    for character in sorted(selected):
-        source_path = CHARACTERS / character / "full.webp"
-        if not source_path.exists():
-            continue
-        with Image.open(source_path) as opened_source:
-            source = opened_source.convert("RGBA")
-        normalized = normalize_full_art_to_alpha_coverage(
-            source,
-            FULL_ART_ALPHA_COVERAGE_TARGETS[character],
-        )
-        if normalized.tobytes() == source.tobytes():
-            continue
-        write_webp(source_path, normalized, quality=95)
-        changed.append(character)
-    return changed
-
-
 def buffered_portrait_crop_box(
     crop_box: tuple[int, int, int, int],
     buffer_fraction: float = PORTRAIT_CROP_BUFFER_FRACTION,
@@ -474,12 +411,9 @@ def derive_portraits(
         bbox = alpha_content_bbox(source)
         crop_box = portrait_crop_box(bbox, PORTRAIT_FRAMES[character])
         crop = source.crop(buffered_portrait_crop_box(crop_box))
-        render_scale = PORTRAIT_RENDER_SCALES.get(character, 1.0)
-        render_size = max(1, round(240 * render_scale))
-        crop = crop.resize((render_size, render_size), Image.Resampling.LANCZOS)
+        crop = crop.resize((240, 240), Image.Resampling.LANCZOS)
         portrait_base = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
-        inset = (256 - render_size) // 2
-        portrait_base.alpha_composite(crop, (inset, inset))
+        portrait_base.alpha_composite(crop, (8, 8))
         for state in states:
             destination = CHARACTERS / character / f"portrait-{state}.webp"
             if destination.exists() and not force_derived_portraits:
@@ -573,7 +507,7 @@ def parse_args() -> argparse.Namespace:
         "--characters",
         nargs="+",
         choices=tuple(PORTRAITS),
-        help="only normalize and derive the selected character assets",
+        help="only derive portraits for the selected characters",
     )
     return parser.parse_args()
 
@@ -585,7 +519,6 @@ def main() -> None:
         generate_atlas()
         generate_icons()
         generate_backgrounds()
-    normalize_character_full_art(args.characters)
     derive_portraits(
         args.characters,
         force_derived_portraits=args.force_derived_portraits,

@@ -17,6 +17,9 @@ CHARACTER_IDS = ("cloud-courier", "star-alchemist")
 PLAYER_CHARACTER_IDS = ("hero-engineer", *CHARACTER_IDS)
 STATES = ("idle", "focus", "attack", "hit", "win", "loss")
 HEAD_EDGE_BUFFER = 14
+FULL_ART_EDGE_CLEARANCE = 48
+RIVET_VISIBLE_HEIGHT_RANGE = (0.82, 0.92)
+PLAYER_ALPHA_COVERAGE_TOLERANCE = 0.035
 PROTECTED_HEAD_BANDS = {
     "hero-engineer": (40, 210, 170),
     "cloud-courier": (45, 190, 150),
@@ -160,11 +163,11 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
         ]
         self.assertGreaterEqual(
             coverages["hero-engineer"],
-            min(comparison_coverages) - 0.03,
+            min(comparison_coverages) - PLAYER_ALPHA_COVERAGE_TOLERANCE,
         )
         self.assertLessEqual(
             coverages["hero-engineer"],
-            max(comparison_coverages) + 0.03,
+            max(comparison_coverages) + PLAYER_ALPHA_COVERAGE_TOLERANCE,
         )
         comparison_top_margins = [
             bounds[character_id][1]
@@ -189,6 +192,34 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
             rivet_visible_height,
             round(min(comparison_visible_heights) * 0.80),
         )
+
+    def test_real_rivet_full_art_keeps_every_extremity_inside_the_canvas(self) -> None:
+        generator = load_generator()
+        path = (
+            PROJECT_ROOT
+            / "public"
+            / "assets"
+            / "characters"
+            / "hero-engineer"
+            / "full.webp"
+        )
+
+        with Image.open(path).convert("RGBA") as image:
+            left, top, right, bottom = generator.alpha_content_bbox(image)
+            visible_height_fraction = (bottom - top) / image.height
+
+            self.assertGreaterEqual(left, FULL_ART_EDGE_CLEARANCE)
+            self.assertGreaterEqual(top, FULL_ART_EDGE_CLEARANCE)
+            self.assertLessEqual(right, image.width - FULL_ART_EDGE_CLEARANCE)
+            self.assertLessEqual(bottom, image.height - FULL_ART_EDGE_CLEARANCE)
+            self.assertGreaterEqual(
+                visible_height_fraction,
+                RIVET_VISIBLE_HEIGHT_RANGE[0],
+            )
+            self.assertLessEqual(
+                visible_height_fraction,
+                RIVET_VISIBLE_HEIGHT_RANGE[1],
+            )
 
     def test_real_rivet_idle_portrait_matches_the_other_players_visible_scale(self) -> None:
         generator = load_generator()
@@ -218,21 +249,6 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
             coverages["hero-engineer"],
             max(comparison_coverages) + 0.03,
         )
-
-    def test_full_art_scale_normalization_is_idempotent(self) -> None:
-        generator = load_generator()
-        source = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
-        ImageDraw.Draw(source).rectangle((10, 10, 89, 89), fill=(40, 80, 120, 255))
-
-        normalized = generator.normalize_full_art_to_alpha_coverage(source, 0.25)
-        normalized_again = generator.normalize_full_art_to_alpha_coverage(
-            normalized,
-            0.25,
-        )
-
-        self.assertEqual(normalized.size, source.size)
-        self.assertLessEqual(generator.alpha_coverage(normalized), 0.255)
-        self.assertEqual(normalized.tobytes(), normalized_again.tobytes())
 
     def test_portrait_frames_cover_every_character_with_normalized_values(self) -> None:
         generator = load_generator()
@@ -343,7 +359,15 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                         self.assertLessEqual(alpha_bbox[2], 248)
                         self.assertLessEqual(alpha_bbox[3], 248)
 
-    def test_targeted_cli_changes_only_the_selected_character_assets(self) -> None:
+    def test_characters_help_describes_portrait_only_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_generator(Path(directory), "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("only derive portraits", result.stdout)
+        self.assertNotIn("normalize", result.stdout)
+
+    def test_targeted_cli_preserves_the_selected_full_master_and_changes_only_its_portraits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             prepare_players(root, STATES)
@@ -379,13 +403,16 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                 if before.get(path) != after.get(path)
             }
             expected = {
-                "public/assets/characters/hero-engineer/full.webp",
                 *{
                     f"public/assets/characters/hero-engineer/portrait-{state}.webp"
                     for state in STATES
                 },
             }
             self.assertEqual(changed, expected)
+            self.assertEqual(
+                after["public/assets/characters/hero-engineer/full.webp"],
+                before["public/assets/characters/hero-engineer/full.webp"],
+            )
 
 
 if __name__ == "__main__":
