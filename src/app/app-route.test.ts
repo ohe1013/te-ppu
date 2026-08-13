@@ -18,6 +18,11 @@ const taskFiveEventsWithoutReturnToTitle = taskFiveEvents.filter(
   (event) => event.type !== 'return-to-title',
 );
 
+const towerResumeEvents = [
+  { type: 'resume-floor', series: { floor: 2, encounterIndex: 1, wins: 1 } },
+  { type: 'resume-owl' },
+] satisfies readonly AppRouteEvent[];
+
 const invalidEventCases: ReadonlyArray<readonly [
   string,
   AppRoute,
@@ -68,7 +73,6 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'start-match', seed: 1 },
     { type: 'retry', seed: 2 },
     { type: 'continue' },
-    { type: 'return-to-tower' },
   ]],
   ['result', {
     name: 'result', floor: 2, encounterIndex: 0, wins: 0, result: 'loss', seriesComplete: false,
@@ -104,7 +108,6 @@ const invalidEventCases: ReadonlyArray<readonly [
     { type: 'boot-ready' },
     { type: 'start-owl-match', seed: 1 },
     { type: 'match-finished', result: 'win' },
-    { type: 'return-to-tower' },
   ]],
   ['owl result', { name: 'owl-result', result: 'loss' }, [
     ...taskFiveEvents,
@@ -359,6 +362,28 @@ describe('reduceRoute', () => {
     )).toEqual({ name: 'tower' });
   });
 
+  it('returns live floor and owl matches to the tower', () => {
+    expect(reduceRoute(
+      { name: 'match', floor: 2, encounterIndex: 1, wins: 1, seed: 7 },
+      { type: 'return-to-tower' },
+    )).toEqual({ name: 'tower' });
+    expect(reduceRoute(
+      { name: 'owl-match', seed: 8 },
+      { type: 'return-to-tower' },
+    )).toEqual({ name: 'tower' });
+  });
+
+  it('resumes the exact suspended floor opponent or owl reveal from the tower', () => {
+    expect(reduceRoute(
+      { name: 'tower' },
+      { type: 'resume-floor', series: { floor: 2, encounterIndex: 1, wins: 1 } },
+    )).toEqual({ name: 'floor-intro', floor: 2, encounterIndex: 1, wins: 1 });
+    expect(reduceRoute(
+      { name: 'tower' },
+      { type: 'resume-owl' },
+    )).toEqual({ name: 'owl-reveal' });
+  });
+
   it('returns to title after the completed ending', () => {
     expect(reduceRoute(
       { name: 'ending' },
@@ -370,6 +395,13 @@ describe('reduceRoute', () => {
     'keeps the %s route referentially stable for every invalid event',
     (_name, route, events) => {
       for (const event of events) expect(reduceRoute(route, event)).toBe(route);
+    },
+  );
+
+  it.each(invalidEventCases.filter(([name]) => name !== 'tower'))(
+    'keeps the %s route stable for tower-only resume targets',
+    (_name, route) => {
+      for (const event of towerResumeEvents) expect(reduceRoute(route, event)).toBe(route);
     },
   );
 });
