@@ -131,6 +131,50 @@ test('resumes the same active run after visiting the title', async ({ page }) =>
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeDisabled();
 });
 
+test('returns from floor two opponent two and restarts that opponent fresh', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (const encounterIndex of [0, 1, 2] as const) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  await page.getByRole('button', { name: '2층 선택' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+  await page.getByRole('button', { name: '다음 상대' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  const confirmedScore = await page.getByTestId('run-score').textContent();
+  expect(confirmedScore).not.toBeNull();
+
+  await page.getByRole('button', { name: '타워로 나가기' }).click();
+  await page.getByRole('button', { name: '타워로 나가기 확인' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByTestId('tower-run-status')).toContainText('2층 2번째 상대');
+  await expect(page.getByTestId('tower-run-status')).toContainText(confirmedScore!);
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
+
+  await page.getByRole('button', { name: '2층 2번째 상대부터 계속' }).click();
+  await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+    'data-encounter-index',
+    '1',
+  );
+  await expect(page.getByText('유리 예언자 프리즘', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  await expect(page.getByTestId('run-score')).toHaveText(confirmedScore!);
+});
+
 test('shows the mascot and all three ordered floor-one rivals', async ({ page }) => {
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openTower(page);

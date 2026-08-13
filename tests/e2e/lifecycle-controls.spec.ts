@@ -250,11 +250,13 @@ test('preserves chosen volumes while hidden and resumes only after the visible 3
   await expect(page.getByRole('slider', { name: '효과음 음량' })).toHaveValue('80');
 });
 
-test('pauses for exit, cancels safely, and closes only after confirmation', async ({ page }) => {
+test('pauses for tower return, cancels safely, and never closes the app', async ({ page }) => {
   await openMatch(page);
 
-  await page.getByRole('button', { name: '게임 나가기' }).click();
+  await page.getByRole('button', { name: '타워로 나가기' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.'))
+    .toBeVisible();
   await expectViewportCenteredOverlay(page);
   await expect(page.getByRole('group', { name: '게임 조작' }))
     .toHaveAttribute('disabled', '');
@@ -266,20 +268,21 @@ test('pauses for exit, cancels safely, and closes only after confirmation', asyn
     .not.toHaveAttribute('disabled', '');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
 
-  await page.getByRole('button', { name: '게임 나가기' }).click();
-  await page.getByRole('button', { name: '게임 나가기 확인' }).click();
-  await expect.poll(
-    () => page.evaluate(() => window.__TE_PPU_E2E__.closeCount),
-  ).toBe(1);
+  await page.getByRole('button', { name: '타워로 나가기' }).click();
+  await page.getByRole('button', { name: '타워로 나가기 확인' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
 });
 
-test('shows a hanging close timeout and allows one retry after failure', async ({ page }) => {
-  await openMatch(page);
+test('shows a hanging title close timeout and allows one retry after failure', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('title-screen')).toBeVisible();
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setCloseMode('hang'));
-  await page.getByRole('button', { name: '게임 나가기' }).click();
+  await page.getByRole('button', { name: '게임 종료' }).click();
   const dialog = page.getByRole('dialog');
-  const confirm = dialog.getByRole('button', { name: '게임 나가기 확인' });
+  await expect(dialog).toContainText('게임 화면을 닫습니다.');
+  const confirm = dialog.getByRole('button', { name: '게임 종료 확인' });
   await confirm.evaluate((button) => {
     button.addEventListener('click', () => {
       document.documentElement.dataset.closeStartedAt = String(performance.now());
@@ -294,11 +297,11 @@ test('shows a hanging close timeout and allows one retry after failure', async (
     performance.now() - Number(document.documentElement.dataset.closeStartedAt)
   ));
   expect(closeElapsedMs).toBeLessThan(800);
-  await expect(dialog.getByRole('status')).toHaveText('게임을 닫지 못했습니다. 다시 시도해 주세요.');
+  await expect(dialog.getByRole('status')).toHaveText('게임을 종료하지 못했습니다. 다시 시도해 주세요.');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(1);
 
   await page.evaluate(() => window.__TE_PPU_E2E__.setCloseMode('resolve'));
-  await dialog.getByRole('button', { name: '게임 나가기 확인' }).click();
+  await dialog.getByRole('button', { name: '게임 종료 확인' }).click();
   await expect(dialog).toHaveAttribute('data-close-state', 'closing');
   expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(2);
 });
@@ -319,7 +322,7 @@ for (const viewport of [
     await expectViewportCenteredOverlay(page, ASYMMETRIC_SAFE_AREA);
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: '게임 나가기' }).click();
+    await page.getByRole('button', { name: '타워로 나가기' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expectViewportCenteredOverlay(page, ASYMMETRIC_SAFE_AREA);
     await page.getByRole('button', { name: '계속하기' }).click();
