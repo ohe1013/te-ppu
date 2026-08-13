@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCRIPT = PROJECT_ROOT / "scripts" / "generate-authored-assets.py"
 CHARACTER_IDS = ("cloud-courier", "star-alchemist")
+PLAYER_CHARACTER_IDS = ("hero-engineer", *CHARACTER_IDS)
 STATES = ("idle", "focus", "attack", "hit", "win", "loss")
 HEAD_EDGE_BUFFER = 14
 PROTECTED_HEAD_BANDS = {
@@ -133,6 +134,106 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                 self.assertGreaterEqual(absolute_head_bbox[1], HEAD_EDGE_BUFFER)
                 self.assertLessEqual(absolute_head_bbox[2], 256 - HEAD_EDGE_BUFFER)
 
+    def test_real_rivet_full_art_matches_the_other_players_visible_scale(self) -> None:
+        generator = load_generator()
+        coverages: dict[str, float] = {}
+        bounds: dict[str, tuple[int, int, int, int]] = {}
+        canvas_heights: dict[str, int] = {}
+
+        for character_id in PLAYER_CHARACTER_IDS:
+            path = (
+                PROJECT_ROOT
+                / "public"
+                / "assets"
+                / "characters"
+                / character_id
+                / "full.webp"
+            )
+            with Image.open(path).convert("RGBA") as image:
+                coverages[character_id] = generator.alpha_coverage(image)
+                bounds[character_id] = generator.alpha_content_bbox(image)
+                canvas_heights[character_id] = image.height
+
+        comparison_coverages = [
+            coverages[character_id]
+            for character_id in CHARACTER_IDS
+        ]
+        self.assertGreaterEqual(
+            coverages["hero-engineer"],
+            min(comparison_coverages) - 0.03,
+        )
+        self.assertLessEqual(
+            coverages["hero-engineer"],
+            max(comparison_coverages) + 0.03,
+        )
+        comparison_top_margins = [
+            bounds[character_id][1]
+            for character_id in CHARACTER_IDS
+        ]
+        self.assertGreaterEqual(
+            bounds["hero-engineer"][1],
+            min(comparison_top_margins) - 10,
+        )
+        self.assertLessEqual(
+            bounds["hero-engineer"][1],
+            round(canvas_heights["hero-engineer"] * 0.15),
+        )
+        comparison_visible_heights = [
+            bounds[character_id][3] - bounds[character_id][1]
+            for character_id in CHARACTER_IDS
+        ]
+        rivet_visible_height = (
+            bounds["hero-engineer"][3] - bounds["hero-engineer"][1]
+        )
+        self.assertGreaterEqual(
+            rivet_visible_height,
+            round(min(comparison_visible_heights) * 0.80),
+        )
+
+    def test_real_rivet_idle_portrait_matches_the_other_players_visible_scale(self) -> None:
+        generator = load_generator()
+        coverages: dict[str, float] = {}
+
+        for character_id in PLAYER_CHARACTER_IDS:
+            path = (
+                PROJECT_ROOT
+                / "public"
+                / "assets"
+                / "characters"
+                / character_id
+                / "portrait-idle.webp"
+            )
+            with Image.open(path).convert("RGBA") as image:
+                coverages[character_id] = generator.alpha_coverage(image)
+
+        comparison_coverages = [
+            coverages[character_id]
+            for character_id in CHARACTER_IDS
+        ]
+        self.assertGreaterEqual(
+            coverages["hero-engineer"],
+            min(comparison_coverages) - 0.03,
+        )
+        self.assertLessEqual(
+            coverages["hero-engineer"],
+            max(comparison_coverages) + 0.03,
+        )
+
+    def test_full_art_scale_normalization_is_idempotent(self) -> None:
+        generator = load_generator()
+        source = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        ImageDraw.Draw(source).rectangle((10, 10, 89, 89), fill=(40, 80, 120, 255))
+
+        normalized = generator.normalize_full_art_to_alpha_coverage(source, 0.25)
+        normalized_again = generator.normalize_full_art_to_alpha_coverage(
+            normalized,
+            0.25,
+        )
+
+        self.assertEqual(normalized.size, source.size)
+        self.assertLessEqual(generator.alpha_coverage(normalized), 0.255)
+        self.assertEqual(normalized.tobytes(), normalized_again.tobytes())
+
     def test_portrait_frames_cover_every_character_with_normalized_values(self) -> None:
         generator = load_generator()
 
@@ -241,6 +342,50 @@ class GenerateAuthoredAssetsTest(unittest.TestCase):
                         self.assertGreaterEqual(alpha_bbox[1], 8)
                         self.assertLessEqual(alpha_bbox[2], 248)
                         self.assertLessEqual(alpha_bbox[3], 248)
+
+    def test_targeted_cli_changes_only_the_selected_character_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepare_players(root, STATES)
+            hero = root / "public" / "assets" / "characters" / "hero-engineer"
+            write_full_art(hero / "full.webp", (245, 105, 75, 255))
+            for index, state in enumerate(STATES):
+                write_portrait(
+                    hero / f"portrait-{state}.webp",
+                    (245 - index * 10, 75 + index * 12, 55 + index * 8, 255),
+                )
+            before = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in (root / "public").rglob("*")
+                if path.is_file()
+            }
+
+            result = run_generator(
+                root,
+                "--characters",
+                "hero-engineer",
+                "--force-derived-portraits",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            after = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in (root / "public").rglob("*")
+                if path.is_file()
+            }
+            changed = {
+                path
+                for path in before | after
+                if before.get(path) != after.get(path)
+            }
+            expected = {
+                "public/assets/characters/hero-engineer/full.webp",
+                *{
+                    f"public/assets/characters/hero-engineer/portrait-{state}.webp"
+                    for state in STATES
+                },
+            }
+            self.assertEqual(changed, expected)
 
 
 if __name__ == "__main__":
