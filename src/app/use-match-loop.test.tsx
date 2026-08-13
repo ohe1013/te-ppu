@@ -522,6 +522,7 @@ describe('MatchScreen', () => {
       <MatchScreen
         audioPort={borrowedAudioPort}
         floor={2}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onScoreEvents={vi.fn()}
         onRetrySettingsSave={async () => true}

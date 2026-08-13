@@ -17,6 +17,7 @@ const canvasPropsSpy = vi.hoisted(() => vi.fn());
 const lifecycleProps: Pick<
   MatchScreenProps,
   | 'audioPort'
+  | 'onAbandon'
   | 'onRetrySettingsSave'
   | 'onScoreEvents'
   | 'onSettingsChange'
@@ -28,6 +29,7 @@ const lifecycleProps: Pick<
   | 'runScore'
 > = {
   audioPort: createAudioPort(),
+  onAbandon: vi.fn(),
   onRetrySettingsSave: async () => true,
   onScoreEvents: vi.fn(),
   onSettingsChange: async () => true,

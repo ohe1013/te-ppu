@@ -3,6 +3,7 @@ import {
   FLOORS,
   getDifficultyProgress,
   type Difficulty,
+  type EncounterIndex,
   type Floor,
   type ProgressState,
   getFloorEncounters,
@@ -19,11 +20,17 @@ export interface TowerScreenProps {
   readonly onSelectFloor: (floor: Floor) => void;
   readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
   readonly commonAssets?: CommonAssets | null;
+  readonly continuation: TowerContinuation;
   readonly difficultySelectionLocked?: boolean;
   readonly requiredFloor: Floor;
   readonly runActive: boolean;
   readonly runScore: number;
 }
+
+export type TowerContinuation =
+  | { readonly kind: 'floor'; readonly floor: Floor; readonly encounterIndex: EncounterIndex }
+  | { readonly kind: 'owl' }
+  | null;
 
 const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
   easy: '쉬움',
@@ -33,6 +40,7 @@ const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
 
 export function TowerScreen({
   commonAssets,
+  continuation,
   difficultySelectionLocked = false,
   notice,
   onBack = () => undefined,
@@ -44,6 +52,11 @@ export function TowerScreen({
   runScore,
 }: TowerScreenProps) {
   const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
+  const runTarget = continuation?.kind === 'floor'
+    ? `${continuation.floor}층 ${continuation.encounterIndex + 1}번째 상대`
+    : continuation?.kind === 'owl'
+      ? '최종전 계속'
+      : `다음 ${requiredFloor}층`;
   return (
     <section
       className="screen-shell tower-screen"
@@ -76,7 +89,7 @@ export function TowerScreen({
       {notice !== null && <p className="notice" role="status">{notice}</p>}
       {runActive && (
         <p className="tower-run-status" data-testid="tower-run-status">
-          도전 중 · 다음 {requiredFloor}층 · 점수 {String(runScore).padStart(6, '0')}
+          도전 중 · {runTarget} · 점수 {String(runScore).padStart(6, '0')}
         </p>
       )}
       {difficultySelectionLocked && (
@@ -123,6 +136,16 @@ export function TowerScreen({
             ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
             : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
           const statusId = `floor-${floor}-status`;
+          const floorContinuation = continuation?.kind === 'floor'
+            && continuation.floor === floor
+            ? continuation
+            : null;
+          const owlContinuation = continuation?.kind === 'owl' && floor === 5;
+          const actionLabel = floorContinuation !== null
+            ? `${floor}층 ${floorContinuation.encounterIndex + 1}번째 상대부터 계속`
+            : owlContinuation
+              ? '최종전 계속'
+              : `${floor}층 선택`;
           return (
             <div
               className={`tower-node tower-node--${index % 2 === 0 ? 'left' : 'right'} ${
@@ -138,20 +161,20 @@ export function TowerScreen({
                   <small>3연전</small>
                 </div>
                 <CharacterStrip
-                  activeIndex={0}
+                  activeIndex={floorContinuation?.encounterIndex ?? 0}
                   encounters={getFloorEncounters(floor)}
                   rivals={commonAssets?.rivals ?? {}}
                   unlocked={unlocked}
                 />
                 <button
                   aria-describedby={statusId}
-                  aria-label={`${floor}층 선택`}
+                  aria-label={actionLabel}
                   className="floor-card"
                   disabled={!unlocked}
                   onClick={() => onSelectFloor(floor)}
                   type="button"
                 >
-                  <span>{floor}층 선택</span>
+                  <span>{actionLabel}</span>
                   <small id={statusId}>{status}</small>
                 </button>
               </div>

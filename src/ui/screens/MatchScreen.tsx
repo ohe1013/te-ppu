@@ -54,7 +54,7 @@ import {
   type PortraitPresentation,
   type PortraitRole,
 } from '../match/portrait-state';
-import { ExitConfirmation } from '../match/ExitConfirmation';
+import { BattleAbandonConfirmation } from '../match/BattleAbandonConfirmation';
 import { InputResetBus } from '../match/input-reset-bus';
 import { ItemControls } from '../match/ItemControls';
 import { Joystick } from '../match/Joystick';
@@ -81,6 +81,7 @@ export interface MatchScreenProps {
   readonly difficulty?: Difficulty;
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
+  readonly onAbandon: () => void;
   readonly onFinished: (outcome: MatchOutcome) => void | Promise<void>;
   readonly onScoreEvents?: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -243,6 +244,7 @@ export function MatchScreen({
   encounterIndex = 0,
   floor,
   wins = 0,
+  onAbandon,
   onFinished,
   onScoreEvents,
   onRetrySettingsSave,
@@ -463,7 +465,7 @@ export function MatchScreen({
             type="button"
           >
             <AssetIcon className="asset-icon" fallback="↩" image={commonAssets?.icons.exit} />
-            게임 나가기
+            타워로 나가기
           </button>
         </div>
       </header>
@@ -524,10 +526,10 @@ export function MatchScreen({
         </div>
       </fieldset>
       <ResumeCountdown count={resumeCountdown} />
-      <ExitConfirmation
+      <BattleAbandonConfirmation
         icon={commonAssets?.icons.exit}
         onCancel={cancelExitConfirmation}
-        onConfirm={() => platform.close()}
+        onConfirm={onAbandon}
         open={exitOpen}
       />
     </section>

@@ -75,6 +75,7 @@ export interface MatchRouteViewProps {
   readonly difficulty: ProgressState['selectedDifficulty'];
   readonly specialEncounter?: OwlEncounter;
   readonly seed: number;
+  readonly onAbandon: () => void;
   readonly onFinished: (outcome: MatchOutcome) => Promise<void>;
   readonly onScoreEvents: (events: readonly GameEvent[]) => void;
   readonly onRetrySettingsSave: () => Promise<boolean>;
@@ -267,6 +268,7 @@ export function AppRoot({
   });
   const scoreRunSnapshot = scoreRunRef.current?.snapshot ?? null;
   const runActive = scoreRunSnapshot?.phase === 'active';
+  const suspendedBattle = controller?.suspendedBattle ?? null;
   const profileCharacterId = controller?.progress.profile?.characterId;
   const selectedPlayerId = isPlayerCharacterId(profileCharacterId)
     ? profileCharacterId
@@ -408,6 +410,27 @@ export function AppRoot({
     if (!isCurrentMatch(identity) || identity.scoreRun.snapshot.phase !== 'active') return;
     identity.scoreRun.recordEvents(events);
     refreshControllerView();
+  }
+
+  function abandonMatch(identity: RankedMatchIdentity): void {
+    const routeMatchesIdentity = identity.kind === 'floor'
+      ? route.name === 'match'
+        && route.floor === identity.floor
+        && route.encounterIndex === identity.encounterIndex
+        && route.seed === identity.seed
+      : route.name === 'owl-match' && route.seed === identity.seed;
+    if (
+      controller === null
+      || !routeMatchesIdentity
+      || !isCurrentMatch(identity)
+      || completionPendingRef.current
+    ) return;
+    matchIdentityRef.current = null;
+    identity.scoreRun.abandonMatch();
+    const suspended = controller.abandonMatch();
+    if (suspended === null) return;
+    refreshControllerView();
+    dispatchRoute({ type: 'return-to-tower' });
   }
 
   async function saveFinalScore(record: ScoreRecord) {
@@ -780,6 +803,15 @@ export function AppRoot({
         content = (
           <TowerScreen
             commonAssets={commonAssets}
+            continuation={suspendedBattle?.kind === 'floor'
+              ? {
+                  kind: 'floor',
+                  floor: suspendedBattle.series.floor,
+                  encounterIndex: suspendedBattle.series.encounterIndex,
+                }
+              : suspendedBattle?.kind === 'owl'
+                ? { kind: 'owl' }
+                : null}
             difficultySelectionLocked={scoreRunSnapshot !== null
               && !isPristineRun(scoreRunSnapshot)}
             notice={boot.notice}
@@ -788,7 +820,14 @@ export function AppRoot({
             onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
             onSelectFloor={(floor) => {
               if (scoreRunRef.current?.canSelectFloor(floor) !== true) return;
-              dispatchRoute({ type: 'select-floor', floor });
+              const suspended = suspendedBattle;
+              if (suspended?.kind === 'floor' && suspended.series.floor === floor) {
+                dispatchRoute({ type: 'resume-floor', series: suspended.series });
+              } else if (suspended?.kind === 'owl' && floor === FINAL_FLOOR) {
+                dispatchRoute({ type: 'resume-owl' });
+              } else {
+                dispatchRoute({ type: 'select-floor', floor });
+              }
             }}
             requiredFloor={scoreRunSnapshot?.requiredFloor ?? 1}
             runActive={runActive}
@@ -825,6 +864,9 @@ export function AppRoot({
           player: selectedPlayer,
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
+          onAbandon: () => {
+            if (matchIdentity !== null) abandonMatch(matchIdentity);
+          },
           onFinished: (outcome) => matchIdentity === null
             ? Promise.resolve()
             : finishOwlMatch(matchIdentity, outcome),
@@ -901,6 +943,9 @@ export function AppRoot({
           player: selectedPlayer,
           playerAssets: selectedPlayerAssets,
           seed: route.seed,
+          onAbandon: () => {
+            if (matchIdentity !== null) abandonMatch(matchIdentity);
+          },
           onFinished: (outcome) => matchIdentity === null
             ? Promise.resolve()
             : finishMatch(matchIdentity, outcome),

@@ -530,11 +530,13 @@ describe('lifecycle UI', () => {
     const loop = createLoop();
     const platform = createPlatform();
     const audio = createAudio();
+    const onAbandon = vi.fn();
     useMatchLoopMock.mockReturnValue(loop);
     render(
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={onAbandon}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -571,17 +573,19 @@ describe('lifecycle UI', () => {
     fireEvent.pointerDown(screen.getByTestId('match-screen'));
     expect(audio.unlock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', true);
     expect(screen.getByRole('dialog')).toBeVisible();
+    expect(screen.getByText('이번 상대와 싸우며 얻은 점수와 전투 진행은 사라집니다.'))
+      .toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '계속하기' }));
     expect(loop.setPaused).toHaveBeenCalledWith('exit-confirmation', false);
     expect(platform.close).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기' }));
-    fireEvent.click(screen.getByRole('button', { name: '게임 나가기 확인' }));
-    await act(async () => undefined);
-    expect(platform.close).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    fireEvent.click(screen.getByRole('button', { name: '타워로 나가기 확인' }));
+    expect(onAbandon).toHaveBeenCalledOnce();
+    expect(platform.close).not.toHaveBeenCalled();
   });
 
   it('does not unlock or destroy borrowed audio during StrictMode or match unmount', async () => {
@@ -592,6 +596,7 @@ describe('lifecycle UI', () => {
         <MatchScreen
           audioPort={audio}
           floor={1}
+          onAbandon={vi.fn()}
           onFinished={vi.fn()}
           onRetrySettingsSave={vi.fn(async () => true)}
           onSettingsChange={vi.fn(async () => true)}
@@ -643,6 +648,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={createAudio()}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -682,6 +688,7 @@ describe('lifecycle UI', () => {
     const props = {
       audioPort: audio,
       floor: 1 as const,
+      onAbandon: vi.fn(),
       onFinished: vi.fn(),
       onRetrySettingsSave: vi.fn(async () => true),
       onSettingsChange: vi.fn(async () => true),
@@ -763,6 +770,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}
@@ -805,6 +813,7 @@ describe('lifecycle UI', () => {
       <MatchScreen
         audioPort={audio}
         floor={1}
+        onAbandon={vi.fn()}
         onFinished={vi.fn()}
         onRetrySettingsSave={vi.fn(async () => true)}
         onSettingsChange={vi.fn(async () => true)}

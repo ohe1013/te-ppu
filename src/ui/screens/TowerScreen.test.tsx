@@ -31,6 +31,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
@@ -55,6 +56,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={progress}
@@ -74,6 +76,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onBack={onBack}
         onSelectFloor={() => undefined}
@@ -92,6 +95,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={() => undefined}
         onSelectFloor={() => undefined}
@@ -116,6 +120,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
@@ -137,6 +142,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectDifficulty={onSelectDifficulty}
         onSelectFloor={() => undefined}
@@ -164,6 +170,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         notice={null}
         onSelectFloor={() => undefined}
         progress={historicallyUnlocked}
@@ -187,6 +194,7 @@ describe('TowerScreen', () => {
     render(
       <TowerScreen
         commonAssets={commonAssets}
+        continuation={null}
         difficultySelectionLocked
         notice={null}
         onSelectDifficulty={vi.fn()}
@@ -206,5 +214,31 @@ describe('TowerScreen', () => {
     );
     expect(screen.getByText('기어라이트 타워')).toBeInTheDocument();
     expect(screen.getByText('잠김')).toBeInTheDocument();
+  });
+
+  it('highlights and labels the exact suspended opponent', () => {
+    const floorTwoProgress = cloneProgressState(progress);
+    floorTwoProgress.difficultyProgress.easy.highestUnlockedFloor = 2;
+
+    render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={{ kind: 'floor', floor: 2, encounterIndex: 1 }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={floorTwoProgress}
+        requiredFloor={2}
+        runActive
+        runScore={6_250}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '도전 중 · 2층 2번째 상대 · 점수 006250',
+    );
+    expect(screen.getByRole('button', { name: '2층 2번째 상대부터 계속' })).toBeEnabled();
+    const floorTwo = screen.getByTestId('tower-route').querySelector('[data-floor="2"]');
+    expect(floorTwo?.querySelector('[data-encounter-index="1"]'))
+      .toHaveAttribute('data-encounter-state', 'active');
   });
 });

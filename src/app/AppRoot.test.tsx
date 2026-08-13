@@ -273,6 +273,7 @@ function TestMatch({
   floor,
   encounterIndex,
   wins,
+  onAbandon,
   onFinished,
   onScoreEvents,
   player,
@@ -308,6 +309,9 @@ function TestMatch({
       <button type="button" onClick={() => onScoreEvents(scoreEvents)}>
         emit score events
       </button>
+      <button type="button" onClick={onAbandon}>
+        타워로 나가기
+      </button>
       <button
         type="button"
         onClick={() => void onFinished({ result: 'win', durationTicks: 600 })}
@@ -339,10 +343,14 @@ function TestMatch({
   );
 }
 
-type RetainedMatchCallbacks = Pick<MatchRouteViewProps, 'onFinished' | 'onScoreEvents'>;
+type RetainedMatchCallbacks = Pick<
+  MatchRouteViewProps,
+  'onAbandon' | 'onFinished' | 'onScoreEvents'
+>;
 
 function retainMatchCallbacks(props: MatchRouteViewProps): RetainedMatchCallbacks {
   return {
+    onAbandon: props.onAbandon,
     onFinished: props.onFinished,
     onScoreEvents: props.onScoreEvents,
   };
@@ -1401,6 +1409,87 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: 'finish win' }));
 
     expect(await screen.findByTestId('result-score')).toHaveTextContent('RUN SCORE 001250');
+  });
+
+  it('returns to the tower and restarts floor two opponent two from its score checkpoint', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(floorOneProgress);
+    let retained: RetainedMatchCallbacks | undefined;
+    renderGame(
+      repository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (props) => {
+        if (props.floor === 2 && props.encounterIndex === 1) {
+          retained = retainMatchCallbacks(props);
+        }
+      },
+    );
+
+    await advanceRunToFloor(user, 2);
+    await enterMatch(user, 2, 0);
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    await finishWin(user);
+    await continueToNextEncounter(user);
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null || retained === undefined) {
+      throw new Error('second-opponent checkpoint was not captured');
+    }
+    const staleMatch = retained;
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent('2층 2번째 상대');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+
+    act(() => staleMatch.onScoreEvents([
+      { type: 'lines-cleared', side: 'player', amount: 4 },
+    ]));
+    await expect(act(async () => {
+      await staleMatch.onFinished({ result: 'win', durationTicks: 1 });
+    })).resolves.toBeUndefined();
+    staleMatch.onAbandon();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+
+    await user.click(screen.getByRole('button', { name: '처음으로' }));
+    await screen.findByTestId('title-screen');
+    await user.click(screen.getByRole('button', { name: '도전 계속' }));
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent('2층 2번째 상대');
+    await user.click(screen.getByRole('button', { name: '2층 2번째 상대부터 계속' }));
+
+    expect(await screen.findByTestId('floor-intro-screen')).toBeVisible();
+    expect(screen.getByText('유리 예언자 프리즘')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(await screen.findByTestId('match-encounter')).toHaveTextContent('1:1');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+  });
+
+  it('returns to the tower and restarts a suspended owl battle', async () => {
+    const user = userEvent.setup();
+    renderGame(new TestProgressRepository(floorFiveProgress));
+
+    await reachOwlReveal(user);
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('owl score checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-run-status')).toHaveTextContent('최종전 계속');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '최종전 계속' }));
+    expect(await screen.findByTestId('owl-reveal-screen')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
   });
 
   it('omits the tower-back action from an intermediate floor intro', async () => {
