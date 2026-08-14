@@ -102,12 +102,7 @@ if (-not $targetMatch.Success -or $targetMatch.Groups[1].Value -ne '36') {
     throw '[TEPPU_ANDROID_TARGET_SDK_MISMATCH] APK target SDK is incorrect.'
 }
 
-$expectedLabel = [string]::Concat(
-    [char]0xD14C,
-    [char]0xBFCC,
-    [char]0xB9AC,
-    [char]0xC2A4
-)
+$expectedLabel = Get-TeppuAndroidLabel
 $labelMatches = [regex]::Matches($badgingText, "(?m)^application-label(?:-[^:]*)?:'([^']*)'$")
 $labels = @($labelMatches | ForEach-Object { $_.Groups[1].Value })
 if ($labels -notcontains $expectedLabel) {

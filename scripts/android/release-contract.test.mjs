@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -126,4 +134,53 @@ test('release artifacts and verification reports are published atomically', () =
   assert.match(buildSource, /Publish-TeppuFileAtomically -Source \$temporaryArtifact/u);
   assert.match(buildSource, /Publish-TeppuFileAtomically -Source \$temporaryChecksum/u);
   assert.match(verifySource, /Publish-TeppuFileAtomically -Source \$temporaryReport/u);
+});
+
+test('PowerShell constructs the Korean Android label without overload failure', () => {
+  const common = join(root, 'scripts', 'android', 'AndroidRelease.Common.ps1');
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    `. '${common.replaceAll("'", "''")}'`,
+    '$actual = Get-TeppuAndroidLabel',
+    '$expected = -join @([char]0xD14C, [char]0xBFCC, [char]0xB9AC, [char]0xC2A4)',
+    "if (-not [string]::Equals($actual, $expected, [StringComparison]::Ordinal)) { throw 'label mismatch' }",
+    "Write-Output 'TEPPU_ANDROID_LABEL_OK'",
+  ].join('; ');
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile',
+    '-Command',
+    command,
+  ], { encoding: 'utf8', windowsHide: true });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  assert.equal(result.status, 0, output);
+  assert.match(output, /TEPPU_ANDROID_LABEL_OK/u);
+});
+
+test('PowerShell atomic publisher safely replaces an existing destination', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'teppu-atomic-publish-'));
+  const source = join(fixture, 'source.txt');
+  const destination = join(fixture, 'destination.txt');
+  const common = join(root, 'scripts', 'android', 'AndroidRelease.Common.ps1');
+  writeFileSync(source, 'new release', 'utf8');
+  writeFileSync(destination, 'old release', 'utf8');
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    `. '${common.replaceAll("'", "''")}'`,
+    `Publish-TeppuFileAtomically -Source '${source.replaceAll("'", "''")}' -Destination '${destination.replaceAll("'", "''")}'`,
+  ].join('; ');
+
+  try {
+    const result = spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      command,
+    ], { encoding: 'utf8', windowsHide: true });
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    assert.equal(result.status, 0, output);
+    assert.equal(readFileSync(destination, 'utf8'), 'new release');
+    assert.equal(existsSync(source), false);
+    assert.deepEqual(readdirSync(fixture), ['destination.txt']);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });

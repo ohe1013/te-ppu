@@ -1,5 +1,14 @@
 Set-StrictMode -Version Latest
 
+function Get-TeppuAndroidLabel {
+    return -join @(
+        [char]0xD14C,
+        [char]0xBFCC,
+        [char]0xB9AC,
+        [char]0xC2A4
+    )
+}
+
 function Resolve-TeppuUserProfileRoot {
     [CmdletBinding()]
     param(
@@ -79,7 +88,14 @@ function Publish-TeppuFileAtomically {
         throw '[TEPPU_ATOMIC_DIRECTORY_MISMATCH] Atomic publication requires one directory and volume.'
     }
     if (Test-Path -LiteralPath $resolvedDestination -PathType Leaf) {
-        [IO.File]::Replace($resolvedSource, $resolvedDestination, $null)
+        $backup = Join-Path (
+            [IO.Path]::GetDirectoryName($resolvedDestination)
+        ) ('.teppu-replaced-{0}-{1}.tmp' -f $PID, [guid]::NewGuid().ToString('N'))
+        try {
+            [IO.File]::Replace($resolvedSource, $resolvedDestination, $backup)
+        } finally {
+            [IO.File]::Delete($backup)
+        }
     } else {
         [IO.File]::Move($resolvedSource, $resolvedDestination)
     }
