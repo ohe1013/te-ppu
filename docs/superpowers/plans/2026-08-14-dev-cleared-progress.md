@@ -317,7 +317,7 @@ it('reloads profile and setting changes from only the cleared namespace', async 
   const factory = createDevClearedProgressRepositoryFactory(storage);
   const repository = factory.forIdentity(identity);
   const changed = createDevClearedProgress();
-  changed.profile = { initials: 'TST', characterId: 'hero-astral' };
+  changed.profile = { initials: 'TST', characterId: 'star-alchemist' };
   changed.settings.bgmVolume = 25;
 
   await repository.save(changed);
