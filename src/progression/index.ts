@@ -9,6 +9,7 @@ export type {
   PendingLeaderboardSubmissions,
 } from './schema';
 export { DEFAULT_PROGRESS, cloneProgressState, parsePersistedProgress, parseProgressState } from './schema';
+export { createDevClearedProgress } from './devClearedProgress';
 export {
   canSelectDifficulty,
   createDifficultyProgressMap,
