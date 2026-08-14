@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import {
   DIFFICULTIES,
   FLOORS,
@@ -51,12 +52,29 @@ export function TowerScreen({
   runActive,
   runScore,
 }: TowerScreenProps) {
+  const routeRef = useRef<HTMLDivElement>(null);
   const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
+  const targetFloor: Floor = continuation?.kind === 'floor'
+    ? continuation.floor
+    : continuation?.kind === 'owl'
+      ? 5
+      : requiredFloor;
   const runTarget = continuation?.kind === 'floor'
     ? `${continuation.floor}층 ${continuation.encounterIndex + 1}번째 상대`
     : continuation?.kind === 'owl'
       ? '최종전 계속'
       : `다음 ${requiredFloor}층`;
+
+  useLayoutEffect(() => {
+    const route = routeRef.current;
+    const target = route?.querySelector<HTMLElement>(`[data-floor="${targetFloor}"]`);
+    if (route === null || target === null || target === undefined) return;
+
+    const maximum = Math.max(0, route.scrollHeight - route.clientHeight);
+    const desired = target.offsetTop + target.offsetHeight - route.clientHeight;
+    route.scrollTop = Math.min(maximum, Math.max(0, desired));
+  }, [targetFloor]);
+
   return (
     <section
       className="screen-shell tower-screen"
@@ -122,6 +140,7 @@ export function TowerScreen({
         aria-label="타워 층 선택"
         className="floor-list tower-route tower-route--ascending tower-route--scrollable"
         data-testid="tower-route"
+        ref={routeRef}
         tabIndex={0}
       >
         <div className="tower-route__content">

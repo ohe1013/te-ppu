@@ -181,11 +181,11 @@ const expectFloorAtRouteBottom = async (floor: number) => {
       .getBoundingClientRect();
     return routeRect.top + element.clientTop + element.clientHeight - floorRect.bottom;
   }, floor);
-  expect(gap).toBeLessThanOrEqual(2);
+  expect(gap).toBeLessThanOrEqual(32);
 };
 ```
 
-Call `expectFloorAtRouteBottom(2)` immediately after entering the floor-2 tower and after returning through `도전 계속`. The production mutation this catches is using floor 1 or scroll position zero regardless of persisted run progress.
+Call `expectFloorAtRouteBottom(2)` immediately after entering the floor-2 tower and after returning through `도전 계속`. The 32-pixel lower-edge allowance covers the clamped `scrollTop = 0` case on a tall viewport where the target already sits at the lowest reachable position. The production mutation this catches is using floor 1 or an unrelated scroll position regardless of persisted run progress.
 
 - [ ] **Step 3: Correct the portrait-layout scroll-direction expectations**
 
@@ -195,15 +195,15 @@ The first DOM card is floor 1 and the last is floor 5. With a bottom-up tower, f
 expect(routeScrollTopBefore, 'floor 1 alignment should start above scroll origin')
   .toBeGreaterThan(0);
 await lastFloor.scrollIntoViewIfNeeded();
-expect(routeScrollTopAfter, 'floor 5 should scroll upward within the tower route')
-  .toBeLessThan(routeScrollTopBefore);
+expect(routeScrollTopAfter, 'floor 5 should never scroll downward within the tower route')
+  .toBeLessThanOrEqual(routeScrollTopBefore);
 
 // In the constrained viewport, moving from floor 5 back to floor 1 increases scrollTop.
 expect(constrainedRouteScrollTopAfter, 'floor 1 should scroll down within the tower route')
   .toBeGreaterThan(constrainedBefore.scrollTop);
 ```
 
-Keep the existing assertions that the app shell never moves and the route remains scrollable at 360x480.
+Keep the existing assertions that floor 5 is visible, the app shell never moves, and the route remains scrollable at 360x480. Equality is valid on a tall viewport where floor 5 is already completely visible and `scrollIntoViewIfNeeded()` correctly performs no movement.
 
 - [ ] **Step 4: Run the focused browser tests and verify RED**
 

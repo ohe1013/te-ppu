@@ -169,11 +169,13 @@ for (const { viewport } of PORTRAITS) {
       .toBeLessThanOrEqual(viewport.width + 0.5);
     const appScrollTopBefore = await appShell.evaluate((node) => node.scrollTop);
     const routeScrollTopBefore = await towerRoute.evaluate((node) => node.scrollTop);
+    expect(routeScrollTopBefore, 'floor 1 alignment should start above scroll origin')
+      .toBeGreaterThan(0);
     await lastFloor.scrollIntoViewIfNeeded();
     const appScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
     const routeScrollTopAfter = await towerRoute.evaluate((node) => node.scrollTop);
-    expect(routeScrollTopAfter, 'floor 5 should scroll the tower route')
-      .toBeGreaterThan(routeScrollTopBefore);
+    expect(routeScrollTopAfter, 'floor 5 should never scroll downward within the tower route')
+      .toBeLessThanOrEqual(routeScrollTopBefore);
     expect(appScrollTopAfter, 'floor 5 should not scroll the app shell')
       .toBe(appScrollTopBefore);
     await expectInsideViewport(lastFloor, viewport, 'last floor card after scrolling');
@@ -190,8 +192,8 @@ for (const { viewport } of PORTRAITS) {
       await firstFloor.scrollIntoViewIfNeeded();
       const constrainedRouteScrollTopAfter = await towerRoute.evaluate((node) => node.scrollTop);
       const constrainedAppScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
-      expect(constrainedRouteScrollTopAfter, 'floor 1 should scroll back within the tower route')
-        .toBeLessThan(constrainedBefore.scrollTop);
+      expect(constrainedRouteScrollTopAfter, 'floor 1 should scroll down within the tower route')
+        .toBeGreaterThan(constrainedBefore.scrollTop);
       expect(constrainedAppScrollTopAfter, 'floor 1 should not scroll the constrained app shell')
         .toBe(constrainedAppScrollTopBefore);
       await page.setViewportSize(viewport);

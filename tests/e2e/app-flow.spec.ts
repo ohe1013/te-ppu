@@ -165,51 +165,69 @@ test('shows a usable tower screen in under ten seconds', async ({ page }) => {
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
 });
 
-test('starts at floor one and confines scrolling to the tower route', async ({ page }) => {
+test('keeps floor one at the bottom and confines scrolling to the tower route', async ({ page }) => {
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openTower(page);
 
   const app = page.getByTestId('app-shell');
   const route = page.getByTestId('tower-route');
   const floorOne = route.locator('[data-floor="1"]');
-  const before = await route.evaluate((element) => {
+  const metrics = await route.evaluate((element) => {
     const routeRect = element.getBoundingClientRect();
-    const firstRect = element.querySelector<HTMLElement>('[data-floor="1"]')!
+    const floorOneRect = element.querySelector<HTMLElement>('[data-floor="1"]')!
       .getBoundingClientRect();
-    const topFloor = [...element.querySelectorAll<HTMLElement>('[data-floor]')]
+    const order = [...element.querySelectorAll<HTMLElement>('[data-floor]')]
       .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)
-      .at(0)?.dataset.floor ?? null;
+      .map((node) => node.dataset.floor);
     const style = getComputedStyle(element);
     const webkitScrollbar = getComputedStyle(element, '::-webkit-scrollbar');
     return {
-      firstVisible: firstRect.bottom > routeRect.top && firstRect.top < routeRect.bottom,
+      floorOneBottomGap:
+        routeRect.top + element.clientTop + element.clientHeight - floorOneRect.bottom,
+      order,
       overflowY: style.overflowY,
       routeScrollable: element.scrollHeight > element.clientHeight,
       scrollbarHidden: style.scrollbarWidth === 'none'
         || webkitScrollbar.display === 'none'
         || webkitScrollbar.width === '0px',
-      topFloor,
+      scrollTop: element.scrollTop,
     };
   });
 
-  expect(before).toEqual({
-    firstVisible: true,
-    overflowY: 'auto',
-    routeScrollable: true,
-    scrollbarHidden: true,
-    topFloor: '1',
-  });
+  expect(metrics.order).toEqual(['5', '4', '3', '2', '1']);
+  expect(metrics.floorOneBottomGap).toBeGreaterThanOrEqual(-1);
+  expect(metrics.floorOneBottomGap).toBeLessThanOrEqual(2);
+  expect(metrics.scrollTop).toBeGreaterThan(0);
+  expect(metrics.overflowY).toBe('auto');
+  expect(metrics.routeScrollable).toBe(true);
+  expect(metrics.scrollbarHidden).toBe(true);
   await expect(floorOne).toBeInViewport();
 
   await route.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
+    element.scrollTop = 0;
   });
-  await expect.poll(() => route.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await expect(route.locator('[data-floor="5"]')).toBeInViewport();
   expect(await app.evaluate((element) => element.scrollTop)).toBe(0);
 });
 
 test('resumes the same active run after visiting the title', async ({ page }) => {
+  const expectFloorAtRouteBottom = async (floor: number) => {
+    const route = page.getByTestId('tower-route');
+    await expect.poll(() => route.evaluate((element, floorNumber) => {
+      const routeRect = element.getBoundingClientRect();
+      const floorRect = element.querySelector<HTMLElement>(`[data-floor="${floorNumber}"]`)!
+        .getBoundingClientRect();
+      return routeRect.top + element.clientTop + element.clientHeight - floorRect.bottom;
+    }, floor)).toBeGreaterThanOrEqual(-1);
+    const gap = await route.evaluate((element, floorNumber) => {
+      const routeRect = element.getBoundingClientRect();
+      const floorRect = element.querySelector<HTMLElement>(`[data-floor="${floorNumber}"]`)!
+        .getBoundingClientRect();
+      return routeRect.top + element.clientTop + element.clientHeight - floorRect.bottom;
+    }, floor);
+    expect(gap).toBeLessThanOrEqual(32);
+  };
+
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openMatch(page);
 
@@ -221,6 +239,7 @@ test('resumes the same active run after visiting the title', async ({ page }) =>
     }
   }
   await page.getByRole('button', { name: '다음 층' }).click();
+  await expectFloorAtRouteBottom(2);
   const status = await page.getByTestId('tower-run-status').textContent();
 
   await page.getByRole('button', { name: '처음으로' }).click();
@@ -228,6 +247,7 @@ test('resumes the same active run after visiting the title', async ({ page }) =>
   await page.getByRole('button', { name: '도전 계속' }).click();
 
   await expect(page.getByTestId('tower-run-status')).toHaveText(status ?? '');
+  await expectFloorAtRouteBottom(2);
   await expect(page.getByRole('button', { name: '2층 선택' })).toBeEnabled();
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeDisabled();
 });
