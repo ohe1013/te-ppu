@@ -115,8 +115,8 @@ function Get-TeppuUiTarget {
     }
     if ($matches.Count -eq 0) { return $null }
 
-    $selected = @($matches | Where-Object { $_.GetAttribute('clickable') -eq 'true' })[0]
-    if ($null -eq $selected) { $selected = $matches[0] }
+    $clickableMatches = @($matches | Where-Object { $_.GetAttribute('clickable') -eq 'true' })
+    $selected = if ($clickableMatches.Count -gt 0) { $clickableMatches[0] } else { $matches[0] }
     if ($selected.GetAttribute('clickable') -ne 'true') {
         $ancestor = $selected.ParentNode
         while ($null -ne $ancestor -and $ancestor -is [System.Xml.XmlElement]) {
@@ -196,6 +196,60 @@ function Wait-TeppuUiTarget {
     throw "[TEPPU_ANDROID_UI_TIMEOUT] Timed out waiting for required UI text after $TimeoutSeconds seconds."
 }
 
+function Invoke-TeppuSwipeUp {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Adb,
+        [Parameter(Mandatory = $true)][string]$Serial
+    )
+
+    $result = Invoke-TeppuNativeResult -Executable $Adb -Arguments @(
+        '-s', $Serial, 'shell', 'input', 'swipe',
+        '540', '1500', '540', '650', '350'
+    )
+    Assert-TeppuNativeSuccess -Result $result -FailureCode 'TEPPU_ANDROID_UI_SWIPE_FAILED'
+}
+
+function Wait-TeppuScrollableUiTarget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Adb,
+        [Parameter(Mandatory = $true)][string]$Serial,
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$WorkingXml,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
+        [ValidateRange(1, 10)][int]$MaxSwipes = 6,
+        [switch]$Contains
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $swipeCount = 0
+    while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        $targetIsClipped = $false
+        if (Export-TeppuCurrentUi -Adb $Adb -Serial $Serial -LocalPath $WorkingXml) {
+            try {
+                $target = Get-TeppuUiTarget -XmlPath $WorkingXml -Text $Text -Contains:$Contains.IsPresent
+                if ($null -ne $target) { return $target }
+            } catch {
+                if ($_.Exception.Message.StartsWith('[TEPPU_ANDROID_UI_BOUNDS_INVALID]', [StringComparison]::Ordinal)) {
+                    $targetIsClipped = $true
+                } else {
+                    Write-Verbose $_.Exception.Message
+                }
+            }
+        }
+        if ($targetIsClipped -and $swipeCount -lt $MaxSwipes) {
+            Invoke-TeppuSwipeUp -Adb $Adb -Serial $Serial
+            $swipeCount += 1
+            Write-Verbose "Scrolled toward the clipped UI target ($swipeCount/$MaxSwipes)."
+            Start-Sleep -Milliseconds 700
+            continue
+        }
+        Start-Sleep -Milliseconds 1000
+    }
+    throw "[TEPPU_ANDROID_UI_SCROLL_TIMEOUT] Timed out waiting for a visible UI target after $swipeCount swipe(s) and $TimeoutSeconds seconds."
+}
+
 function Invoke-TeppuTap {
     [CmdletBinding()]
     param(
@@ -245,7 +299,8 @@ function Save-TeppuScreenEvidence {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Screenshot,
         [Parameter(Mandatory = $true)][string]$UiXml,
-        [Parameter(Mandatory = $true)][string]$EvidenceRoot
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [string]$ExistingUiXml
     )
 
     $remoteScreenshot = "/sdcard/teppu-$Name-$PID.png"
@@ -255,12 +310,30 @@ function Save-TeppuScreenEvidence {
             '-s', $Serial, 'shell', 'screencap', '-p', $remoteScreenshot
         )
         Assert-TeppuNativeSuccess -Result $capture -FailureCode 'TEPPU_ANDROID_SCREENSHOT_FAILED'
-        $dump = Invoke-TeppuNativeResult -Executable $Adb -Arguments @(
-            '-s', $Serial, 'shell', 'uiautomator', 'dump', '--compressed', $remoteUi
-        )
-        Assert-TeppuNativeSuccess -Result $dump -FailureCode 'TEPPU_ANDROID_UI_DUMP_FAILED'
         Save-TeppuDeviceFile -Adb $Adb -Serial $Serial -RemotePath $remoteScreenshot -Destination $Screenshot -EvidenceRoot $EvidenceRoot
-        Save-TeppuDeviceFile -Adb $Adb -Serial $Serial -RemotePath $remoteUi -Destination $UiXml -EvidenceRoot $EvidenceRoot
+        if ([string]::IsNullOrWhiteSpace($ExistingUiXml)) {
+            $dump = Invoke-TeppuNativeResult -Executable $Adb -Arguments @(
+                '-s', $Serial, 'shell', 'uiautomator', 'dump', '--compressed', $remoteUi
+            )
+            Assert-TeppuNativeSuccess -Result $dump -FailureCode 'TEPPU_ANDROID_UI_DUMP_FAILED'
+            Save-TeppuDeviceFile -Adb $Adb -Serial $Serial -RemotePath $remoteUi -Destination $UiXml -EvidenceRoot $EvidenceRoot
+        } else {
+            $sourceUi = Assert-TeppuPathWithin -Path $ExistingUiXml -Root $EvidenceRoot -Label 'Existing Android UI evidence'
+            if (-not (Test-Path -LiteralPath $sourceUi -PathType Leaf)) {
+                throw "[TEPPU_ANDROID_UI_EVIDENCE_MISSING] Existing UI evidence was not found: $sourceUi"
+            }
+            $destinationUi = Assert-TeppuPathWithin -Path $UiXml -Root $EvidenceRoot -Label 'Android UI evidence destination'
+            $temporaryUi = Assert-TeppuPathWithin -Path (Join-Path $EvidenceRoot ('.smoke-ui-{0}-{1}.tmp' -f $PID, [guid]::NewGuid().ToString('N'))) -Root $EvidenceRoot -Label 'Temporary Android UI evidence'
+            try {
+                [IO.File]::Copy($sourceUi, $temporaryUi, $false)
+                if ((Get-Item -LiteralPath $temporaryUi).Length -le 0) {
+                    throw '[TEPPU_ANDROID_EVIDENCE_EMPTY] Existing UI evidence is empty.'
+                }
+                Publish-TeppuFileAtomically -Source $temporaryUi -Destination $destinationUi
+            } finally {
+                [IO.File]::Delete($temporaryUi)
+            }
+        }
     } finally {
         $null = Invoke-TeppuNativeResult -Executable $Adb -Arguments @(
             '-s', $Serial, 'shell', 'rm', '-f', $remoteScreenshot, $remoteUi
@@ -360,6 +433,9 @@ $evidencePaths = [pscustomobject]@{
     BattleUi = Join-Path $evidenceRoot 'battle.xml'
     Logcat = Join-Path $evidenceRoot 'logcat.txt'
     Report = Join-Path $evidenceRoot 'smoke.txt'
+    Stage = Join-Path $evidenceRoot 'stage.txt'
+    FailureUi = Join-Path $evidenceRoot 'failure.xml'
+    FailureReport = Join-Path $evidenceRoot 'failure.txt'
 }
 $expectedApk = Join-Path $root 'artifacts\android\teppu-1.0.0-release.apk'
 $apkPath = if ([string]::IsNullOrWhiteSpace($Apk)) { $expectedApk } else { [IO.Path]::GetFullPath($Apk) }
@@ -394,6 +470,8 @@ foreach ($tool in @($emulator, $emulatorCheck, $adb, $avdManager, $systemImagePr
 }
 
 New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+[IO.File]::Delete($evidencePaths.FailureUi)
+[IO.File]::Delete($evidencePaths.FailureReport)
 $workingUi = Assert-TeppuPathWithin -Path (Join-Path $evidenceRoot ('.current-ui-{0}.xml' -f $PID)) -Root $evidenceRoot -Label 'Current emulator UI dump'
 $emulatorStdout = Assert-TeppuPathWithin -Path (Join-Path $evidenceRoot 'emulator-stdout.log') -Root $evidenceRoot -Label 'Emulator stdout log'
 $emulatorStderr = Assert-TeppuPathWithin -Path (Join-Path $evidenceRoot 'emulator-stderr.log') -Root $evidenceRoot -Label 'Emulator stderr log'
@@ -404,8 +482,10 @@ $logcatSaved = $false
 $previousJavaHome = [Environment]::GetEnvironmentVariable('JAVA_HOME', 'Process')
 $previousAndroidHome = [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'Process')
 $previousAndroidSdkRoot = [Environment]::GetEnvironmentVariable('ANDROID_SDK_ROOT', 'Process')
+$currentStage = 'initializing'
 
 try {
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     [Environment]::SetEnvironmentVariable('JAVA_HOME', $java.Home, 'Process')
     [Environment]::SetEnvironmentVariable('ANDROID_HOME', $sdk, 'Process')
     [Environment]::SetEnvironmentVariable('ANDROID_SDK_ROOT', $sdk, 'Process')
@@ -443,6 +523,8 @@ try {
     Assert-TeppuAvdImage -ConfigPath $avdConfig -ExpectedImage $SystemImage
     Write-Output "TEPPU_ANDROID_AVD_READY $ExpectedAvdName"
 
+    $currentStage = 'starting-emulator'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $port = Get-TeppuEmulatorPort -Adb $adb
     $serial = "emulator-$port"
     [IO.File]::Delete($emulatorStdout)
@@ -460,6 +542,8 @@ try {
     $startedEmulator = $true
     Write-Output "TEPPU_ANDROID_EMULATOR_STARTED $serial"
 
+    $currentStage = 'waiting-for-boot'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $bootStopwatch = [Diagnostics.Stopwatch]::StartNew()
     $booted = $false
     while ($bootStopwatch.Elapsed.TotalSeconds -lt $BootTimeoutSeconds) {
@@ -492,6 +576,8 @@ try {
         Assert-TeppuNativeSuccess -Result $result -FailureCode 'TEPPU_ANDROID_EMULATOR_PREPARE_FAILED'
     }
 
+    $currentStage = 'installing-apk'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $installation = Invoke-TeppuNativeResult -Executable $adb -Arguments @(
         '-s', $serial, 'install', '-r', $apkPath
     )
@@ -529,34 +615,50 @@ try {
     $matchStart = New-TeppuText -CodePoints @(0xB300, 0xC804, 0x20, 0xC2DC, 0xC791)
     $matchPlaying = New-TeppuText -CodePoints @(0xB300, 0xC804, 0x20, 0xC9C4, 0xD589, 0x20, 0xC911)
 
+    $currentStage = 'waiting-title'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $target = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $challengeStart -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds
-    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'title' -Screenshot $evidencePaths.TitleScreenshot -UiXml $evidencePaths.TitleUi -EvidenceRoot $evidenceRoot
+    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'title' -Screenshot $evidencePaths.TitleScreenshot -UiXml $evidencePaths.TitleUi -EvidenceRoot $evidenceRoot -ExistingUiXml $workingUi
     Write-Output 'TEPPU_ANDROID_TITLE_CAPTURED'
     Invoke-TeppuTap -Adb $adb -Serial $serial -Target $target
 
     foreach ($initial in @('R', 'V', 'T', 'END')) {
+        $currentStage = "waiting-initial-$initial"
+        Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
         $initialTarget = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $initial -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds
         Invoke-TeppuTap -Adb $adb -Serial $serial -Target $initialTarget
         Start-Sleep -Milliseconds 150
     }
 
+    $currentStage = 'waiting-rivet'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $rivetTarget = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $rivet -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds -Contains
     Invoke-TeppuTap -Adb $adb -Serial $serial -Target $rivetTarget
+    $currentStage = 'waiting-select'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $selectTarget = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text 'SELECT' -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds
     Invoke-TeppuTap -Adb $adb -Serial $serial -Target $selectTarget
 
-    $floorTarget = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $floorOne -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds -Contains
-    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'tower' -Screenshot $evidencePaths.TowerScreenshot -UiXml $evidencePaths.TowerUi -EvidenceRoot $evidenceRoot
+    $currentStage = 'waiting-floor-one'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
+    $floorTarget = Wait-TeppuScrollableUiTarget -Adb $adb -Serial $serial -Text $floorOne -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds -Contains
+    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'tower' -Screenshot $evidencePaths.TowerScreenshot -UiXml $evidencePaths.TowerUi -EvidenceRoot $evidenceRoot -ExistingUiXml $workingUi
     Write-Output 'TEPPU_ANDROID_TOWER_CAPTURED'
     Invoke-TeppuTap -Adb $adb -Serial $serial -Target $floorTarget
 
+    $currentStage = 'waiting-match-start'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $matchTarget = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $matchStart -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds -Contains
     Invoke-TeppuTap -Adb $adb -Serial $serial -Target $matchTarget
+    $currentStage = 'waiting-match-playing'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $null = Wait-TeppuUiTarget -Adb $adb -Serial $serial -Text $matchPlaying -WorkingXml $workingUi -TimeoutSeconds $UiTimeoutSeconds -Contains
     Start-Sleep -Milliseconds 1500
-    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'battle' -Screenshot $evidencePaths.BattleScreenshot -UiXml $evidencePaths.BattleUi -EvidenceRoot $evidenceRoot
+    Save-TeppuScreenEvidence -Adb $adb -Serial $serial -Name 'battle' -Screenshot $evidencePaths.BattleScreenshot -UiXml $evidencePaths.BattleUi -EvidenceRoot $evidenceRoot -ExistingUiXml $workingUi
     Write-Output 'TEPPU_ANDROID_BATTLE_CAPTURED'
 
+    $currentStage = 'checking-logcat'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     $logText = Save-TeppuLogcat -Adb $adb -Serial $serial -Destination $evidencePaths.Logcat -EvidenceRoot $evidenceRoot
     $logcatSaved = $true
     if (Test-TeppuFatalLog -Text $logText) {
@@ -580,8 +682,35 @@ try {
         'Fatal application log: none detected'
     ) -join [Environment]::NewLine
     Write-TeppuEvidenceText -Destination $evidencePaths.Report -Content $report -EvidenceRoot $evidenceRoot
+    $currentStage = 'complete'
+    Write-TeppuEvidenceText -Destination $evidencePaths.Stage -Content $currentStage -EvidenceRoot $evidenceRoot
     Write-Output 'TEPPU_ANDROID_SMOKE_OK'
     Write-Output $report
+} catch {
+    $failure = $_
+    try {
+        $failureText = @(
+            'Teppu Android emulator smoke failure'
+            "Failed (UTC): $([DateTime]::UtcNow.ToString('o'))"
+            "Stage: $currentStage"
+            "Exception: $($failure.Exception.GetType().FullName)"
+            "Message: $($failure.Exception.Message)"
+            "Script stack: $($failure.ScriptStackTrace)"
+        ) -join [Environment]::NewLine
+        Write-TeppuEvidenceText -Destination $evidencePaths.FailureReport -Content $failureText -EvidenceRoot $evidenceRoot
+        if (Test-Path -LiteralPath $workingUi -PathType Leaf) {
+            $temporaryFailureUi = Assert-TeppuPathWithin -Path (Join-Path $evidenceRoot ('.failure-ui-{0}-{1}.tmp' -f $PID, [guid]::NewGuid().ToString('N'))) -Root $evidenceRoot -Label 'Temporary failure UI evidence'
+            try {
+                [IO.File]::Copy($workingUi, $temporaryFailureUi, $false)
+                Publish-TeppuFileAtomically -Source $temporaryFailureUi -Destination $evidencePaths.FailureUi
+            } finally {
+                [IO.File]::Delete($temporaryFailureUi)
+            }
+        }
+    } catch {
+        Write-Warning "Failed to preserve smoke failure evidence: $($_.Exception.Message)"
+    }
+    throw $failure
 } finally {
     if ($startedEmulator -and -not $logcatSaved -and $null -ne $serial) {
         try {

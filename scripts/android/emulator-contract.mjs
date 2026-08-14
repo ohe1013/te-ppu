@@ -32,6 +32,9 @@ export function resolveEmulatorEvidencePaths(projectRoot) {
     battleUi: resolve(directory, 'battle.xml'),
     logcat: resolve(directory, 'logcat.txt'),
     report: resolve(directory, 'smoke.txt'),
+    stage: resolve(directory, 'stage.txt'),
+    failureUi: resolve(directory, 'failure.xml'),
+    failureReport: resolve(directory, 'failure.txt'),
   };
 }
 

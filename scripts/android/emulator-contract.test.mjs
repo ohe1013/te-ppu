@@ -1,4 +1,11 @@
 import assert from 'node:assert/strict';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +41,9 @@ test('emulator evidence paths stay under the ignored Android artifact directory'
     battleUi: join(root, 'artifacts', 'android', 'emulator', 'battle.xml'),
     logcat: join(root, 'artifacts', 'android', 'emulator', 'logcat.txt'),
     report: join(root, 'artifacts', 'android', 'emulator', 'smoke.txt'),
+    stage: join(root, 'artifacts', 'android', 'emulator', 'stage.txt'),
+    failureUi: join(root, 'artifacts', 'android', 'emulator', 'failure.xml'),
+    failureReport: join(root, 'artifacts', 'android', 'emulator', 'failure.txt'),
   });
   assert.throws(
     () => resolveEmulatorEvidencePaths('relative-project'),
@@ -52,6 +62,36 @@ test('UIAutomator bounds parsing returns a stable tap center', () => {
   });
   assert.throws(() => parseBounds('[318,373][42,317]'), /Invalid bounds/u);
   assert.throws(() => parseBounds('42,317,318,373'), /Invalid bounds/u);
+});
+
+test('PowerShell UI target helper accepts visible non-clickable status text', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'teppu-emulator-ui-'));
+  const xmlPath = join(temporaryDirectory, 'status.xml');
+  writeFileSync(
+    xmlPath,
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node text="Battle state" content-desc="" clickable="false" enabled="true" bounds="[10,20][110,80]" /></hierarchy>',
+    'utf8',
+  );
+  try {
+    const quotePowerShell = (value) => `'${value.replaceAll("'", "''")}'`;
+    const command = [
+      `. ${quotePowerShell(smokeScript)} -ValidateOnly -ProjectRoot ${quotePowerShell(root)}`,
+      `$target = Get-TeppuUiTarget -XmlPath ${quotePowerShell(xmlPath)} -Text 'Battle state'`,
+      'Write-Output "CENTER=$($target.CenterX),$($target.CenterY)"',
+    ].join('; ');
+    const result = spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      command,
+    ], { encoding: 'utf8', windowsHide: true });
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    assert.equal(result.status, 0, output);
+    assert.match(output, /CENTER=60,50/u);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 test('fatal Android log detection distinguishes app crashes from normal startup', () => {
@@ -93,4 +133,23 @@ test('PowerShell validation reports the exact AVD and component without mutation
   const rejectedOutput = `${rejected.stdout ?? ''}\n${rejected.stderr ?? ''}`;
   assert.notEqual(rejected.status, 0);
   assert.match(rejectedOutput, /TEPPU_ANDROID_AVD_NAME_INVALID/u);
+});
+
+test('smoke journey scrolls the ascending tower until floor one is visible', () => {
+  const source = readFileSync(smokeScript, 'utf8');
+  assert.match(source, /function Wait-TeppuScrollableUiTarget/u);
+  assert.match(source, /'input', 'swipe'/u);
+  assert.match(
+    source,
+    /\$floorTarget = Wait-TeppuScrollableUiTarget[^\r\n]+-Text \$floorOne/u,
+  );
+});
+
+test('screen evidence reuses the UI dump that satisfied each wait', () => {
+  const source = readFileSync(smokeScript, 'utf8');
+  assert.match(source, /\[string\]\$ExistingUiXml/u);
+  assert.equal(
+    (source.match(/Save-TeppuScreenEvidence[^\r\n]+-ExistingUiXml \$workingUi/gu) ?? []).length,
+    3,
+  );
 });
