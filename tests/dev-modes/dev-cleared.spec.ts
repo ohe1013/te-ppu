@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
-
-const DEV_CLEARED_PROGRESS_KEY = 'te-ppu.progress.dev-cleared.identity.local.local-browser';
+import {
+  DEV_CLEARED_PROGRESS_KEY,
+  ORDINARY_PROGRESS_KEY,
+  ORDINARY_PROGRESS_RAW,
+  seedOrdinaryProgress,
+} from './ordinary-progress-fixture';
 
 interface PersistedClearedProgress {
   readonly profile: {
@@ -17,15 +21,23 @@ interface PersistedClearedProgress {
 }
 
 test('npm run dev opens ADM with every difficulty and floor cleared', async ({ page }) => {
+  await seedOrdinaryProgress(page);
   await page.goto('/');
 
   await expect(page.getByTestId('title-screen')).toContainText('ADM');
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'hard');
-  const persisted = await page.evaluate((key) => {
-    const serialized = window.localStorage.getItem(key);
-    if (serialized === null) throw new Error('Expected dev-cleared progress in local storage.');
-    return JSON.parse(serialized) as PersistedClearedProgress;
-  }, DEV_CLEARED_PROGRESS_KEY);
+  const stored = await page.evaluate(({ clearedKey, ordinaryKey }) => ({
+    cleared: window.localStorage.getItem(clearedKey),
+    ordinary: window.localStorage.getItem(ordinaryKey),
+  }), {
+    clearedKey: DEV_CLEARED_PROGRESS_KEY,
+    ordinaryKey: ORDINARY_PROGRESS_KEY,
+  });
+  expect(stored.ordinary).toBe(ORDINARY_PROGRESS_RAW);
+  if (stored.cleared === null) {
+    throw new Error('Expected dev-cleared progress in local storage.');
+  }
+  const persisted = JSON.parse(stored.cleared) as PersistedClearedProgress;
   expect(persisted.profile).toEqual({ initials: 'ADM', characterId: 'hero-engineer' });
   expect(persisted.localBestScores).toEqual({ easy: null, normal: null, hard: null });
   expect(persisted.pendingLeaderboardSubmissions).toEqual({});

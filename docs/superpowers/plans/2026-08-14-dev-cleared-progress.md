@@ -441,7 +441,7 @@ git commit -m "feat: isolate cleared development progress"
 - Modify: `src/main.tsx`
 
 **Interfaces:**
-- Consumes: `RuntimeMode`, `createDevClearedProgressRepositoryFactory`, Vite `DEV`, and `VITE_DEV_ALL_CLEARED`.
+- Consumes: `RuntimeMode`, `createDevClearedProgressRepositoryFactory`, Vite `DEV`, `MODE`, and `VITE_DEV_ALL_CLEARED`.
 - Produces: `isDevClearedProgressEnabled(input): boolean` and `AppServiceOptions.devClearedProgress?: boolean`.
 
 - [ ] **Step 1: Write the failing mode-guard test**
@@ -453,29 +453,42 @@ import { describe, expect, it } from 'vitest';
 import { isDevClearedProgressEnabled } from './dev-cleared-mode';
 
 describe('isDevClearedProgressEnabled', () => {
-  it('enables only an explicit browser development request', () => {
+  it('enables only an explicit dedicated-mode browser development request', () => {
     expect(isDevClearedProgressEnabled({
       isDev: true,
+      mode: 'dev-cleared',
       runtimeMode: 'browser',
       flag: 'true',
     })).toBe(true);
+    for (const mode of ['browser', 'e2e']) {
+      expect(isDevClearedProgressEnabled({
+        isDev: true,
+        mode,
+        runtimeMode: 'browser',
+        flag: 'true',
+      })).toBe(false);
+    }
     expect(isDevClearedProgressEnabled({
       isDev: false,
+      mode: 'dev-cleared',
       runtimeMode: 'browser',
       flag: 'true',
     })).toBe(false);
     expect(isDevClearedProgressEnabled({
       isDev: true,
+      mode: 'dev-cleared',
       runtimeMode: 'android',
       flag: 'true',
     })).toBe(false);
     expect(isDevClearedProgressEnabled({
       isDev: true,
+      mode: 'dev-cleared',
       runtimeMode: 'apps-in-toss',
       flag: 'true',
     })).toBe(false);
     expect(isDevClearedProgressEnabled({
       isDev: true,
+      mode: 'dev-cleared',
       runtimeMode: 'browser',
       flag: undefined,
     })).toBe(false);
@@ -502,16 +515,21 @@ import type { RuntimeMode } from './runtime-mode';
 
 export interface DevClearedModeInput {
   readonly isDev: boolean;
+  readonly mode: string;
   readonly runtimeMode: RuntimeMode;
   readonly flag: string | undefined;
 }
 
 export function isDevClearedProgressEnabled({
   isDev,
+  mode,
   runtimeMode,
   flag,
 }: DevClearedModeInput): boolean {
-  return isDev && runtimeMode === 'browser' && flag === 'true';
+  return isDev
+    && mode === 'dev-cleared'
+    && runtimeMode === 'browser'
+    && flag === 'true';
 }
 ```
 
@@ -599,6 +617,7 @@ In `src/main.tsx`, resolve the option once:
 ```ts
 const devClearedProgress = isDevClearedProgressEnabled({
   isDev: import.meta.env.DEV,
+  mode: import.meta.env.MODE,
   runtimeMode,
   flag: import.meta.env.VITE_DEV_ALL_CLEARED,
 });

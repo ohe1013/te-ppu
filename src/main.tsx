@@ -14,6 +14,7 @@ import './styles/global.css';
 const runtimeMode = resolveRuntimeMode(import.meta.env.VITE_RUNTIME_MODE);
 const devClearedProgress = isDevClearedProgressEnabled({
   isDev: import.meta.env.DEV,
+  mode: import.meta.env.MODE,
   runtimeMode,
   flag: import.meta.env.VITE_DEV_ALL_CLEARED,
 });

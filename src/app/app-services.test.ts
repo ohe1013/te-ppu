@@ -133,6 +133,27 @@ describe('createAppServices asset boundary', () => {
     expect(result.ok && result.state).toEqual(DEFAULT_PROGRESS);
   });
 
+  it('keeps an injected progress factory ahead of a cleared-progress request', async () => {
+    const storage = createMemoryStorage();
+    const injectedRepository = repository();
+    const progressRepositoryFactory: ProgressRepositoryFactory = {
+      forIdentity: () => injectedRepository,
+    };
+    const services = createAppServices(
+      'browser',
+      storage,
+      { platform: platform(), progressRepositoryFactory, firebaseEnv: {} },
+      { devClearedProgress: true },
+    );
+
+    expect(services.progressRepositoryFactory).toBe(progressRepositoryFactory);
+    await expect(services.progressRepositoryFactory
+      .forIdentity({ kind: 'local', key: 'local-browser' })
+      .load()).resolves.toMatchObject({ ok: true, state: DEFAULT_PROGRESS });
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
   it('selects local leaderboards when Firebase env is empty or invalid', () => {
     const empty = createAppServices('browser', window.localStorage, {
       platform: platform(),
