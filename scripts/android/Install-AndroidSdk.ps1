@@ -218,29 +218,25 @@ try {
             Assert-TeppuToolsArchive -Path $download
         }
 
-        $extracted = Assert-TeppuPathWithin -Path (Join-Path $temporaryRoot 'extracted') -Root $temporaryRoot -Label 'Extracted Android tools directory'
-        New-Item -ItemType Directory -Path $extracted | Out-Null
         if ([string]::IsNullOrWhiteSpace($env:WINDIR)) {
             throw '[TEPPU_WINDOWS_DIRECTORY_MISSING] WINDIR is unavailable.'
         }
         $tar = Join-Path ([IO.Path]::GetFullPath($env:WINDIR)) 'System32\tar.exe'
+
+        $cmdlineParent = Assert-TeppuPathWithin -Path (Join-Path $sdk 'cmdline-tools') -Root $sdk -Label 'Android command-line tools directory'
+        New-Item -ItemType Directory -Path $cmdlineParent -Force | Out-Null
+        $stagingRoot = Assert-TeppuPathWithin -Path (Join-Path $cmdlineParent ('.s-' + [guid]::NewGuid().ToString('N').Substring(0, 8))) -Root $cmdlineParent -Label 'Staged Android command-line tools'
+        New-Item -ItemType Directory -Path $stagingRoot | Out-Null
         $null = Invoke-TeppuProcessCapture -Executable $tar -Arguments @(
             '-xf',
             $archivePath,
             '-C',
-            $extracted
+            $stagingRoot,
+            '--strip-components',
+            '1'
         ) -FailureCode 'TEPPU_ANDROID_TOOLS_EXTRACTION_FAILED'
-        $extractedTools = Join-Path $extracted 'cmdline-tools'
-        if (-not (Test-Path -LiteralPath (Join-Path $extractedTools 'bin\sdkmanager.bat') -PathType Leaf)) {
-            throw '[TEPPU_ANDROID_TOOLS_ARCHIVE_INVALID] Verified archive has an unexpected directory layout.'
-        }
-
-        $cmdlineParent = Assert-TeppuPathWithin -Path (Join-Path $sdk 'cmdline-tools') -Root $sdk -Label 'Android command-line tools directory'
-        New-Item -ItemType Directory -Path $cmdlineParent -Force | Out-Null
-        $stagingRoot = Assert-TeppuPathWithin -Path (Join-Path $cmdlineParent ('.latest-{0}-{1}' -f $PID, [guid]::NewGuid().ToString('N'))) -Root $cmdlineParent -Label 'Staged Android command-line tools'
-        Copy-Item -LiteralPath $extractedTools -Destination $stagingRoot -Recurse
         if (-not (Test-Path -LiteralPath (Join-Path $stagingRoot 'bin\sdkmanager.bat') -PathType Leaf)) {
-            throw '[TEPPU_ANDROID_TOOLS_STAGING_FAILED] sdkmanager.bat was not staged correctly.'
+            throw '[TEPPU_ANDROID_TOOLS_ARCHIVE_INVALID] Verified archive has an unexpected directory layout.'
         }
         [IO.Directory]::Move($stagingRoot, $latestRoot)
         $stagingRoot = $null
