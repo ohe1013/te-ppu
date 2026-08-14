@@ -31,6 +31,7 @@ import type {
 } from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort } from '../../platform/audio-port';
+import { usePlatformBack } from '../../platform/back-request';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
@@ -414,6 +415,8 @@ export function MatchScreen({
     setExitOpen(false);
     match.setPaused('exit-confirmation', false);
   }
+
+  usePlatformBack(openExitConfirmation, { enabled: !exitOpen, priority: 10 });
 
   return (
     <section

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CommonAssets } from '../../assets';
+import { usePlatformBack } from '../../platform/back-request';
 import { PLAYER_CHARACTERS } from '../../player';
 import type { Difficulty, ProgressState } from '../../progression';
 import { AssetImage } from '../match/AssetImage';
@@ -38,6 +39,7 @@ export function TitleScreen({
   syncPending = false,
 }: TitleScreenProps) {
   const [exitOpen, setExitOpen] = useState(false);
+  usePlatformBack(() => setExitOpen(true), { enabled: !exitOpen, priority: 10 });
   const profile = progress.profile;
   const localBest = progress.localBestScores[progress.selectedDifficulty];
   const character = profile === null ? null : PLAYER_CHARACTERS[profile.characterId];

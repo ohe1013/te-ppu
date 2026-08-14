@@ -6,6 +6,7 @@ import {
   type AppServiceOverrides,
 } from './app/app-services';
 import { resolveRuntimeMode } from './app/runtime-mode';
+import { PlatformBackProvider } from './platform/back-request';
 import { SafeAreaProvider } from './platform/safe-area-provider';
 import './styles/global.css';
 
@@ -35,9 +36,11 @@ async function mountApplication(): Promise<void> {
 
   createRoot(rootElement).render(
     <StrictMode>
-      <SafeAreaProvider platform={services.platform}>
-        <AppRoot services={services} renderMatch={renderMatch} />
-      </SafeAreaProvider>
+      <PlatformBackProvider platform={services.platform}>
+        <SafeAreaProvider platform={services.platform}>
+          <AppRoot services={services} renderMatch={renderMatch} />
+        </SafeAreaProvider>
+      </PlatformBackProvider>
     </StrictMode>,
   );
 }

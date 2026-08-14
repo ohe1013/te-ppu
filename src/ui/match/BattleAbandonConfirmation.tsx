@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { LoadedImageRef } from '../../assets';
+import { usePlatformBack } from '../../platform/back-request';
 import { AssetIcon } from './AssetIcon';
 import { ModalOverlay } from './ModalOverlay';
 
@@ -46,10 +47,14 @@ export function BattleAbandonConfirmation({
     return () => previouslyFocused?.focus();
   }, [open]);
 
+  usePlatformBack(() => {
+    if (!confirmedRef.current) onCancel();
+  }, { enabled: open, priority: 100 });
+
   if (!open) return null;
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && !confirmedRef.current) {
       event.preventDefault();
       onCancel();
       return;

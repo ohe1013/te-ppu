@@ -7,12 +7,39 @@ import type { CommonAssets, PlayerCharacterAssets } from '../../assets';
 import { createMatch, createPublicMatchView, type GameEvent } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
 import type { AudioPort } from '../../platform/audio-port';
+import { PlatformBackProvider } from '../../platform/back-request';
+import type { PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
 import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
 const useMatchLoopMock = vi.hoisted(() => vi.fn());
 const canvasPropsSpy = vi.hoisted(() => vi.fn());
+
+function createBackPlatform() {
+  let listener: (() => void) | undefined;
+  const platform: PlatformPort = {
+    close: async () => undefined,
+    getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
+    getInitialSafeArea: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+    haptic: async () => undefined,
+    kind: 'android',
+    lockPortrait: async () => undefined,
+    subscribeBackRequest(nextListener) {
+      listener = nextListener;
+      return () => {
+        listener = undefined;
+      };
+    },
+    subscribeSafeArea: () => () => undefined,
+  };
+  return {
+    platform,
+    emitBack() {
+      listener?.();
+    },
+  };
+}
 
 const lifecycleProps: Pick<
   MatchScreenProps,
@@ -238,6 +265,36 @@ afterEach(() => {
 });
 
 describe('MatchScreen', () => {
+  it('opens and cancels battle abandon with native back while restoring controls', () => {
+    const back = createBackPlatform();
+    const loop = activeLoop();
+    const onAbandon = vi.fn();
+    useMatchLoopMock.mockReturnValue(loop);
+    render(
+      <PlatformBackProvider platform={back.platform}>
+        <MatchScreen
+          {...lifecycleProps}
+          floor={2}
+          onAbandon={onAbandon}
+          onFinished={vi.fn()}
+          platform={back.platform}
+          seed={17}
+        />
+      </PlatformBackProvider>,
+    );
+
+    act(() => back.emitBack());
+    expect(screen.getByRole('dialog', { name: '현재 전투를 포기할까요?' })).toBeVisible();
+    expect(screen.getByTestId('match-screen').querySelector('fieldset')).toBeDisabled();
+    expect(loop.setPaused).toHaveBeenLastCalledWith('exit-confirmation', true);
+
+    act(() => back.emitBack());
+    expect(screen.queryByRole('dialog', { name: '현재 전투를 포기할까요?' })).toBeNull();
+    expect(screen.getByTestId('match-screen').querySelector('fieldset')).not.toBeDisabled();
+    expect(loop.setPaused).toHaveBeenLastCalledWith('exit-confirmation', false);
+    expect(onAbandon).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['countdown', '대전 준비'],
     ['playing', '대전 진행 중'],

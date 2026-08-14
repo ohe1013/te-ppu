@@ -35,6 +35,7 @@ import type { AssetManager, PlayerCharacterAssets } from '../assets';
 import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
+import { usePlatformBack } from '../platform/back-request';
 import type { ProgressState, ScoreRecord } from '../progression/index';
 import {
   DEFAULT_PROGRESS,
@@ -683,6 +684,43 @@ export function AppRoot({
     else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
+
+  function handleRouteBack(): void {
+    switch (route.name) {
+      case 'name-entry':
+      case 'ranking':
+      case 'tower':
+        showTitle();
+        return;
+      case 'character-select':
+        if (profileSaveStatus === 'idle') showTitle();
+        return;
+      case 'floor-intro':
+        if (route.encounterIndex === 0) {
+          dispatchRoute({ type: 'return-to-tower' });
+        }
+        return;
+      case 'ending':
+        finishRunAndShowTitle();
+        return;
+      case 'boot':
+      case 'title':
+      case 'match':
+      case 'owl-match':
+      case 'result':
+      case 'owl-reveal':
+      case 'owl-result':
+        return;
+    }
+  }
+
+  usePlatformBack(handleRouteBack, {
+    enabled: route.name !== 'boot'
+      && route.name !== 'title'
+      && route.name !== 'match'
+      && route.name !== 'owl-match',
+    priority: 10,
+  });
 
   let content: ReactNode;
   if (boot.status !== 'ready' || controller === null || route.name === 'boot') {

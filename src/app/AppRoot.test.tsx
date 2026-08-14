@@ -23,6 +23,7 @@ import {
 } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
+import { PlatformBackProvider, usePlatformBack } from '../platform/back-request';
 import type { PlatformPort } from '../platform/platform-port';
 import {
   PLAYER_CHARACTER_IDS,
@@ -206,6 +207,31 @@ function createAssetManager(
   };
 }
 
+function createBackPlatform() {
+  let listener: (() => void) | undefined;
+  const platform: PlatformPort = {
+    ...createTestPlatform(),
+    kind: 'android',
+    subscribeBackRequest(nextListener) {
+      listener = nextListener;
+      return () => {
+        listener = undefined;
+      };
+    },
+  };
+  return {
+    platform,
+    emitBack() {
+      listener?.();
+    },
+  };
+}
+
+function BackFallback({ onBack }: { readonly onBack: () => void }) {
+  usePlatformBack(onBack, { priority: 1 });
+  return null;
+}
+
 function image(url: string): LoadedImageRef {
   return { url } as LoadedImageRef;
 }
@@ -364,6 +390,7 @@ function renderGame(
   nowIso: () => string = () => '2026-08-10T12:34:56.000Z',
   onRenderMatch: (props: MatchRouteViewProps) => void = () => undefined,
   leaderboard: LeaderboardRepository = createLocalLeaderboardRepository(),
+  onUnhandledBack?: () => void,
 ) {
   let seed = 100;
   const services: AppServices = {
@@ -374,15 +401,35 @@ function renderGame(
     leaderboardRepository: leaderboard,
   };
   return render(
-    <AppRoot
-      services={services}
-      createMatchSeed={() => seed++}
-      nowIso={nowIso}
-      renderMatch={(props) => {
-        onRenderMatch(props);
-        return <TestMatch {...props} />;
-      }}
-    />,
+    <PlatformBackProvider platform={platform}>
+      <AppRoot
+        services={services}
+        createMatchSeed={() => seed++}
+        nowIso={nowIso}
+        renderMatch={(props) => {
+          onRenderMatch(props);
+          return <TestMatch {...props} />;
+        }}
+      />
+      {onUnhandledBack === undefined ? null : <BackFallback onBack={onUnhandledBack} />}
+    </PlatformBackProvider>,
+  );
+}
+
+function renderGameWithNativeBack(
+  repository: ProgressRepository,
+  back: ReturnType<typeof createBackPlatform>,
+  onUnhandledBack: () => void = () => undefined,
+) {
+  return renderGame(
+    repository,
+    back.platform,
+    createAssetManager(),
+    createAudioPort(),
+    () => '2026-08-10T12:34:56.000Z',
+    () => undefined,
+    createLocalLeaderboardRepository(),
+    onUnhandledBack,
   );
 }
 
@@ -520,6 +567,104 @@ describe('AppRoot', () => {
 
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
     expect(screen.getByRole('button', { name: '도전 계속' })).toBeInTheDocument();
+  });
+
+  it('maps native back from ordinary setup, ranking, and tower routes to their visible back actions', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    renderGameWithNativeBack(new TestProgressRepository(floorOneProgress), back);
+    await screen.findByTestId('title-screen');
+
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await screen.findByTestId('name-entry-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await enterInitials(user, 'RVT');
+    await screen.findByTestId('character-select-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
+    await screen.findByTestId('ranking-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
+    await screen.findByTestId('tower-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+  });
+
+  it('returns only a first encounter intro to the tower on native back', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    renderGameWithNativeBack(new TestProgressRepository(floorOneProgress), back);
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '1층 선택' }));
+    expect(await screen.findByTestId('floor-intro-screen')).toHaveAttribute(
+      'data-encounter-index',
+      '0',
+    );
+    act(() => back.emitBack());
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+  });
+
+  it('consumes native back on a result and an intermediate intro without bypassing progression', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    const fallback = vi.fn();
+    renderGameWithNativeBack(
+      new TestProgressRepository(floorOneProgress),
+      back,
+      fallback,
+    );
+
+    await enterMatch(user, 1, 0);
+    await finishWin(user);
+    act(() => back.emitBack());
+    expect(screen.getByTestId('result-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '다음 상대' }));
+    const intro = await screen.findByTestId('floor-intro-screen');
+    expect(intro).toHaveAttribute('data-encounter-index', '1');
+    act(() => back.emitBack());
+    expect(screen.getByTestId('floor-intro-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('protects owl progression and uses native back from the ending to finish the run', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    const fallback = vi.fn();
+    renderGameWithNativeBack(
+      new TestProgressRepository(floorFiveProgress),
+      back,
+      fallback,
+    );
+
+    await reachOwlReveal(user);
+    act(() => back.emitBack());
+    expect(screen.getByTestId('owl-reveal-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('owl-result-screen');
+    act(() => back.emitBack());
+    expect(screen.getByTestId('owl-result-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
+    await screen.findByTestId('ending-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    expect(screen.getByRole('button', { name: '도전 시작' })).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('shows title after boot and saves a first profile before entering the tower', async () => {

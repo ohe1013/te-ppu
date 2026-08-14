@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { LoadedImageRef } from '../../assets';
+import { usePlatformBack } from '../../platform/back-request';
 import { closeWithTimeout } from '../../platform/close-with-timeout';
 import { AssetIcon } from './AssetIcon';
 import { ModalOverlay } from './ModalOverlay';
@@ -57,6 +58,10 @@ export function AppExitConfirmation({
     dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     return () => previouslyFocused?.focus();
   }, [open]);
+
+  usePlatformBack(() => {
+    if (!confirmPendingRef.current && !closeSucceededRef.current) onCancel();
+  }, { enabled: open, priority: 100 });
 
   if (!open) return null;
 
