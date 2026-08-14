@@ -635,68 +635,116 @@ git commit -m "feat: compose cleared local development mode"
 
 ---
 
-### Task 4: `npm run dev` command and configuration contract
+### Task 4: Observable `npm run dev` and `npm run dev:clean` behavior
 
 **Files:**
+- Create: `tests/dev-modes/dev-cleared.spec.ts`
+- Create: `tests/dev-modes/dev-clean.spec.ts`
+- Create: `playwright.dev-modes.config.ts`
 - Create: `.env.dev-cleared`
 - Modify: `src/vite-env.d.ts`
-- Create: `scripts/dev-cleared-contract.test.mjs`
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: Vite environment mode loading and the guarded `VITE_DEV_ALL_CLEARED` flag.
-- Produces: `npm run dev`, `npm run dev:clean`, and `npm run test:dev-cleared-contract`.
+- Consumes: Vite environment mode loading, the guarded `VITE_DEV_ALL_CLEARED` flag, and the real application UI.
+- Produces: `npm run dev`, `npm run dev:clean`, and `npm run test:dev-modes` with browser-observable assertions.
 
-- [ ] **Step 1: Write the failing command/configuration contract**
+- [ ] **Step 1: Write failing browser tests for both development commands**
 
-Create `scripts/dev-cleared-contract.test.mjs`:
+Create `tests/dev-modes/dev-cleared.spec.ts`:
 
-```js
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+```ts
+import { expect, test } from '@playwright/test';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+test('npm run dev opens ADM with every difficulty and floor cleared', async ({ page }) => {
+  await page.goto('/');
 
-function readEnv(name) {
-  return Object.fromEntries(
-    readFileSync(resolve(root, name), 'utf8')
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith('#'))
-      .map((line) => {
-        const separator = line.indexOf('=');
-        return [line.slice(0, separator), line.slice(separator + 1)];
-      }),
-  );
-}
+  await expect(page.getByTestId('title-screen')).toContainText('ADM');
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'hard');
+  await page.locator('.title-screen__action--start').click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
 
-test('local cleared mode is the default dev command and is absent from packaged modes', () => {
-  const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
-
-  assert.equal(packageJson.scripts.dev, 'vite --host 0.0.0.0 --mode dev-cleared');
-  assert.equal(packageJson.scripts['dev:clean'], 'vite --host 0.0.0.0 --mode browser');
-  assert.deepEqual(readEnv('.env.dev-cleared'), {
-    VITE_RUNTIME_MODE: 'browser',
-    VITE_DEV_ALL_CLEARED: 'true',
-  });
-  for (const name of ['.env.browser', '.env.android', '.env.apps', '.env.e2e']) {
-    assert.equal(readEnv(name).VITE_DEV_ALL_CLEARED, undefined, name);
+  for (const difficulty of ['easy', 'normal', 'hard']) {
+    await page.locator(`.difficulty-selector__option[data-difficulty="${difficulty}"]`).click();
+    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', difficulty);
+    await expect(page.locator('.tower-node--cleared')).toHaveCount(5);
   }
 });
 ```
 
-- [ ] **Step 2: Run the contract and verify RED**
+Create `tests/dev-modes/dev-clean.spec.ts`:
+
+```ts
+import { expect, test } from '@playwright/test';
+
+test('npm run dev:clean retains an ordinary fresh browser profile', async ({ page }) => {
+  await page.goto('/');
+
+  await expect(page.getByTestId('title-screen')).not.toContainText('ADM');
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
+  await page.locator('.title-screen__action--start').click();
+  await expect(page.getByTestId('name-entry-screen')).toBeVisible();
+});
+```
+
+Create `playwright.dev-modes.config.ts`:
+
+```ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/dev-modes',
+  timeout: 30_000,
+  expect: { timeout: 10_000 },
+  fullyParallel: false,
+  workers: 1,
+  reporter: 'list',
+  use: {
+    browserName: 'chromium',
+    viewport: { width: 430, height: 932 },
+    hasTouch: true,
+    isMobile: true,
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
+  },
+  webServer: [
+    {
+      command: 'npm run dev -- --host 127.0.0.1 --port 4175 --strictPort',
+      port: 4175,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: 'npm run dev:clean -- --host 127.0.0.1 --port 4176 --strictPort',
+      port: 4176,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+  ],
+  projects: [
+    {
+      name: 'dev-cleared',
+      testMatch: /dev-cleared\.spec\.ts/u,
+      use: { baseURL: 'http://127.0.0.1:4175' },
+    },
+    {
+      name: 'dev-clean',
+      testMatch: /dev-clean\.spec\.ts/u,
+      use: { baseURL: 'http://127.0.0.1:4176' },
+    },
+  ],
+});
+```
+
+- [ ] **Step 2: Run both real commands and verify RED**
 
 Run:
 
 ```powershell
-& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\node.exe' --test scripts/dev-cleared-contract.test.mjs
+& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' exec playwright test -c playwright.dev-modes.config.ts
 ```
 
-Expected: FAIL because `.env.dev-cleared` and `dev:clean` do not exist and `dev` still uses browser mode.
+Expected: FAIL before browser assertions because `dev:clean` does not exist, or the cleared project observes the ordinary Easy/profile-empty state. Either failure is caused by the missing development-mode feature.
 
 - [ ] **Step 3: Add the explicit Vite mode and commands**
 
@@ -718,26 +766,26 @@ Update `package.json` scripts exactly:
 ```json
 "dev": "vite --host 0.0.0.0 --mode dev-cleared",
 "dev:clean": "vite --host 0.0.0.0 --mode browser",
-"test:dev-cleared-contract": "node --test scripts/dev-cleared-contract.test.mjs"
+"test:dev-modes": "playwright test -c playwright.dev-modes.config.ts"
 ```
 
 Do not modify `.env.browser`, `.env.android`, `.env.apps`, or `.env.e2e`.
 
-- [ ] **Step 4: Verify the configuration contract and types**
+- [ ] **Step 4: Verify both development modes and types**
 
 Run:
 
 ```powershell
-& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run test:dev-cleared-contract
+& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run test:dev-modes
 & 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run typecheck
 ```
 
-Expected: the Node contract passes and TypeScript exits 0.
+Expected: the two Playwright projects pass against their real server commands and TypeScript exits 0.
 
-- [ ] **Step 5: Commit development commands**
+- [ ] **Step 5: Commit development commands and their behavior tests**
 
 ```powershell
-git add -- .env.dev-cleared src/vite-env.d.ts scripts/dev-cleared-contract.test.mjs package.json
+git add -- .env.dev-cleared src/vite-env.d.ts package.json playwright.dev-modes.config.ts tests/dev-modes/dev-cleared.spec.ts tests/dev-modes/dev-clean.spec.ts
 git commit -m "build: default dev server to cleared progress"
 ```
 
@@ -757,7 +805,7 @@ git commit -m "build: default dev server to cleared progress"
 
 ```powershell
 & 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' test -- tests/progression/devClearedProgress.test.ts tests/progression/devClearedProgressRepositoryFactory.test.ts tests/progression/localProgressRepository.test.ts tests/progression/progressRepositoryFactory.test.ts src/app/dev-cleared-mode.test.ts src/app/app-services.test.ts src/app/AppRoot.test.tsx
-& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run test:dev-cleared-contract
+& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run test:dev-modes
 & 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' run typecheck
 ```
 
@@ -784,53 +832,7 @@ Expected: Vitest, Playwright, and delivery gates all exit 0.
 
 Expected: all builds exit 0 and the final command prints `AIT_OK`.
 
-- [ ] **Step 4: Smoke-test the actual `npm run dev` server**
-
-Start the server in a hidden PowerShell process on a fixed port:
-
-```powershell
-$devProcess = Start-Process -FilePath 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' -ArgumentList @('run', 'dev', '--', '--host', '127.0.0.1', '--port', '4175', '--strictPort') -WorkingDirectory (Get-Location) -WindowStyle Hidden -PassThru
-```
-
-After `http://127.0.0.1:4175` responds, run this one-off Playwright assertion:
-
-```powershell
-@'
-import { chromium } from '@playwright/test';
-const browser = await chromium.launch();
-try {
-  const page = await browser.newPage({ viewport: { width: 430, height: 932 } });
-  await page.goto('http://127.0.0.1:4175');
-  await page.getByTestId('title-screen').waitFor();
-  if ((await page.getByTestId('app-shell').getAttribute('data-difficulty')) !== 'hard') {
-    throw new Error('dev mode did not select Hard');
-  }
-  if (!(await page.getByTestId('title-screen').textContent())?.includes('ADM')) {
-    throw new Error('dev mode did not load ADM');
-  }
-  await page.locator('.title-screen__action--start').click();
-  await page.getByTestId('tower-screen').waitFor();
-  if (await page.locator('.tower-node--cleared').count() !== 5) {
-    throw new Error('dev mode did not clear all tower floors');
-  }
-  console.log('DEV_CLEARED_SMOKE_OK');
-} finally {
-  await browser.close();
-}
-'@ | & 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\node.exe' --input-type=module
-```
-
-Always stop only the validated process started above:
-
-```powershell
-if ($devProcess -and -not $devProcess.HasExited) {
-  Stop-Process -Id $devProcess.Id
-}
-```
-
-Expected: `DEV_CLEARED_SMOKE_OK` and no process left listening on port 4175.
-
-- [ ] **Step 5: Inspect the final branch without touching user files**
+- [ ] **Step 4: Inspect the final branch without touching user files**
 
 ```powershell
 git diff --check
@@ -840,7 +842,6 @@ git log --oneline --decorate -8
 
 Expected: no unstaged feature changes; `tmp/` remains untracked and untouched.
 
-- [ ] **Step 6: Request review, apply any validated fixes, and push**
+- [ ] **Step 5: Request review, apply any validated fixes, and push**
 
 Review the complete change from commit `738df0f` through the new HEAD for progression validity, storage isolation, release-mode gating, and test quality. After Critical and Important findings are resolved and verification is refreshed, push `feat/pve-delivery` normally and confirm the remote and PR #6 HEAD match local HEAD.
-
