@@ -244,4 +244,46 @@ describe('TowerScreen', () => {
     expect(floorTwo?.querySelector('[data-encounter-index="1"]'))
       .toHaveAttribute('data-encounter-state', 'active');
   });
+
+  it('aligns the route to floor five when an owl battle is suspended', () => {
+    const { rerender } = render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={null}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive
+        runScore={15_000}
+      />,
+    );
+
+    const route = screen.getByTestId('tower-route');
+    const floorFive = route.querySelector<HTMLElement>('[data-floor="5"]');
+    expect(floorFive).not.toBeNull();
+    Object.defineProperties(route, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 1_000 },
+    });
+    Object.defineProperties(floorFive!, {
+      offsetHeight: { configurable: true, value: 100 },
+      offsetTop: { configurable: true, value: 600 },
+    });
+
+    rerender(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={{ kind: 'owl' }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive
+        runScore={15_000}
+      />,
+    );
+
+    expect(route.scrollTop).toBe(500);
+  });
 });
