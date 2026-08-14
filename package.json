@@ -7,7 +7,8 @@
     "node": ">=24.15.0 <25"
   },
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --mode browser",
+    "dev": "vite --host 0.0.0.0 --mode dev-cleared",
+    "dev:clean": "vite --host 0.0.0.0 --mode browser",
     "dev:e2e": "vite --host 127.0.0.1 --mode e2e",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -29,6 +30,7 @@
     "verify:android:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android/Verify-AndroidRelease.ps1",
     "build:ait": "npm run check:ait-config && node scripts/build-ait.mjs",
     "test:e2e": "playwright test",
+    "test:dev-modes": "playwright test -c playwright.dev-modes.config.ts",
     "capture:store-media": "playwright test -c playwright.store-media.config.ts",
     "check:ait": "node scripts/verify-ait-package.mjs",
     "check:source-policy": "node scripts/security/check-authored-source-policy.mjs",
