@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cloneProgressState,
   DEFAULT_PROGRESS,
+  createDevClearedProgress,
   createLocalProgressRepository,
   type ProgressError,
   type ProgressLoadResult,
@@ -146,6 +147,52 @@ describe('local progress repository', () => {
       recoveredFromCorruption: false,
     });
     expect(storage.writes).toEqual([]);
+  });
+
+  it('persists a detached configured initial state when its isolated key is empty', async () => {
+    const storage = new TestStorage();
+    const initialState = createDevClearedProgress();
+    const repository = createLocalProgressRepository(storage, {
+      progressKey: 'te-ppu.progress.dev-cleared.identity.local.local-browser',
+      backupPrefix: 'te-ppu.progress.backup.dev-cleared.identity.local.local-browser.',
+      initialState,
+      persistInitialStateWhenMissing: true,
+    });
+
+    const result = await repository.load();
+
+    expect(result).toEqual({
+      ok: true,
+      state: initialState,
+      recoveredFromCorruption: false,
+    });
+    expect(storage.values.get('te-ppu.progress.dev-cleared.identity.local.local-browser'))
+      .toBe(JSON.stringify(initialState));
+    expect(result.ok && result.state).not.toBe(initialState);
+  });
+
+  it('recovers corrupt isolated progress to its configured initial state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    const progressKey = 'te-ppu.progress.dev-cleared.identity.local.local-browser';
+    const backupPrefix = 'te-ppu.progress.backup.dev-cleared.identity.local.local-browser.';
+    const storage = new TestStorage();
+    const initialState = createDevClearedProgress();
+    storage.values.set(progressKey, '{broken');
+
+    const result = await createLocalProgressRepository(storage, {
+      progressKey,
+      backupPrefix,
+      initialState,
+      persistInitialStateWhenMissing: true,
+    }).load();
+
+    expect(result).toEqual({
+      ok: true,
+      state: initialState,
+      recoveredFromCorruption: true,
+    });
+    expect(storage.values.get(`${backupPrefix}${NOW}`)).toBe('{broken');
+    expect(storage.values.get(progressKey)).toBe(JSON.stringify(initialState));
   });
 
   it('prefers a present scoped value and never reads or rewrites legacy', async () => {
