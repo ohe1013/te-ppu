@@ -270,7 +270,8 @@ Add focused CSS after the existing onboarding rules:
 }
 
 .name-entry-screen .onboarding-screen__header {
-  padding-top: 3rem;
+  min-height: 3rem;
+  padding-left: 5.5rem;
 }
 
 .name-entry-screen__actions {

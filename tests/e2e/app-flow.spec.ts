@@ -44,6 +44,37 @@ test('registers arcade initials and a character before the first easy run', asyn
   }
 });
 
+test('supports touch selection with Back above the initials form', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  const nameScreen = page.getByTestId('name-entry-screen');
+  await expect(nameScreen).toBeVisible();
+
+  const screenBox = await nameScreen.boundingBox();
+  const backBox = await page.getByRole('button', { name: 'BACK' }).boundingBox();
+  const eyebrowBox = await nameScreen.locator('.eyebrow').boundingBox();
+  expect(screenBox).not.toBeNull();
+  expect(backBox).not.toBeNull();
+  expect(eyebrowBox).not.toBeNull();
+  expect(backBox!.x).toBeLessThan(screenBox!.x + screenBox!.width / 2);
+  expect(backBox!.y).toBeLessThan(screenBox!.y + 100);
+
+  const overlapsEyebrow = !(
+    backBox!.x + backBox!.width <= eyebrowBox!.x
+    || eyebrowBox!.x + eyebrowBox!.width <= backBox!.x
+    || backBox!.y + backBox!.height <= eyebrowBox!.y
+    || eyebrowBox!.y + eyebrowBox!.height <= backBox!.y
+  );
+  expect(overlapsEyebrow).toBe(false);
+
+  await page.getByRole('button', { name: '오른쪽' }).click();
+  await page.getByRole('button', { name: '선택' }).click();
+  await page.getByRole('button', { name: 'A', exact: true }).click();
+  await page.getByRole('button', { name: 'C', exact: true }).click();
+  await expect(page.getByRole('status', { name: '입력한 이니셜' })).toHaveText('BAC');
+  await expect(page.getByRole('button', { name: 'END' })).toBeEnabled();
+});
+
 test('completes first-run character selection for all three equal-performance heroes', async ({ page }) => {
   for (const { characterId, initials, name } of [
     { characterId: 'hero-engineer', initials: 'RVT', name: '리벳' },

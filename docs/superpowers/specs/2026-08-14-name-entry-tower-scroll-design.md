@@ -71,8 +71,9 @@ side of the fourth row lands on the enlarged `DEL` key instead of `END`.
 ### Layout
 
 `BACK` moves out of the bottom control cluster and sits at the upper-left edge
-inside the existing safe-area padding. The header receives enough top clearance
-that it never overlaps the back control.
+inside the existing safe-area padding. The header receives enough left
+clearance that it never overlaps the back control without consuming extra
+vertical space on the 360x640 viewport.
 
 The lower control area uses two columns:
 

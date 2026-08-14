@@ -34,11 +34,11 @@ export function NameEntryScreen({
       setDraft((value) => value.slice(0, -1));
       return;
     }
-    if (key === 'END') {
-      if (draft.length === 3) onComplete(draft);
-      return;
-    }
     setDraft((value) => value.length < 3 ? `${value}${key}` : value);
+  };
+
+  const completeDraft = () => {
+    if (draft.length === 3) onComplete(draft);
   };
 
   const moveFocus = (direction: ArcadeDirection) => {
@@ -80,6 +80,9 @@ export function NameEntryScreen({
       tabIndex={0}
     >
       <ScreenBackdrop image={backdrop} />
+      <button className="secondary-button name-entry-screen__back" onClick={onBack} type="button">
+        BACK
+      </button>
       <header className="onboarding-screen__header">
         <p className="eyebrow">PLAYER REGISTRATION</p>
         <h1>이니셜 입력</h1>
@@ -100,7 +103,6 @@ export function NameEntryScreen({
               <button
                 aria-pressed={focusedKey === key}
                 className="name-keyboard__key"
-                disabled={key === 'END' && draft.length !== 3}
                 key={key}
                 onClick={() => {
                   setFocusedKey(key);
@@ -115,11 +117,25 @@ export function NameEntryScreen({
           </div>
         ))}
       </div>
-      <div className="onboarding-controls">
+      <div className="onboarding-controls name-entry-screen__controls">
         <ArcadeDirectionPad onDirection={moveFocus} />
-        <button className="secondary-button onboarding-controls__back" onClick={onBack} type="button">
-          BACK
-        </button>
+        <div aria-label="이니셜 동작" className="name-entry-screen__actions" role="group">
+          <button
+            className="name-entry-screen__select"
+            onClick={() => activateKey(focusedKey)}
+            type="button"
+          >
+            선택
+          </button>
+          <button
+            className="name-entry-screen__end"
+            disabled={draft.length !== 3}
+            onClick={completeDraft}
+            type="button"
+          >
+            END
+          </button>
+        </div>
       </div>
     </section>
   );

@@ -890,6 +890,19 @@
   line-height: 1.4;
 }
 
+.screen-shell.name-entry-screen > .name-entry-screen__back {
+  position: absolute;
+  top: max(1.25rem, var(--native-close-exclusion-top, 10px));
+  left: max(1.25rem, var(--safe-area-left, 0px));
+  min-height: 2.45rem;
+  padding: 0.42rem 0.78rem;
+}
+
+.name-entry-screen .onboarding-screen__header {
+  min-height: 3rem;
+  padding-left: 5.5rem;
+}
+
 .name-entry-screen__draft {
   display: block;
   padding: 0.65rem 0.85rem;
@@ -968,6 +981,18 @@
 
 .onboarding-controls__back {
   align-self: end;
+}
+
+.name-entry-screen__actions {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(2.7rem, 1fr);
+  gap: 0.55rem;
+}
+
+.name-entry-screen__select,
+.name-entry-screen__end {
+  min-height: 0;
 }
 
 .onboarding-controls__actions {

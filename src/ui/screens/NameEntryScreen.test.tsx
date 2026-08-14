@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NameEntryScreen } from './NameEntryScreen';
@@ -35,6 +35,40 @@ describe('NameEntryScreen', () => {
     fireEvent.keyDown(screenElement, { key: 'Enter' });
 
     expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('AC');
+  });
+
+  it('keeps direct taps and adds direction-pad selection for the highlighted key', async () => {
+    const user = userEvent.setup();
+    render(<NameEntryScreen initialValue="" onBack={vi.fn()} onComplete={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: '오른쪽' }));
+    await user.click(screen.getByRole('button', { name: '선택' }));
+    expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('B__');
+
+    await user.click(screen.getByRole('button', { name: 'A' }));
+    expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('BA_');
+  });
+
+  it('puts END below selection and lets selection activate the focused DEL key', async () => {
+    const user = userEvent.setup();
+    render(<NameEntryScreen initialValue="ABC" onBack={vi.fn()} onComplete={vi.fn()} />);
+
+    const keyboard = screen.getByRole('group', { name: '이니셜 키보드' });
+    const actions = screen.getByRole('group', { name: '이니셜 동작' });
+    expect(within(keyboard).queryByRole('button', { name: 'END' })).not.toBeInTheDocument();
+    expect(within(actions).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['선택', 'END']);
+
+    await user.click(screen.getByRole('button', { name: 'DEL' }));
+    await user.click(screen.getByRole('button', { name: '선택' }));
+    expect(screen.getByRole('status', { name: '입력한 이니셜' })).toHaveTextContent('A__');
+  });
+
+  it('places Back in the dedicated upper-left control', () => {
+    render(<NameEntryScreen initialValue="" onBack={vi.fn()} onComplete={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'BACK' }))
+      .toHaveClass('name-entry-screen__back');
   });
 
   it('lets a focused Back button consume Enter while arrows still move the arcade key', async () => {
