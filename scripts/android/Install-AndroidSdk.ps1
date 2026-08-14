@@ -219,7 +219,17 @@ try {
         }
 
         $extracted = Assert-TeppuPathWithin -Path (Join-Path $temporaryRoot 'extracted') -Root $temporaryRoot -Label 'Extracted Android tools directory'
-        Expand-Archive -LiteralPath $archivePath -DestinationPath $extracted
+        New-Item -ItemType Directory -Path $extracted | Out-Null
+        if ([string]::IsNullOrWhiteSpace($env:WINDIR)) {
+            throw '[TEPPU_WINDOWS_DIRECTORY_MISSING] WINDIR is unavailable.'
+        }
+        $tar = Join-Path ([IO.Path]::GetFullPath($env:WINDIR)) 'System32\tar.exe'
+        $null = Invoke-TeppuProcessCapture -Executable $tar -Arguments @(
+            '-xf',
+            $archivePath,
+            '-C',
+            $extracted
+        ) -FailureCode 'TEPPU_ANDROID_TOOLS_EXTRACTION_FAILED'
         $extractedTools = Join-Path $extracted 'cmdline-tools'
         if (-not (Test-Path -LiteralPath (Join-Path $extractedTools 'bin\sdkmanager.bat') -PathType Leaf)) {
             throw '[TEPPU_ANDROID_TOOLS_ARCHIVE_INVALID] Verified archive has an unexpected directory layout.'

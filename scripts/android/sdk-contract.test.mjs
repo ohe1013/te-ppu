@@ -97,3 +97,10 @@ test('installer uses the pinned contract and gates license acceptance explicitly
   assert.doesNotMatch(source, /(?:echo|Write-Output)\s+["']?y["']?\s*\|/iu);
   assert.doesNotMatch(source, /yes\s*\|/iu);
 });
+
+test('installer avoids the incompatible PowerShell ZIP extractor', () => {
+  const source = readFileSync(installer, 'utf8');
+  assert.doesNotMatch(source, /Expand-Archive/u);
+  assert.match(source, /System32\\tar\.exe/u);
+  assert.match(source, /Invoke-TeppuProcessCapture -Executable \$tar/u);
+});
