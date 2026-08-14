@@ -915,6 +915,7 @@
 
 .screen-shell.name-entry-screen > .name-entry-screen__back {
   position: absolute;
+  z-index: 2;
   top: max(1.25rem, var(--native-close-exclusion-top, 10px));
   left: max(1.25rem, var(--safe-area-left, 0px));
   min-height: 2.45rem;

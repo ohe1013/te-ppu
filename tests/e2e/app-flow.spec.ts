@@ -75,6 +75,32 @@ test('supports touch selection with Back above the initials form', async ({ page
   await expect(page.getByRole('button', { name: 'END' })).toBeEnabled();
 });
 
+test('returns to title when the visible initials Back control is touched', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await expect(page.getByTestId('name-entry-screen')).toBeVisible();
+
+  const back = page.getByRole('button', { name: 'BACK' });
+  const box = await back.boundingBox();
+  expect(box).not.toBeNull();
+  const center = {
+    x: box!.x + box!.width / 2,
+    y: box!.y + box!.height / 2,
+  };
+  const hit = await page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    return {
+      buttonText: element?.closest('button')?.textContent?.trim() ?? null,
+      tagName: element?.tagName ?? null,
+    };
+  }, center);
+
+  expect(hit).toEqual({ buttonText: 'BACK', tagName: 'BUTTON' });
+  await page.touchscreen.tap(center.x, center.y);
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await expect(page.getByTestId('name-entry-screen')).toHaveCount(0);
+});
+
 test('completes first-run character selection for all three equal-performance heroes', async ({ page }) => {
   for (const { characterId, initials, name } of [
     { characterId: 'hero-engineer', initials: 'RVT', name: '리벳' },
