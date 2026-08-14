@@ -6,5 +6,6 @@ dist/
 playwright-report/
 test-results/
 coverage/
+artifacts/android/
 *.ait
 

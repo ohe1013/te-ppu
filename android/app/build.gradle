@@ -1,5 +1,19 @@
 apply plugin: 'com.android.application'
 
+def teppuKeystorePath = System.getenv('TEPPU_KEYSTORE_PATH')
+def teppuKeystorePassword = System.getenv('TEPPU_KEYSTORE_PASSWORD')
+def teppuKeyAlias = System.getenv('TEPPU_KEY_ALIAS')
+def teppuKeyPassword = System.getenv('TEPPU_KEY_PASSWORD')
+def teppuSigningValues = [
+    teppuKeystorePath,
+    teppuKeystorePassword,
+    teppuKeyAlias,
+    teppuKeyPassword,
+]
+def teppuSigningReady = teppuSigningValues.every { value ->
+    value != null && !value.trim().isEmpty()
+}
+
 android {
     namespace = "io.github.ohe1013.teppu"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,11 +30,41 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (teppuSigningReady) {
+                storeFile file(teppuKeystorePath)
+                storePassword teppuKeystorePassword
+                keyAlias teppuKeyAlias
+                keyPassword teppuKeyPassword
+                storeType 'JKS'
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseRequested = taskGraph.allTasks.any { task ->
+        def taskName = task.name.toLowerCase(Locale.ROOT)
+        task.project == project && (
+            taskName.startsWith('assemblerelease') ||
+            taskName.startsWith('bundlerelease') ||
+            taskName.startsWith('packagerelease')
+        )
+    }
+    if (releaseRequested && !teppuSigningReady) {
+        throw new GradleException(
+            'TEPPU_ANDROID_RELEASE_SIGNING_MISSING: release signing environment is incomplete.'
+        )
     }
 }
 
