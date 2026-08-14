@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "2.10.8",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
     "@pixi/react": "8.0.5",
     "firebase": "12.17.1",
     "pixi.js": "8.19.0",
