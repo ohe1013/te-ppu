@@ -142,8 +142,12 @@
 }
 
 .tower-screen {
-  align-content: start;
+  display: flex;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
   gap: 0.7rem;
+  overflow: hidden;
   padding-top: max(1.65rem, var(--native-close-exclusion-top, 10px));
   padding-bottom: 2rem;
 }
@@ -235,19 +239,38 @@
 
 .tower-route {
   position: relative;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: stretch;
-  gap: 0.7rem;
-  min-height: 31rem;
-  overflow: hidden;
-  padding: 1.2rem 0.5rem 1.25rem;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 0;
   border: 3px solid var(--arcade-ink);
   border-radius: 1rem;
   background:
     linear-gradient(90deg, rgb(23 18 57 / 18%), transparent 18% 82%, rgb(23 18 57 / 18%)),
     rgb(36 22 78 / 36%);
   box-shadow: inset 0 0 0 2px rgb(255 244 207 / 14%), 4px 4px 0 rgb(23 18 57 / 60%);
+  scrollbar-width: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tower-route::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.tower-route__content {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.7rem;
+  padding: 1.2rem 0.5rem 1.25rem;
 }
 
 .screen-backdrop--tower-route {
@@ -293,8 +316,8 @@
 .tower-route__shaft::before { top: -0.2rem; }
 .tower-route__shaft::after { bottom: -0.2rem; background: var(--arcade-pink); }
 
-.tower-route > .tower-node,
-.tower-route > .tower-route__shaft {
+.tower-route__content > .tower-node,
+.tower-route__content > .tower-route__shaft {
   z-index: 1;
 }
 

@@ -139,6 +139,50 @@ test('shows a usable tower screen in under ten seconds', async ({ page }) => {
   await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
 });
 
+test('starts at floor one and confines scrolling to the tower route', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openTower(page);
+
+  const app = page.getByTestId('app-shell');
+  const route = page.getByTestId('tower-route');
+  const floorOne = route.locator('[data-floor="1"]');
+  const before = await route.evaluate((element) => {
+    const routeRect = element.getBoundingClientRect();
+    const firstRect = element.querySelector<HTMLElement>('[data-floor="1"]')!
+      .getBoundingClientRect();
+    const topFloor = [...element.querySelectorAll<HTMLElement>('[data-floor]')]
+      .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)
+      .at(0)?.dataset.floor ?? null;
+    const style = getComputedStyle(element);
+    const webkitScrollbar = getComputedStyle(element, '::-webkit-scrollbar');
+    return {
+      firstVisible: firstRect.bottom > routeRect.top && firstRect.top < routeRect.bottom,
+      overflowY: style.overflowY,
+      routeScrollable: element.scrollHeight > element.clientHeight,
+      scrollbarHidden: style.scrollbarWidth === 'none'
+        || webkitScrollbar.display === 'none'
+        || webkitScrollbar.width === '0px',
+      topFloor,
+    };
+  });
+
+  expect(before).toEqual({
+    firstVisible: true,
+    overflowY: 'auto',
+    routeScrollable: true,
+    scrollbarHidden: true,
+    topFloor: '1',
+  });
+  await expect(floorOne).toBeInViewport();
+
+  await route.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => route.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(route.locator('[data-floor="5"]')).toBeInViewport();
+  expect(await app.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
 test('resumes the same active run after visiting the title', async ({ page }) => {
   await seedReturningProfile(page, RETURNING_PROFILE);
   await openMatch(page);

@@ -120,67 +120,70 @@ export function TowerScreen({
       </fieldset>
       <div
         aria-label="타워 층 선택"
-        className="floor-list tower-route tower-route--ascending"
+        className="floor-list tower-route tower-route--ascending tower-route--scrollable"
         data-testid="tower-route"
+        tabIndex={0}
       >
-        <ScreenBackdrop
-          className="screen-backdrop--tower-route"
-          image={commonAssets?.towerBackdrop}
-        />
-        <span aria-hidden="true" className="tower-route__shaft" />
-        {FLOORS.map((floor, index) => {
-          const historicallyUnlocked = floor <= activeProgress.highestUnlockedFloor;
-          const unlocked = historicallyUnlocked && (!runActive || floor === requiredFloor);
-          const cleared = activeProgress.clearedFloors[floor];
-          const status = runActive
-            ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
-            : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
-          const statusId = `floor-${floor}-status`;
-          const floorContinuation = continuation?.kind === 'floor'
-            && continuation.floor === floor
-            ? continuation
-            : null;
-          const owlContinuation = continuation?.kind === 'owl' && floor === 5;
-          const actionLabel = floorContinuation !== null
-            ? `${floor}층 ${floorContinuation.encounterIndex + 1}번째 상대부터 계속`
-            : owlContinuation
-              ? '최종전 계속'
-              : `${floor}층 선택`;
-          return (
-            <div
-              className={`tower-node tower-node--${index % 2 === 0 ? 'left' : 'right'} ${
-                cleared ? 'tower-node--cleared' : unlocked ? 'tower-node--open' : 'tower-node--locked'
-              }`}
-              data-floor={floor}
-              key={floor}
-            >
-              <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}층</span>
-              <div className="tower-node__card">
-                <div className="tower-node__title">
-                  <span>{floor === 5 ? '마왕의 왕좌' : `${floor}층 관문`}</span>
-                  <small>3연전</small>
+        <div className="tower-route__content">
+          <ScreenBackdrop
+            className="screen-backdrop--tower-route"
+            image={commonAssets?.towerBackdrop}
+          />
+          <span aria-hidden="true" className="tower-route__shaft" />
+          {FLOORS.map((floor, index) => {
+            const historicallyUnlocked = floor <= activeProgress.highestUnlockedFloor;
+            const unlocked = historicallyUnlocked && (!runActive || floor === requiredFloor);
+            const cleared = activeProgress.clearedFloors[floor];
+            const status = runActive
+              ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
+              : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
+            const statusId = `floor-${floor}-status`;
+            const floorContinuation = continuation?.kind === 'floor'
+              && continuation.floor === floor
+              ? continuation
+              : null;
+            const owlContinuation = continuation?.kind === 'owl' && floor === 5;
+            const actionLabel = floorContinuation !== null
+              ? `${floor}층 ${floorContinuation.encounterIndex + 1}번째 상대부터 계속`
+              : owlContinuation
+                ? '최종전 계속'
+                : `${floor}층 선택`;
+            return (
+              <div
+                className={`tower-node tower-node--${index % 2 === 0 ? 'left' : 'right'} ${
+                  cleared ? 'tower-node--cleared' : unlocked ? 'tower-node--open' : 'tower-node--locked'
+                }`}
+                data-floor={floor}
+                key={floor}
+              >
+                <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}층</span>
+                <div className="tower-node__card">
+                  <div className="tower-node__title">
+                    <span>{floor === 5 ? '마왕의 왕좌' : `${floor}층 관문`}</span>
+                    <small>3연전</small>
+                  </div>
+                  <CharacterStrip
+                    activeIndex={floorContinuation?.encounterIndex ?? 0}
+                    encounters={getFloorEncounters(floor)}
+                    rivals={commonAssets?.rivals ?? {}}
+                    unlocked={unlocked}
+                  />
+                  <button
+                    aria-describedby={statusId}
+                    aria-label={actionLabel}
+                    className="floor-card"
+                    disabled={!unlocked}
+                    onClick={() => onSelectFloor(floor)}
+                    type="button"
+                  >
+                    <span>{actionLabel}</span>
+                    <small id={statusId}>{status}</small>
+                  </button>
                 </div>
-                <CharacterStrip
-                  activeIndex={floorContinuation?.encounterIndex ?? 0}
-                  encounters={getFloorEncounters(floor)}
-                  rivals={commonAssets?.rivals ?? {}}
-                  unlocked={unlocked}
-                />
-                <button
-                  aria-describedby={statusId}
-                  aria-label={actionLabel}
-                  className="floor-card"
-                  disabled={!unlocked}
-                  onClick={() => onSelectFloor(floor)}
-                  type="button"
-                >
-                  <span>{actionLabel}</span>
-                  <small id={statusId}>{status}</small>
-                </button>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </section>
   );

@@ -108,6 +108,9 @@ describe('TowerScreen', () => {
 
     const route = screen.getByTestId('tower-route');
     expect(route).toHaveClass('tower-route--ascending');
+    expect(route).toHaveClass('tower-route--scrollable');
+    expect(route).toHaveAttribute('tabindex', '0');
+    expect(route.querySelector('.tower-route__content')).toBeInTheDocument();
     expect(route.querySelector('.tower-route__shaft')).toBeInTheDocument();
     expect([...route.querySelectorAll<HTMLElement>('[data-floor]')].map((node) => node.dataset.floor))
       .toEqual(['1', '2', '3', '4', '5']);
