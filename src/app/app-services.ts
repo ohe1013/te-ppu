@@ -1,4 +1,5 @@
 import {
+  createDevClearedProgressRepositoryFactory,
   createLocalProgressRepositoryFactory,
   type ProgressRepositoryFactory,
 } from '../progression';
@@ -30,6 +31,10 @@ export interface AppServiceOverrides {
   readonly firebaseEnv?: Record<string, string | boolean | undefined>;
 }
 
+export interface AppServiceOptions {
+  readonly devClearedProgress?: boolean;
+}
+
 async function fetchAssetJson(url: string): Promise<unknown> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -50,6 +55,7 @@ export function createAppServices(
   runtimeMode: RuntimeMode,
   storage: Storage = window.localStorage,
   overrides: AppServiceOverrides = {},
+  options: AppServiceOptions = {},
 ): AppServices & { readonly leaderboardRepository: LeaderboardRepository } {
   const assetManager = overrides.assetManager ?? createAssetManager({
     fetchManifest: fetchAssetJson,
@@ -62,8 +68,10 @@ export function createAppServices(
   return {
     audioPort,
     platform: overrides.platform ?? createPlatform(runtimeMode),
-    progressRepositoryFactory:
-      overrides.progressRepositoryFactory ?? createLocalProgressRepositoryFactory(storage),
+    progressRepositoryFactory: overrides.progressRepositoryFactory
+      ?? (options.devClearedProgress
+        ? createDevClearedProgressRepositoryFactory(storage)
+        : createLocalProgressRepositoryFactory(storage)),
     assetManager,
     leaderboardRepository: overrides.leaderboardRepository
       ?? createLeaderboardRepository(overrides.firebaseEnv ?? import.meta.env),

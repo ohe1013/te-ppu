@@ -82,11 +82,57 @@ function repository(): ProgressRepository {
   };
 }
 
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
+  return {
+    clear: vi.fn(() => entries.clear()),
+    getItem: vi.fn((key: string) => entries.get(key) ?? null),
+    key: vi.fn(() => null),
+    get length() {
+      return entries.size;
+    },
+    removeItem: vi.fn((key: string) => entries.delete(key)),
+    setItem: vi.fn((key: string, value: string) => entries.set(key, value)),
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('createAppServices asset boundary', () => {
+  it('selects isolated cleared progress only when explicitly requested', async () => {
+    const storage = createMemoryStorage();
+    const services = createAppServices(
+      'browser',
+      storage,
+      { platform: platform(), firebaseEnv: {} },
+      { devClearedProgress: true },
+    );
+
+    const result = await services.progressRepositoryFactory
+      .forIdentity({ kind: 'local', key: 'local-browser' })
+      .load();
+
+    expect(result.ok && result.state.profile?.initials).toBe('ADM');
+    expect(result.ok && result.state.selectedDifficulty).toBe('hard');
+  });
+
+  it('keeps the ordinary progress factory when cleared progress is not requested', async () => {
+    const storage = createMemoryStorage();
+    const services = createAppServices(
+      'browser',
+      storage,
+      { platform: platform(), firebaseEnv: {} },
+    );
+
+    const result = await services.progressRepositoryFactory
+      .forIdentity({ kind: 'local', key: 'local-browser' })
+      .load();
+
+    expect(result.ok && result.state).toEqual(DEFAULT_PROGRESS);
+  });
+
   it('selects local leaderboards when Firebase env is empty or invalid', () => {
     const empty = createAppServices('browser', window.localStorage, {
       platform: platform(),
