@@ -1,0 +1,12 @@
+{
+  "appId": "io.github.ohe1013.teppu",
+  "appName": "테뿌리스",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#101026"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

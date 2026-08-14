@@ -21,6 +21,9 @@
     "check:store-media": "node scripts/qa/store-media.mjs",
     "check:ait-config": "node scripts/qa/check-ait-icon-env.mjs",
     "build:web": "npm run check:assets && vite build --mode browser",
+    "build:android:web": "npm run check:assets && vite build --mode android",
+    "sync:android": "npm run build:android:web && cap sync android",
+    "test:android-contract": "node --test scripts/android/*.test.mjs",
     "build:ait": "npm run check:ait-config && node scripts/build-ait.mjs",
     "test:e2e": "playwright test",
     "capture:store-media": "playwright test -c playwright.store-media.config.ts",
@@ -30,6 +33,7 @@
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "2.10.8",
+    "@capacitor/android": "8.5.0",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.0",
     "@pixi/react": "8.0.5",
@@ -41,6 +45,7 @@
   "devDependencies": {
     "@apps-in-toss/ait-format": "1.0.0",
     "@breezystack/lamejs": "1.2.7",
+    "@capacitor/cli": "8.5.0",
     "@playwright/test": "1.62.1",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "7.0.0",
