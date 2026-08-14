@@ -8,5 +8,11 @@
   },
   "server": {
     "androidScheme": "https"
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "insetsHandling": "css"
+    }
   }
 }

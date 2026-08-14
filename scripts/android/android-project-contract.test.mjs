@@ -9,6 +9,8 @@ import {
   readAndroidEnv,
   readCapacitorConfig,
   readCapacitorVersions,
+  readNativeAndroidContract,
+  readSystemBarsConfig,
 } from './android-project-contract.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -77,4 +79,27 @@ test('Teppu Android project uses the approved offline package contract', () => {
     app: '8.1.1',
   });
   assert.deepEqual(findMissingAndroidProjectFiles(root), []);
+  assert.deepEqual(readSystemBarsConfig(root), {
+    style: 'DARK',
+    insetsHandling: 'css',
+  });
+  assert.deepEqual(readNativeAndroidContract(root), {
+    applicationId: 'io.github.ohe1013.teppu',
+    versionCode: 1,
+    versionName: '1.0.0',
+    sdk: { min: 24, compile: 36, target: 36 },
+    appName: '테뿌리스',
+    applicationLabel: '@string/app_name',
+    activityLabel: '@string/app_name',
+    screenOrientation: 'portrait',
+    usesCleartextTraffic: false,
+    permissions: [],
+    theme: {
+      statusBarColor: '@color/teppu_background',
+      navigationBarColor: '@color/teppu_background',
+      lightStatusBar: 'false',
+      lightNavigationBar: 'false',
+      postSplashScreenTheme: '@style/AppTheme.NoActionBar',
+    },
+  });
 });
