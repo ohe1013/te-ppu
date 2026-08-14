@@ -123,6 +123,83 @@
           "defeat": { "path": "characters/moss-golem/portrait-defeat.webp" }
         }
       },
+      "spark-slime": {
+        "fullArt": { "path": "characters/spark-slime/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/spark-slime/portrait-idle.webp" },
+          "smug": { "path": "characters/spark-slime/portrait-smug.webp" },
+          "attack": { "path": "characters/spark-slime/portrait-attack.webp" },
+          "hit": { "path": "characters/spark-slime/portrait-hit.webp" },
+          "panic": { "path": "characters/spark-slime/portrait-panic.webp" },
+          "defeat": { "path": "characters/spark-slime/portrait-defeat.webp" }
+        }
+      },
+      "frost-smith": {
+        "fullArt": { "path": "characters/frost-smith/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/frost-smith/portrait-idle.webp" },
+          "smug": { "path": "characters/frost-smith/portrait-smug.webp" },
+          "attack": { "path": "characters/frost-smith/portrait-attack.webp" },
+          "hit": { "path": "characters/frost-smith/portrait-hit.webp" },
+          "panic": { "path": "characters/frost-smith/portrait-panic.webp" },
+          "defeat": { "path": "characters/frost-smith/portrait-defeat.webp" }
+        }
+      },
+      "storm-harpy": {
+        "fullArt": { "path": "characters/storm-harpy/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/storm-harpy/portrait-idle.webp" },
+          "smug": { "path": "characters/storm-harpy/portrait-smug.webp" },
+          "attack": { "path": "characters/storm-harpy/portrait-attack.webp" },
+          "hit": { "path": "characters/storm-harpy/portrait-hit.webp" },
+          "panic": { "path": "characters/storm-harpy/portrait-panic.webp" },
+          "defeat": { "path": "characters/storm-harpy/portrait-defeat.webp" }
+        }
+      },
+      "brass-minotaur": {
+        "fullArt": { "path": "characters/brass-minotaur/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/brass-minotaur/portrait-idle.webp" },
+          "smug": { "path": "characters/brass-minotaur/portrait-smug.webp" },
+          "attack": { "path": "characters/brass-minotaur/portrait-attack.webp" },
+          "hit": { "path": "characters/brass-minotaur/portrait-hit.webp" },
+          "panic": { "path": "characters/brass-minotaur/portrait-panic.webp" },
+          "defeat": { "path": "characters/brass-minotaur/portrait-defeat.webp" }
+        }
+      },
+      "cinder-witch": {
+        "fullArt": { "path": "characters/cinder-witch/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/cinder-witch/portrait-idle.webp" },
+          "smug": { "path": "characters/cinder-witch/portrait-smug.webp" },
+          "attack": { "path": "characters/cinder-witch/portrait-attack.webp" },
+          "hit": { "path": "characters/cinder-witch/portrait-hit.webp" },
+          "panic": { "path": "characters/cinder-witch/portrait-panic.webp" },
+          "defeat": { "path": "characters/cinder-witch/portrait-defeat.webp" }
+        }
+      },
+      "chain-knight": {
+        "fullArt": { "path": "characters/chain-knight/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/chain-knight/portrait-idle.webp" },
+          "smug": { "path": "characters/chain-knight/portrait-smug.webp" },
+          "attack": { "path": "characters/chain-knight/portrait-attack.webp" },
+          "hit": { "path": "characters/chain-knight/portrait-hit.webp" },
+          "panic": { "path": "characters/chain-knight/portrait-panic.webp" },
+          "defeat": { "path": "characters/chain-knight/portrait-defeat.webp" }
+        }
+      },
+      "night-archivist": {
+        "fullArt": { "path": "characters/night-archivist/full.webp" },
+        "portraits": {
+          "idle": { "path": "characters/night-archivist/portrait-idle.webp" },
+          "smug": { "path": "characters/night-archivist/portrait-smug.webp" },
+          "attack": { "path": "characters/night-archivist/portrait-attack.webp" },
+          "hit": { "path": "characters/night-archivist/portrait-hit.webp" },
+          "panic": { "path": "characters/night-archivist/portrait-panic.webp" },
+          "defeat": { "path": "characters/night-archivist/portrait-defeat.webp" }
+        }
+      },
       "demon-king": {
         "fullArt": { "path": "characters/demon-king/full.webp" },
         "portraits": {
@@ -191,22 +268,22 @@
     "2": {
       "music": "early-floors",
       "background": { "path": "backgrounds/floor-02.webp" },
-      "encounters": ["alchemist", "glass-oracle", "clock-moth"]
+      "encounters": ["alchemist", "glass-oracle", "spark-slime"]
     },
     "3": {
       "music": "late-floors",
       "background": { "path": "backgrounds/floor-03.webp" },
-      "encounters": ["guard-captain", "moss-golem", "glass-oracle"]
+      "encounters": ["guard-captain", "frost-smith", "storm-harpy"]
     },
     "4": {
       "music": "late-floors",
       "background": { "path": "backgrounds/floor-04.webp" },
-      "encounters": ["dark-engineer", "quartermaster", "alchemist"]
+      "encounters": ["dark-engineer", "brass-minotaur", "cinder-witch"]
     },
     "5": {
       "music": "demon-king",
       "background": { "path": "backgrounds/floor-05.webp" },
-      "encounters": ["clock-moth", "glass-oracle", "demon-king"]
+      "encounters": ["chain-knight", "night-archivist", "demon-king"]
     }
   }
 }

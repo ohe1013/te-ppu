@@ -33,6 +33,15 @@ PROTECTED_HEAD_BANDS = {
     "clock-moth": (20, 236, 190),
     "glass-oracle": (45, 205, 180),
     "moss-golem": (20, 236, 180),
+    # The round body fills the portrait; start after its left edge so this band
+    # measures the face and antenna rather than the torso silhouette.
+    "spark-slime": (20, 236, 190),
+    "frost-smith": (15, 236, 190),
+    "storm-harpy": (35, 220, 190),
+    "brass-minotaur": (20, 236, 190),
+    "cinder-witch": (35, 220, 190),
+    "chain-knight": (35, 220, 190),
+    "night-archivist": (35, 220, 190),
     "demon-king": (35, 220, 180),
 }
 

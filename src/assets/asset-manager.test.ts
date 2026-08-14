@@ -84,6 +84,34 @@ describe('parseAssetManifest', () => {
     }
   });
 
+  it('accepts every authored regular tower rival as a complete character bundle', () => {
+    const parsed = parseAssetManifest(COMPLETE_ASSET_MANIFEST);
+    if (parsed.mode !== 'assets') throw new Error('expected authored assets');
+
+    expect(Object.keys(parsed.common.characters).slice(4)).toEqual([
+      'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
+      'clock-moth', 'glass-oracle', 'moss-golem', 'spark-slime',
+      'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
+      'chain-knight', 'night-archivist', 'demon-king',
+    ]);
+  });
+
+  it('rejects a regular tower rival reused on another floor', () => {
+    const manifest = cloneManifest();
+    manifest.floors['2'].encounters[0] = manifest.floors['1'].encounters[0];
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
+  it('rejects unique regular rivals moved out of their canonical tower slots', () => {
+    const manifest = cloneManifest();
+    const firstRival = manifest.floors['1'].encounters[0];
+    manifest.floors['1'].encounters[0] = manifest.floors['5'].encounters[2];
+    manifest.floors['5'].encounters[2] = firstRival;
+
+    expect(() => parseAssetManifest(manifest)).toThrow();
+  });
+
   it('rejects the complete legacy authored schema 2 player shape', () => {
     const manifest = cloneManifest();
     manifest.schemaVersion = 2;

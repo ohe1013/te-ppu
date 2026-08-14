@@ -30,7 +30,9 @@ type LoadableImage = ImageBitmap | HTMLImageElement;
 
 const RIVAL_IDS = [
   'quartermaster', 'alchemist', 'guard-captain', 'dark-engineer',
-  'clock-moth', 'glass-oracle', 'moss-golem', 'demon-king',
+  'clock-moth', 'glass-oracle', 'moss-golem', 'spark-slime',
+  'frost-smith', 'storm-harpy', 'brass-minotaur', 'cinder-witch',
+  'chain-knight', 'night-archivist', 'demon-king',
 ] as const satisfies readonly FloorOpponentId[];
 
 interface Deferred<T> {

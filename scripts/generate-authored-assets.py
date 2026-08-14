@@ -321,6 +321,13 @@ PORTRAITS = {
     "clock-moth": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "glass-oracle": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "moss-golem": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "spark-slime": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "frost-smith": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "storm-harpy": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "brass-minotaur": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "cinder-witch": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "chain-knight": ["idle", "smug", "attack", "hit", "panic", "defeat"],
+    "night-archivist": ["idle", "smug", "attack", "hit", "panic", "defeat"],
     "demon-king": ["idle", "attack", "hit", "rage", "defeat"],
 }
 
@@ -337,6 +344,13 @@ PORTRAIT_FRAMES = {
     "clock-moth": (0.50, 0.24, 0.48),
     "glass-oracle": (0.49, 0.20, 0.48),
     "moss-golem": (0.52, 0.25, 0.50),
+    "spark-slime": (0.50, 0.29, 0.74),
+    "frost-smith": (0.50, 0.23, 0.48),
+    "storm-harpy": (0.50, 0.20, 0.48),
+    "brass-minotaur": (0.50, 0.20, 0.48),
+    "cinder-witch": (0.50, 0.18, 0.48),
+    "chain-knight": (0.50, 0.16, 0.58),
+    "night-archivist": (0.50, 0.20, 0.50),
     "demon-king": (0.51, 0.14, 0.45),
 }
 
