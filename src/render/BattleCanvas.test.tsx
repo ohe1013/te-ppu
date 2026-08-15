@@ -258,23 +258,21 @@ describe('BattleCanvas', () => {
     expect(screen.getByTestId('player-board-overlay-content')).toBeVisible();
   });
 
-  it('animates queued garbage events one at a time in FIFO slots', () => {
+  it('animates queued garbage batches one at a time in FIFO slots', () => {
     const clock = new EffectClock();
     clock.install();
     const events: readonly GameEvent[] = [
       {
-        amount: 1,
-        column: 2,
-        landingRow: 12,
+        amount: 2,
+        holeColumns: [2, 4],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
       {
         amount: 1,
-        column: 7,
-        landingRow: 18,
+        holeColumns: [7],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
     ];
 
@@ -523,10 +521,9 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     const events: readonly GameEvent[] = [{
       amount: 1,
-      column: 4,
-      landingRow: 18,
+      holeColumns: [4],
       side: 'player',
-      type: 'garbage-landed',
+      type: 'garbage-raised',
     }];
     const result = render(
       <BattleCanvas
@@ -553,18 +550,16 @@ describe('BattleCanvas', () => {
     clock.install();
     const events: readonly GameEvent[] = [
       {
-        amount: 1,
-        column: 2,
-        landingRow: 12,
+        amount: 2,
+        holeColumns: [2, 4],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
       {
         amount: 1,
-        column: 7,
-        landingRow: 18,
+        holeColumns: [7],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
     ];
 

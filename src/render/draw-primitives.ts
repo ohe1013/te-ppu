@@ -27,7 +27,7 @@ export type BoardPrimitiveRole =
   | 'incoming'
   | 'freeze'
   | 'line-clear'
-  | 'garbage-drop'
+  | 'garbage-rise-impact'
   | 'attack'
   | 'item-pulse'
   | 'move-dust'
@@ -48,6 +48,7 @@ export interface BoardPrimitive {
 }
 
 export interface CreateBoardPrimitivesInput {
+  readonly contentOffsetRows?: number;
   readonly effectProgress: number;
   readonly effects: readonly AnimationEffect[];
   readonly model: PublicSideView;
@@ -110,12 +111,9 @@ export function effectPlacementPrimitives(
         : []
     ));
   }
-  if (group === 'garbage-land' && effect.event?.type === 'garbage-landed') {
-    const { column, landingRow } = effect.event;
-    if (effect.priority !== 'critical' || column === undefined || landingRow === undefined
-      || !Number.isInteger(column) || !Number.isInteger(landingRow) || !isVisibleCell(column, landingRow)) return [];
-    const progress = Math.min(1, Math.max(0, effect.presentationProgress ?? effectProgress));
-    return [{ height: 1, role: 'garbage-drop', width: 1, x: column, y: landingRow * progress }];
+  if (group === 'garbage-land' && effect.event?.type === 'garbage-raised') {
+    if (effect.priority !== 'critical') return [];
+    return [{ height: 1, role: 'garbage-rise-impact', width: BOARD_COLUMNS, x: 0, y: BOARD_ROWS - 1 }];
   }
   if (group === 'attack-shot') return [{ height: .35, role: 'attack', width: BOARD_COLUMNS, x: 0, y: 0 }];
   if (group === 'item-acquire' && effect.event?.type === 'item-acquired') {
@@ -127,6 +125,7 @@ export function effectPlacementPrimitives(
 }
 
 export function createBoardPrimitives({
+  contentOffsetRows = 0,
   effectProgress,
   effects,
   model,
@@ -154,10 +153,10 @@ export function createBoardPrimitives({
         role: 'fixed-cell',
         width: 1,
         x,
-        y,
+        y: y + contentOffsetRows,
       });
       if (cell.marker !== undefined) {
-        primitives.push(markerPrimitive(x, y, cell.marker));
+        primitives.push(markerPrimitive(x, y + contentOffsetRows, cell.marker));
       }
     }
   }
@@ -182,7 +181,7 @@ export function createBoardPrimitives({
         role: 'ghost-cell',
         width: 1,
         x: cell.x,
-        y: cell.y,
+        y: cell.y + contentOffsetRows,
       });
     }
   }
@@ -196,10 +195,10 @@ export function createBoardPrimitives({
         role: 'active-cell',
         width: 1,
         x: cell.x,
-        y: cell.y,
+        y: cell.y + contentOffsetRows,
       });
       if (cell.marker !== undefined) {
-        primitives.push(markerPrimitive(cell.x, cell.y, cell.marker));
+        primitives.push(markerPrimitive(cell.x, cell.y + contentOffsetRows, cell.marker));
       }
     }
   }
@@ -333,7 +332,7 @@ export function drawBoardPrimitives(
       case 'line-clear':
         graphics.rect(x, y, primitiveWidth, primitiveHeight).fill({ alpha: 0.82, color: 0xffffff });
         break;
-      case 'garbage-drop':
+      case 'garbage-rise-impact':
         graphics.rect(x, y, primitiveWidth, primitiveHeight).fill({ alpha: 0.86, color: 0x9ba4c7 });
         break;
       case 'attack':

@@ -28,6 +28,7 @@ function groupForEvent(event: GameEvent): BattleAnimationGroup | null {
   if (event.type === 'piece-locked') return 'land-impact';
   if (event.type === 'lines-cleared') return 'line-clear';
   if (event.type === 'attack-sent') return 'attack-shot';
+  if (event.type === 'garbage-raised') return 'garbage-land';
   if (event.type === 'garbage-landed') return 'garbage-land';
   if (event.type === 'item-acquired') return 'item-acquire';
   return null;
@@ -39,6 +40,22 @@ export function animationEffectGroup(effect: AnimationEffect): BattleAnimationGr
 
 export function animationEffectSide(effect: AnimationEffect): SideId | null {
   return effect.side ?? effect.event?.side ?? effect.command?.side ?? null;
+}
+
+export function garbageRiseOffsetRows(
+  effect: AnimationEffect,
+  side: SideId,
+  fallbackProgress: number,
+): number {
+  if (animationEffectSide(effect) !== side
+    || animationEffectGroup(effect) !== 'garbage-land'
+    || effect.event?.type !== 'garbage-raised') return 0;
+  const amount = Math.min(20, Math.max(0, Math.trunc(effect.event.amount ?? 0)));
+  const progress = Math.min(1, Math.max(
+    0,
+    effect.presentationProgress ?? fallbackProgress,
+  ));
+  return amount * (1 - progress);
 }
 
 export function effectLifetimeMs(effect: AnimationEffect): number | null {
