@@ -284,7 +284,12 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const raised = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
-        events: [{ amount: 4, side: 'player', type: 'garbage-raised' }],
+        events: [{
+          amount: 4,
+          holeColumns: [3, 2, 4, 3],
+          side: 'player',
+          type: 'garbage-raised',
+        }],
         tick: 10,
         view: viewAt(10),
       }],
@@ -295,9 +300,9 @@ describe('portrait state', () => {
     });
     expect(raised.hitUntil).toBe(0);
 
-    const legacyLanded = reducePortraitBatches(createPortraitMemory(), {
+    const singleRaised = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
-        events: [{ amount: 1, side: 'player', type: 'garbage-landed' }],
+        events: [{ amount: 1, holeColumns: [6], side: 'player', type: 'garbage-raised' }],
         tick: 10,
         view: viewAt(10),
       }],
@@ -306,7 +311,7 @@ describe('portrait state', () => {
       role: 'hero',
       side: 'player',
     });
-    expect(legacyLanded.hitUntil).toBe(0);
+    expect(singleRaised.hitUntil).toBe(0);
 
     const frozen = reducePortraitBatches(createPortraitMemory(), {
       batches: [{

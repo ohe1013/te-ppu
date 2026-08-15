@@ -45,18 +45,20 @@ describe('soundFeedbackForEvents', () => {
 
   it('plays one landing cue for each positive garbage batch regardless of row count', () => {
     expect(soundFeedbackForEvents([
-      { type: 'garbage-raised', side: 'player', amount: 1 },
+      { type: 'garbage-raised', side: 'player', amount: 1, holeColumns: [6] },
     ], viewWithPlayerCombo(0))).toEqual([
       { cue: 'land', options: { intensity: 0, duckMusic: false } },
     ]);
     expect(soundFeedbackForEvents([
-      { type: 'garbage-raised', side: 'player', amount: 4 },
+      {
+        type: 'garbage-raised',
+        side: 'player',
+        amount: 4,
+        holeColumns: [3, 2, 4, 3],
+      },
     ], viewWithPlayerCombo(0))).toEqual([
       { cue: 'land', options: { intensity: 0, duckMusic: false } },
     ]);
-    expect(soundFeedbackForEvents([
-      { type: 'garbage-landed', side: 'player', amount: 4 },
-    ], viewWithPlayerCombo(0))).toEqual([]);
   });
 
   it('maps terminal status without inventing a cue for a draw', () => {

@@ -550,7 +550,12 @@ describe('MatchScreen', () => {
       view: { ...baseView, tick: 18 },
     };
     const second = {
-      events: [{ type: 'garbage-landed' as const, side: 'opponent' as const, amount: 1 }],
+      events: [{
+        type: 'garbage-raised' as const,
+        side: 'opponent' as const,
+        amount: 1,
+        holeColumns: [6],
+      }],
       tick: 19,
       view: { ...baseView, tick: 19 },
     };
