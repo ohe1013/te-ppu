@@ -33,23 +33,27 @@ export class ScoreRunController {
   readonly #state: MutableScoreRunState;
   #matchScoreCheckpoint: number | null = null;
 
-  private constructor(difficulty: Difficulty) {
+  private constructor(difficulty: Difficulty, requiredFloor: Floor) {
     this.#state = {
       difficulty,
       score: 0,
       durationTicks: 0,
-      requiredFloor: 1,
+      requiredFloor,
       encounterIndex: 0,
       encountersWon: 0,
       owlDefeated: false,
       awaitingOwl: false,
       phase: 'active',
-      reachedFloor: 1,
+      reachedFloor: requiredFloor,
     };
   }
 
   static start(difficulty: Difficulty): ScoreRunController {
-    return new ScoreRunController(difficulty);
+    return new ScoreRunController(difficulty, 1);
+  }
+
+  static startAtFloor(difficulty: Difficulty, requiredFloor: Floor): ScoreRunController {
+    return new ScoreRunController(difficulty, requiredFloor);
   }
 
   get snapshot(): ScoreRunSnapshot {
