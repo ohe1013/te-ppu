@@ -22,6 +22,7 @@ export interface TowerScreenProps {
   readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
   readonly commonAssets?: CommonAssets | null;
   readonly continuation: TowerContinuation;
+  readonly administratorFreeSelection?: boolean;
   readonly difficultySelectionLocked?: boolean;
   readonly requiredFloor: Floor;
   readonly runActive: boolean;
@@ -40,6 +41,7 @@ const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
 };
 
 export function TowerScreen({
+  administratorFreeSelection = false,
   commonAssets,
   continuation,
   difficultySelectionLocked = false,
@@ -64,6 +66,11 @@ export function TowerScreen({
     : continuation?.kind === 'owl'
       ? '최종전 계속'
       : `다음 ${requiredFloor}층`;
+  const administratorRunStatus = continuation?.kind === 'floor'
+    ? `관리자 테스트 · ${continuation.floor}층 ${continuation.encounterIndex + 1}번째 상대 이어하기 · 모든 층 선택 가능`
+    : continuation?.kind === 'owl'
+      ? '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능'
+      : '관리자 테스트 · 모든 층 선택 가능';
 
   useLayoutEffect(() => {
     const route = routeRef.current;
@@ -105,26 +112,28 @@ export function TowerScreen({
         <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
       </div>
       {notice !== null && <p className="notice" role="status">{notice}</p>}
-      {runActive && (
+      {(runActive || administratorFreeSelection) && (
         <p className="tower-run-status" data-testid="tower-run-status">
-          도전 중 · {runTarget} · 점수 {String(runScore).padStart(6, '0')}
+          {administratorFreeSelection
+            ? administratorRunStatus
+            : <>도전 중 · {runTarget} · 점수 {String(runScore).padStart(6, '0')}</>}
         </p>
       )}
-      {difficultySelectionLocked && (
+      {difficultySelectionLocked && !administratorFreeSelection && (
         <p className="tower-run-lock-notice" role="status">도전 중에는 난이도를 바꿀 수 없습니다.</p>
       )}
       <fieldset aria-label="난이도 선택" className="difficulty-selector">
         <legend>난이도</legend>
         <div className="difficulty-selector__options">
           {DIFFICULTIES.map((difficulty) => {
-            const unlocked = progress.unlockedDifficulties[difficulty];
+            const unlocked = administratorFreeSelection || progress.unlockedDifficulties[difficulty];
             return (
               <button
                 aria-label={DIFFICULTY_LABELS[difficulty]}
                 aria-pressed={progress.selectedDifficulty === difficulty}
                 className={`difficulty-selector__option difficulty-selector__option--${difficulty}`}
                 data-difficulty={difficulty}
-                disabled={!unlocked || difficultySelectionLocked}
+                disabled={!unlocked || (difficultySelectionLocked && !administratorFreeSelection)}
                 key={difficulty}
                 onClick={() => onSelectDifficulty(difficulty)}
                 type="button"
@@ -151,11 +160,14 @@ export function TowerScreen({
           <span aria-hidden="true" className="tower-route__shaft" />
           {FLOORS.map((floor, index) => {
             const historicallyUnlocked = floor <= activeProgress.highestUnlockedFloor;
-            const unlocked = historicallyUnlocked && (!runActive || floor === requiredFloor);
+            const unlocked = administratorFreeSelection
+              || (historicallyUnlocked && (!runActive || floor === requiredFloor));
             const cleared = activeProgress.clearedFloors[floor];
-            const status = runActive
-              ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
-              : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
+            const status = administratorFreeSelection
+              ? cleared ? '클리어 완료 · 재도전 가능' : '관리자 선택 가능'
+              : runActive
+                ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
+                : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
             const statusId = `floor-${floor}-status`;
             const floorContinuation = continuation?.kind === 'floor'
               && continuation.floor === floor

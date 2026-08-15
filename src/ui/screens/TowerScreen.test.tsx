@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommonAssets, LoadedImageRef } from '../../assets';
-import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
+import { cloneProgressState, createDevClearedProgress, DEFAULT_PROGRESS } from '../../progression';
 import { TowerScreen } from './TowerScreen';
 
 afterEach(cleanup);
@@ -217,6 +217,77 @@ describe('TowerScreen', () => {
     );
     expect(screen.getByText('기어라이트 타워')).toBeInTheDocument();
     expect(screen.getByText('잠김')).toBeInTheDocument();
+  });
+
+  it('keeps every cleared floor and difficulty selectable in administrator mode', () => {
+    const cleared = createDevClearedProgress();
+
+    render(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={null}
+        difficultySelectionLocked
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={1}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 모든 층 선택 가능',
+    );
+    for (const floor of [1, 2, 3, 4, 5]) {
+      const button = screen.getByRole('button', { name: `${floor}층 선택` });
+      expect(button).toBeEnabled();
+      expect(button).toHaveTextContent('클리어 완료 · 재도전 가능');
+    }
+    for (const difficulty of ['easy', 'normal', 'hard']) {
+      expect(document.querySelector<HTMLButtonElement>(
+        `.difficulty-selector__option[data-difficulty="${difficulty}"]`,
+      )).toBeEnabled();
+    }
+    expect(screen.queryByText(/진행 순서 잠김/)).not.toBeInTheDocument();
+  });
+
+  it('labels suspended administrator sessions without changing floor availability', () => {
+    const cleared = createDevClearedProgress();
+    const { rerender } = render(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={{ kind: 'floor', floor: 2, encounterIndex: 1 }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={2}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
+
+    rerender(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={{ kind: 'owl' }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={5}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능',
+    );
   });
 
   it('highlights and labels the exact suspended opponent', () => {
