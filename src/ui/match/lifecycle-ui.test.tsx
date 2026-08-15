@@ -648,6 +648,7 @@ describe('lifecycle UI', () => {
     const batches = [
       {
         events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+        sequence: 18,
         tick: 18,
         view: { ...view, tick: 18 },
       },
@@ -658,6 +659,7 @@ describe('lifecycle UI', () => {
           amount: 1,
           holeColumns: [6],
         }],
+        sequence: 19,
         tick: 19,
         view: { ...view, tick: 19 },
       },

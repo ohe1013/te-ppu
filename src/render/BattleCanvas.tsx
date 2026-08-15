@@ -166,7 +166,7 @@ function useOrderedEffects(
     return retained;
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const startedAt = performance.now();
     let retainedEffects = false;
     for (const [index, batch] of eventBatches

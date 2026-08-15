@@ -238,7 +238,7 @@ function portraitLoop(
       },
     },
   };
-  const eventBatches = event === null ? [] : [{ events: [event], tick: 10, view }];
+  const eventBatches = event === null ? [] : [{ events: [event], sequence: 10, tick: 10, view }];
   return {
     ...loop,
     eventBatches,
@@ -270,7 +270,7 @@ function owlPortraitLoop(
   };
   return {
     ...loop,
-    eventBatches: event === null ? [] : [{ events: [event], tick: 10, view }],
+    eventBatches: event === null ? [] : [{ events: [event], sequence: 10, tick: 10, view }],
     events: event === null ? [] : [event],
     view,
   };
@@ -546,6 +546,7 @@ describe('MatchScreen', () => {
     const baseView = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 17 }));
     const first = {
       events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+      sequence: 18,
       tick: 18,
       view: { ...baseView, tick: 18 },
     };
@@ -556,6 +557,7 @@ describe('MatchScreen', () => {
         amount: 1,
         holeColumns: [6],
       }],
+      sequence: 19,
       tick: 19,
       view: { ...baseView, tick: 19 },
     };

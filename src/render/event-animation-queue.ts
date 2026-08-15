@@ -69,7 +69,7 @@ export function effectsForEvents(
   tick: number,
   view: PublicMatchView,
 ): readonly AnimationEffect[] {
-  return events.flatMap((event, index) => {
+  const effects: AnimationEffect[] = events.flatMap((event, index) => {
     const group = groupForEvent(event);
     if (group === null) return [];
     const id = `tick-${tick}:${index}:${group}`;
@@ -87,6 +87,11 @@ export function effectsForEvents(
       view,
     }];
   });
+  if (!effects.some(({ group }) => group === 'garbage-land')) return effects;
+  return [
+    ...effects.filter(({ group }) => group === 'garbage-land'),
+    ...effects.filter(({ group }) => group !== 'garbage-land'),
+  ];
 }
 
 export function effectsForCommandFeedback(

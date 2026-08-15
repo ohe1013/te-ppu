@@ -28,6 +28,7 @@ const MAX_STEPS_PER_FRAME = 8;
 export type PauseReason = 'background' | 'exit-confirmation';
 
 export interface GameEventBatch {
+  readonly sequence: number;
   readonly tick: number;
   readonly events: readonly GameEvent[];
   readonly view: PublicMatchView;
@@ -131,6 +132,7 @@ export function useMatchLoop({
   const runningRef = useRef(false);
   const finishedRef = useRef(false);
   const commandSequenceRef = useRef(0);
+  const eventBatchSequenceRef = useRef(0);
 
   aiRef.current = ai;
   onEventBatchesRef.current = onEventBatches;
@@ -209,6 +211,7 @@ export function useMatchLoop({
       const view = createPublicMatchView(step.state);
       const eventBatch = step.events.length === 0 ? null : {
         events: step.events,
+        sequence: eventBatchSequenceRef.current++,
         tick: view.tick,
         view,
       } satisfies GameEventBatch;

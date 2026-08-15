@@ -316,13 +316,14 @@ describe('useMatchLoop', () => {
     const published = result.current as typeof result.current & {
       readonly eventBatches?: readonly {
         readonly events: readonly GameEvent[];
+        readonly sequence: number;
         readonly tick: number;
         readonly view: { readonly tick: number };
       }[];
     };
     expect(published.eventBatches).toEqual([
-      { events: firstEvents, tick: 1, view: expect.objectContaining({ tick: 1 }) },
-      { events: secondEvents, tick: 2, view: expect.objectContaining({ tick: 2 }) },
+      { events: firstEvents, sequence: 0, tick: 1, view: expect.objectContaining({ tick: 1 }) },
+      { events: secondEvents, sequence: 1, tick: 2, view: expect.objectContaining({ tick: 2 }) },
     ]);
     for (const batch of published.eventBatches ?? []) {
       expect(batch.tick).toBe(batch.view.tick);

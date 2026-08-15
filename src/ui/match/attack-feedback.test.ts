@@ -31,8 +31,10 @@ function batch(
   side: SideId,
   amount: number | undefined,
   combo = 1,
+  sequence = tick,
 ): GameEventBatch {
   return {
+    sequence,
     tick,
     events: [{ type: 'attack-sent', side, amount }],
     view: viewAt(tick, side, combo),
@@ -68,7 +70,7 @@ describe('attack feedback', () => {
 
     expect(cues).toEqual([
       {
-        id: 'attack:10:0',
+        id: 'attack:10:10:0',
         source: 'player',
         target: 'opponent',
         amount: 3,
@@ -77,7 +79,7 @@ describe('attack feedback', () => {
         comboLabel: '2 COMBO',
       },
       {
-        id: 'attack:11:0',
+        id: 'attack:11:11:0',
         source: 'opponent',
         target: 'player',
         amount: 1,
@@ -103,21 +105,21 @@ describe('attack feedback', () => {
     ]);
 
     expect(cues).toEqual([
-      expect.objectContaining({ amount: 2, id: 'attack:1:0' }),
+      expect.objectContaining({ amount: 2, id: 'attack:1:1:0' }),
     ]);
   });
 
-  it('orders cues by tick and preserves incoming batch order for matching ticks', () => {
+  it('uses stable producer identity to order and distinguish matching-tick cues', () => {
     const cues = attackFeedbackCuesForBatches([
-      batch(12, 'player', 1),
-      batch(10, 'opponent', 1),
-      batch(10, 'player', 1),
+      batch(12, 'player', 1, 1, 73),
+      batch(10, 'player', 1, 1, 72),
+      batch(10, 'opponent', 1, 1, 71),
     ]);
 
     expect(cues.map((cue) => cue.id)).toEqual([
-      'attack:10:0',
-      'attack:10:0',
-      'attack:12:0',
+      'attack:10:71:0',
+      'attack:10:72:0',
+      'attack:12:73:0',
     ]);
     expect(cues.map((cue) => cue.source)).toEqual([
       'opponent',

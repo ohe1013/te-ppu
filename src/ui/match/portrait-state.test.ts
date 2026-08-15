@@ -10,6 +10,7 @@ import type { AttackFeedbackPresentation } from './attack-feedback';
 
 type EventBatch = {
   readonly events: readonly GameEvent[];
+  readonly sequence: number;
   readonly tick: number;
   readonly view: PublicMatchView;
 };
@@ -185,6 +186,7 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const early: EventBatch = {
       events: [{ type: 'attack-sent', side: 'opponent', amount: 2 }],
+      sequence: 18,
       tick: 18,
       view: viewAt(18, { dangerFor: 'opponent' }),
     };
@@ -193,6 +195,7 @@ describe('portrait state', () => {
         { type: 'lines-cleared', side: 'player', amount: 2 },
         { type: 'freeze-applied', side: 'opponent', item: 'freeze' },
       ],
+      sequence: 19,
       tick: 19,
       view: viewAt(19, { combo: 2, comboFor: 'player' }),
     };
@@ -230,6 +233,7 @@ describe('portrait state', () => {
     const terminal = reducePortraitBatches(opponent, {
       batches: [{
         events: [{ type: 'match-ended', side: 'player' }],
+        sequence: 45,
         tick: 45,
         view: viewAt(45, { status: 'player-won' }),
       }],
@@ -254,11 +258,13 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const earlierCombo: EventBatch = {
       events: [{ amount: 2, side: 'player', type: 'lines-cleared' }],
+      sequence: 18,
       tick: 18,
       view: viewAt(18, { combo: 2, comboFor: 'player' }),
     };
     const laterSingle: EventBatch = {
       events: [{ amount: 1, side: 'player', type: 'lines-cleared' }],
+      sequence: 19,
       tick: 19,
       view: viewAt(19, { combo: 1, comboFor: 'player' }),
     };
@@ -290,6 +296,7 @@ describe('portrait state', () => {
           side: 'player',
           type: 'garbage-raised',
         }],
+        sequence: 10,
         tick: 10,
         view: viewAt(10),
       }],
@@ -303,6 +310,7 @@ describe('portrait state', () => {
     const singleRaised = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ amount: 1, holeColumns: [6], side: 'player', type: 'garbage-raised' }],
+        sequence: 10,
         tick: 10,
         view: viewAt(10),
       }],
@@ -316,6 +324,7 @@ describe('portrait state', () => {
     const frozen = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ item: 'freeze', side: 'player', type: 'freeze-applied' }],
+        sequence: 10,
         tick: 10,
         view: viewAt(10),
       }],
@@ -334,6 +343,7 @@ describe('portrait state', () => {
           { item: 'row-clear', side: 'player', type: 'item-used' },
           { amount: 2, side: 'player', type: 'lines-cleared' },
         ],
+        sequence: 20,
         tick: 20,
         view: viewAt(20, { combo: 2, comboFor: 'player' }),
       }],
@@ -350,6 +360,7 @@ describe('portrait state', () => {
     const lieutenant = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ amount: 1, side: 'opponent', type: 'attack-sent' }],
+        sequence: 30,
         tick: 30,
         view: viewAt(30),
       }],
@@ -367,11 +378,13 @@ describe('portrait state', () => {
       batches: [
         {
           events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          sequence: 70,
           tick: 70,
           view: viewAt(70, { dangerFor: 'opponent' }),
         },
         {
           events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          sequence: 71,
           tick: 70,
           view: viewAt(70),
         },
@@ -393,6 +406,7 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const dangerBatch: EventBatch = {
       events: [{ type: 'item-used', side: 'opponent', item: 'queue-swap' }],
+      sequence: 30,
       tick: 30,
       view: viewAt(30, { dangerFor: 'opponent' }),
     };
@@ -431,6 +445,7 @@ describe('portrait state', () => {
     const playerLoss = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ type: 'match-ended', side: 'opponent' }],
+        sequence: 50,
         tick: 50,
         view: viewAt(50, { status: 'opponent-won' }),
       }],
@@ -444,6 +459,7 @@ describe('portrait state', () => {
     const demonWin = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ type: 'match-ended', side: 'opponent' }],
+        sequence: 50,
         tick: 50,
         view: viewAt(50, { status: 'opponent-won' }),
       }],

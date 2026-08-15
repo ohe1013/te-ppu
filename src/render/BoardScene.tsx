@@ -139,8 +139,18 @@ export function BoardScene({
           x: (placement.x + placement.width * anchor[0]) * rect.width / 10,
           y: (placement.y + placement.height * anchor[1]) * rect.height / 20,
         };
+        if (reducedMotion && group === 'garbage-land') {
+          return <pixiSprite
+            anchor={{ x: anchor[0], y: anchor[1] }}
+            data-testid="reduced-motion-garbage-frame"
+            key={`${effect.id}:${index}`}
+            texture={textures[0]}
+            x={position.x}
+            y={position.y}
+          />;
+        }
         return <pixiAnimatedSprite
-          anchor={{ x: BATTLE_ANIMATIONS[group].anchor[0], y: BATTLE_ANIMATIONS[group].anchor[1] }}
+          anchor={{ x: anchor[0], y: anchor[1] }}
           animationSpeed={BATTLE_ANIMATIONS[group].fps / 60}
           autoPlay
           key={`${effect.id}:${index}`}

@@ -123,6 +123,7 @@ describe('seeded garbage batches', () => {
   it('keeps successful rows and does not consume a failed overflow draw', () => {
     const board = boardWithCell(emptyBoard(), 4, 2);
     const result = raiseGarbageBatch(waitingForGarbage(4, board), 0, 'player');
+    const garbage = { garbage: true, kind: 'O' as const };
 
     expect(result.side.garbageDrawIndex).toBe(2);
     expect(result.events).toEqual([
@@ -135,6 +136,15 @@ describe('seeded garbage batches', () => {
       { type: 'top-out', side: 'player' },
     ]);
     expect(result.side).toMatchObject({ incoming: 0, phase: 'top-out', topOut: true });
+    expect(result.side.board.cells.slice(0, BOARD_WIDTH)).toEqual([
+      null, null, null, null, { kind: 'O' }, null, null, null, null, null,
+    ]);
+    expect(result.side.board.cells.slice(BOARD_WIDTH, (BOARD_ROWS - 2) * BOARD_WIDTH))
+      .toEqual(Array.from({ length: (BOARD_ROWS - 3) * BOARD_WIDTH }, () => null));
+    expect(result.side.board.cells.slice((BOARD_ROWS - 2) * BOARD_WIDTH, (BOARD_ROWS - 1) * BOARD_WIDTH))
+      .toEqual([garbage, garbage, garbage, null, garbage, garbage, garbage, garbage, garbage, garbage]);
+    expect(result.side.board.cells.slice((BOARD_ROWS - 1) * BOARD_WIDTH))
+      .toEqual([garbage, garbage, null, garbage, garbage, garbage, garbage, garbage, garbage, garbage]);
   });
 
   it('emits only top-out when the first row cannot rise', () => {

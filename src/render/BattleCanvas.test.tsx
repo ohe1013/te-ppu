@@ -4,8 +4,11 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  BOARD_ROWS,
+  BOARD_WIDTH,
   createMatch,
   createPublicMatchView,
+  stepMatch,
   type GameEvent,
   type SideId,
 } from '../core/index';
@@ -309,7 +312,7 @@ describe('BattleCanvas', () => {
     render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
@@ -344,12 +347,65 @@ describe('BattleCanvas', () => {
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
   });
 
+  it('starts the garbage rise immediately for the real lock-clear-garbage event order', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const initial = createMatch({ countdownTicks: 0, matchSeed: 0 });
+    const cells = [...initial.sides.player.board.cells];
+    for (let x = 0; x < BOARD_WIDTH; x += 1) {
+      if (x < 3 || x > 6) cells[(BOARD_ROWS - 1) * BOARD_WIDTH + x] = { kind: 'O' };
+    }
+    const state = {
+      ...initial,
+      sides: {
+        ...initial.sides,
+        player: {
+          ...initial.sides.player,
+          active: {
+            token: { kind: 'I' as const, marker: null, serial: 90 },
+            rotation: 0 as const,
+            x: 3,
+            y: 2,
+          },
+          board: { cells },
+          incoming: 3,
+        },
+      },
+    };
+    const step = stepMatch(state, [{
+      command: { type: 'hard-drop' },
+      side: 'player',
+      tick: 1,
+    }]);
+    const view = createPublicMatchView(step.state);
+
+    expect(step.events.map(({ type }) => type)).toEqual([
+      'piece-locked',
+      'lines-cleared',
+      'garbage-raised',
+    ]);
+
+    render(
+      <BattleCanvas
+        commandFeedback={[]}
+        eventBatches={[{ events: step.events, sequence: 0, tick: view.tick, view }]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
+      'data-effect-ids',
+      'tick-1:2:garbage-land',
+    );
+  });
+
   it('does not create a projectile from an attack-sent event alone', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], tick: 0, view }]}
+        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
@@ -595,6 +651,7 @@ describe('BattleCanvas', () => {
         commandFeedback={[]}
         eventBatches={[{
           events: [{ amount: 2, holeColumns: [2, 4], side: 'opponent', type: 'garbage-raised' }],
+          sequence: 0,
           tick: 0,
           view,
         }]}
@@ -753,11 +810,13 @@ describe('BattleCanvas', () => {
         eventBatches={[
           {
             events: [{ type: 'attack-sent', side: 'player', amount: 1 }],
+            sequence: 18,
             tick: 18,
             view: firstView,
           },
           {
             events: [{ type: 'item-used', side: 'opponent', item: 'queue-swap' }],
+            sequence: 19,
             tick: 19,
             view: secondView,
           },
@@ -791,7 +850,7 @@ describe('BattleCanvas', () => {
     const result = render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
@@ -830,7 +889,7 @@ describe('BattleCanvas', () => {
     render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,

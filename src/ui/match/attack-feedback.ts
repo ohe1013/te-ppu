@@ -61,7 +61,11 @@ export function attackFeedbackCuesForBatches(
 ): readonly AttackFeedbackCue[] {
   const orderedBatches = batches
     .map((batch, index) => ({ batch, index }))
-    .sort((left, right) => left.batch.tick - right.batch.tick || left.index - right.index);
+    .sort((left, right) => (
+      left.batch.tick - right.batch.tick
+      || left.batch.sequence - right.batch.sequence
+      || left.index - right.index
+    ));
   const cues: AttackFeedbackCue[] = [];
 
   for (const { batch } of orderedBatches) {
@@ -72,7 +76,7 @@ export function attackFeedbackCuesForBatches(
 
       const combo = batch.view.sides[event.side].combo;
       cues.push({
-        id: `attack:${batch.tick}:${eventIndex}`,
+        id: `attack:${batch.tick}:${batch.sequence}:${eventIndex}`,
         source: event.side,
         target: otherSide(event.side),
         amount,

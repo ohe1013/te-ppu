@@ -22,7 +22,7 @@ vi.mock('pixi.js', () => ({
 
 afterEach(cleanup);
 
-const atlasFor = (group: 'land-impact' | 'line-clear') => Object.fromEntries(
+const atlasFor = (group: 'garbage-land' | 'land-impact' | 'line-clear') => Object.fromEntries(
   battleAnimationFrameNames(group).map((name) => [name, {}]),
 ) as never;
 
@@ -141,6 +141,60 @@ describe('BoardScene textured effect placement', () => {
     );
     expect(document.querySelector('pixicontainer[data-content-alpha]'))
       .toHaveAttribute('data-content-alpha', '1');
+  });
+
+  it('renders an atlas-backed reduced-motion garbage impact as one static frame', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
+    const result = render(
+      <BoardScene
+        atlas={atlasFor('garbage-land')}
+        effectProgress={0.5}
+        effects={[{
+          event: { amount: 2, holeColumns: [3, 2], side: 'player', type: 'garbage-raised' },
+          group: 'garbage-land',
+          id: 'garbage-static',
+          presentationProgress: 0.5,
+          priority: 'critical',
+          side: 'player',
+          tick: 9,
+          view,
+        }]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        reducedMotion
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    expect(document.querySelector('pixianimatedsprite')).toBeNull();
+    expect(document.querySelector('[data-testid="reduced-motion-garbage-frame"]'))
+      .not.toBeNull();
+
+    result.rerender(
+      <BoardScene
+        atlas={atlasFor('garbage-land')}
+        effectProgress={0.5}
+        effects={[{
+          event: { amount: 2, holeColumns: [3, 2], side: 'player', type: 'garbage-raised' },
+          group: 'garbage-land',
+          id: 'garbage-static',
+          presentationProgress: 0.5,
+          priority: 'critical',
+          side: 'player',
+          tick: 9,
+          view,
+        }]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    expect(document.querySelector('[data-testid="reduced-motion-garbage-frame"]'))
+      .toBeNull();
+    expect(document.querySelector('pixianimatedsprite')).toHaveAttribute('autoplay');
   });
 
   it('uses every cleared row from the batch effect rather than one centered sprite', () => {

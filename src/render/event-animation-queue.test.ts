@@ -76,7 +76,7 @@ describe('EventAnimationQueue', () => {
     expect(queue.shiftCritical()).toBeNull();
   });
 
-  it('keeps attack projectiles out of the event animation queue', () => {
+  it('prioritizes a garbage rise while keeping attack projectiles out of the event queue', () => {
     const events: readonly GameEvent[] = [
       lineClear,
       { amount: 2, side: 'player', type: 'attack-sent' },
@@ -89,13 +89,25 @@ describe('EventAnimationQueue', () => {
     expect(
       effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id),
     ).toEqual([
-      'tick-42:0:line-clear',
       'tick-42:2:garbage-land',
+      'tick-42:0:line-clear',
     ]);
     expect(
       effects.filter(({ priority }) => priority === 'decorative').map(({ id }) => id),
     ).toEqual([]);
     expect(effects.every((effect) => effect.tick === 42 && effect.view === view)).toBe(true);
+  });
+
+  it('keeps lock, clear, and item presentation order when no garbage batch is present', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 42 }));
+    const effects = effectsForEvents([
+      { side: 'player', type: 'piece-locked' },
+      lineClear,
+      { item: 'freeze', side: 'player', type: 'item-acquired' },
+    ], 42, view);
+
+    expect(effects.filter(({ priority }) => priority === 'critical').map(({ group }) => group))
+      .toEqual(['land-impact', 'line-clear', 'item-acquire']);
   });
 
   it('maps one garbage batch to one ordered landing effect', () => {

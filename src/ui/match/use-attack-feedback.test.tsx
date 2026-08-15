@@ -61,8 +61,14 @@ function viewAt(tick: number, comboFor: SideId = 'player', combo = 1): PublicMat
   };
 }
 
-function batch(tick: number, side: SideId = 'player', amount = 1): GameEventBatch {
+function batch(
+  tick: number,
+  side: SideId = 'player',
+  amount = 1,
+  sequence = tick,
+): GameEventBatch {
   return {
+    sequence,
     tick,
     events: [{ type: 'attack-sent', side, amount }],
     view: viewAt(tick, side),
@@ -97,7 +103,7 @@ describe('useAttackFeedback', () => {
   it('starts one attack in its launch phase', () => {
     render(<FeedbackProbe eventBatches={[batch(7)]} reducedMotion={false} />);
 
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:7:0:launch:2');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:7:7:0:launch:2');
     expect(clock.pendingFrames).toBe(1);
   });
 
@@ -115,9 +121,9 @@ describe('useAttackFeedback', () => {
     expect(onImpact).not.toHaveBeenCalled();
 
     clock.advanceBy(1);
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:8:0:impact:2');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:8:8:0:impact:2');
     expect(onImpact).toHaveBeenCalledTimes(1);
-    expect(onImpact).toHaveBeenCalledWith(expect.objectContaining({ id: 'attack:8:0' }));
+    expect(onImpact).toHaveBeenCalledWith(expect.objectContaining({ id: 'attack:8:8:0' }));
 
     clock.advanceBy(20);
     expect(onImpact).toHaveBeenCalledTimes(1);
@@ -144,7 +150,7 @@ describe('useAttackFeedback', () => {
     );
     clock.advanceBy(1);
 
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:9:0:impact:2');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:9:9:0:impact:2');
     expect(onImpact).toHaveBeenCalledTimes(1);
   });
 
@@ -158,14 +164,60 @@ describe('useAttackFeedback', () => {
       />,
     );
 
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:10:0:launch');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:10:10:0:launch');
     clock.advanceBy(150);
-    expect(onImpact).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'attack:10:0' }));
+    expect(onImpact).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'attack:10:10:0' }));
 
     clock.advanceBy(220);
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:12:0:launch');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:12:12:0:launch');
     clock.advanceBy(150);
-    expect(onImpact).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'attack:12:0' }));
+    expect(onImpact).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'attack:12:12:0' }));
+  });
+
+  it('delivers distinct same-tick batches exactly once across rerenders and windowing', () => {
+    const first = batch(20, 'player', 1, 100);
+    const second = batch(20, 'opponent', 1, 101);
+    const onImpact = vi.fn();
+    const { rerender } = render(
+      <FeedbackProbe
+        eventBatches={[first]}
+        onImpact={onImpact}
+        reducedMotion={false}
+      />,
+    );
+
+    rerender(
+      <FeedbackProbe
+        eventBatches={[first, second]}
+        onImpact={onImpact}
+        reducedMotion={false}
+      />,
+    );
+    rerender(
+      <FeedbackProbe
+        eventBatches={[second]}
+        onImpact={onImpact}
+        reducedMotion={false}
+      />,
+    );
+
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:20:100:0:launch');
+    clock.advanceBy(150);
+    clock.advanceBy(220);
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:20:101:0:launch');
+    clock.advanceBy(150);
+    rerender(
+      <FeedbackProbe
+        eventBatches={[second]}
+        onImpact={onImpact}
+        reducedMotion={false}
+      />,
+    );
+
+    expect(onImpact.mock.calls.map(([cue]) => cue.id)).toEqual([
+      'attack:20:100:0',
+      'attack:20:101:0',
+    ]);
   });
 
   it('keeps semantic phases but removes displacement for reduced motion', () => {
@@ -178,9 +230,9 @@ describe('useAttackFeedback', () => {
       />,
     );
 
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:13:0:launch:0');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:13:13:0:launch:0');
     clock.advanceBy(150);
-    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:13:0:impact:0');
+    expect(screen.getByTestId('feedback')).toHaveTextContent('attack:13:13:0:impact:0');
     expect(onImpact).toHaveBeenCalledTimes(1);
   });
 
