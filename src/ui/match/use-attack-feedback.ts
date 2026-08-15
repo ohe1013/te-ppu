@@ -29,23 +29,36 @@ export function useAttackFeedback({
   const pending = useRef<AttackFeedbackCue[]>([]);
   const active = useRef<ActiveAttackFeedback | null>(null);
   const frame = useRef<number | null>(null);
+  const effectGeneration = useRef(0);
   const onImpactRef = useRef(onImpact);
   const reducedMotionRef = useRef(reducedMotion);
-  const runFrameRef = useRef<(timestamp: number) => void>(() => undefined);
+  const runFrameRef = useRef<(timestamp: number, generation: number) => void>(
+    () => undefined,
+  );
   const [presentation, setPresentation] = useState<AttackFeedbackPresentation | null>(null);
 
   onImpactRef.current = onImpact;
   reducedMotionRef.current = reducedMotion;
 
-  const requestNextFrame = () => {
-    if (frame.current !== null || active.current === null) return;
+  const isCurrentGeneration = (generation: number) => (
+    effectGeneration.current === generation
+  );
+
+  const requestNextFrame = (generation: number) => {
+    if (
+      !isCurrentGeneration(generation)
+      || frame.current !== null
+      || active.current === null
+    ) return;
     frame.current = requestAnimationFrame((timestamp) => {
+      if (!isCurrentGeneration(generation)) return;
       frame.current = null;
-      runFrameRef.current(timestamp);
+      runFrameRef.current(timestamp, generation);
     });
   };
 
-  runFrameRef.current = (timestamp) => {
+  runFrameRef.current = (timestamp, generation) => {
+    if (!isCurrentGeneration(generation)) return;
     const current = active.current;
     if (current === null) return;
 
@@ -53,6 +66,7 @@ export function useAttackFeedback({
     if (elapsed >= ATTACK_LAUNCH_MS && !impactedIds.current.has(current.cue.id)) {
       impactedIds.current.add(current.cue.id);
       onImpactRef.current?.(current.cue);
+      if (!isCurrentGeneration(generation)) return;
     }
 
     const nextPresentation = attackFeedbackAtElapsed(
@@ -61,24 +75,30 @@ export function useAttackFeedback({
       reducedMotionRef.current,
     );
     if (nextPresentation !== null) {
+      if (!isCurrentGeneration(generation)) return;
       setPresentation(nextPresentation);
-      requestNextFrame();
+      requestNextFrame(generation);
       return;
     }
 
     const nextCue = pending.current.shift();
     if (nextCue === undefined) {
       active.current = null;
+      if (!isCurrentGeneration(generation)) return;
       setPresentation(null);
       return;
     }
 
     active.current = { cue: nextCue, startedAt: timestamp };
+    if (!isCurrentGeneration(generation)) return;
     setPresentation(attackFeedbackAtElapsed(nextCue, 0, reducedMotionRef.current));
-    requestNextFrame();
+    requestNextFrame(generation);
   };
 
   useEffect(() => {
+    const generation = effectGeneration.current + 1;
+    effectGeneration.current = generation;
+
     for (const cue of attackFeedbackCuesForBatches(eventBatches)) {
       if (handledIds.current.has(cue.id)) continue;
       handledIds.current.add(cue.id);
@@ -89,16 +109,21 @@ export function useAttackFeedback({
       const nextCue = pending.current.shift();
       if (nextCue !== undefined) {
         active.current = { cue: nextCue, startedAt: performance.now() };
-        setPresentation(attackFeedbackAtElapsed(nextCue, 0, reducedMotion));
+        if (isCurrentGeneration(generation)) {
+          setPresentation(attackFeedbackAtElapsed(nextCue, 0, reducedMotion));
+        }
       }
     } else {
       const elapsed = performance.now() - active.current.startedAt;
       const updated = attackFeedbackAtElapsed(active.current.cue, elapsed, reducedMotion);
-      if (updated !== null) setPresentation(updated);
+      if (updated !== null && isCurrentGeneration(generation)) setPresentation(updated);
     }
 
-    requestNextFrame();
+    requestNextFrame(generation);
     return () => {
+      if (effectGeneration.current === generation) {
+        effectGeneration.current += 1;
+      }
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };

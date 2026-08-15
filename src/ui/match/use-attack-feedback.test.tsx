@@ -194,4 +194,25 @@ describe('useAttackFeedback', () => {
 
     expect(clock.pendingFrames).toBe(0);
   });
+
+  it('stops reentrant RAF work when impact synchronously unmounts with a cue queued', () => {
+    let unmount: () => void = () => undefined;
+    const onImpact = vi.fn(() => unmount());
+    ({ unmount } = render(
+      <FeedbackProbe
+        eventBatches={[batch(15), batch(16)]}
+        onImpact={onImpact}
+        reducedMotion={false}
+      />,
+    ));
+
+    clock.advanceBy(150);
+
+    expect(onImpact).toHaveBeenCalledTimes(1);
+    expect(clock.pendingFrames).toBe(0);
+
+    clock.advanceBy(1_000);
+    expect(onImpact).toHaveBeenCalledTimes(1);
+    expect(clock.pendingFrames).toBe(0);
+  });
 });
