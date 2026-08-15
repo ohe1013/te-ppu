@@ -161,16 +161,25 @@ describe('garbage physics', () => {
     'returns an invalid-hole failure without mutation for %s',
     (holeColumn) => {
       const board = emptyBoard();
-      expect(raiseGarbageRow(board, holeColumn)).toEqual({
-        board,
-        status: 'invalid-hole',
-      });
+      const snapshot = [...board.cells];
+
+      const result = raiseGarbageRow(board, holeColumn);
+
+      expect(result.status).toBe('invalid-hole');
+      expect(result.board).toBe(board);
+      expect(board.cells).toEqual(snapshot);
     },
   );
 
   it('returns top-out before discarding an occupied top stored row', () => {
     const board = boardWithCell(emptyBoard(), 0, 7);
-    expect(raiseGarbageRow(board, 3)).toEqual({ board, status: 'top-out' });
+    const snapshot = [...board.cells];
+
+    const result = raiseGarbageRow(board, 3);
+
+    expect(result.status).toBe('top-out');
+    expect(result.board).toBe(board);
+    expect(board.cells).toEqual(snapshot);
   });
 
   it('lands immediately above a column top rather than filling its hole', () => {
