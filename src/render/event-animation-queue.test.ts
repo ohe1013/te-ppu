@@ -76,7 +76,7 @@ describe('EventAnimationQueue', () => {
     expect(queue.shiftCritical()).toBeNull();
   });
 
-  it('creates one ordered critical cue per core event plus optional decoration', () => {
+  it('keeps attack projectiles out of the event animation queue', () => {
     const events: readonly GameEvent[] = [
       lineClear,
       { amount: 2, side: 'player', type: 'attack-sent' },
@@ -90,7 +90,6 @@ describe('EventAnimationQueue', () => {
       effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id),
     ).toEqual([
       'tick-42:0:line-clear',
-      'tick-42:1:attack-shot',
       'tick-42:2:garbage-land',
     ]);
     expect(

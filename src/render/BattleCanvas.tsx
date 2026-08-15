@@ -11,6 +11,7 @@ import { Texture, type Application as PixiApplication, type Graphics } from 'pix
 import type {
   PublicMatchView,
 } from '../core/index';
+import type { AttackFeedbackPresentation } from '../ui/match/attack-feedback';
 import type { AtlasData } from '../assets';
 import {
   commandFeedbackViewFor,
@@ -20,6 +21,7 @@ import {
 import { BoardScene } from './BoardScene';
 import { computeBoardLayout } from './board-layout';
 import { computeAttackRibbon } from './attack-ribbon';
+import { boardImpactOffset } from './attack-impact-geometry';
 import {
   effectsForEvents,
   effectsForCommandFeedback,
@@ -41,12 +43,14 @@ const MAX_DECORATIVE_EFFECTS = 6;
 type BattleAtlasInput = BattleAtlasTextures | AtlasData;
 
 export interface BattleCanvasProps {
+  readonly attackFeedback?: AttackFeedbackPresentation | null;
   readonly commandFeedback: readonly CommandFeedback[];
   readonly eventBatches: readonly GameEventBatch[];
   readonly atlas?: BattleAtlasInput | null;
   /** Optional manager-resolved tile refs; missing refs retain Graphics rendering. */
   readonly skin?: BoardSkin;
   readonly playerBoardOverlay?: ReactNode;
+  readonly reducedMotion?: boolean;
   readonly selectedRow: number | null;
   readonly view: PublicMatchView;
 }
@@ -227,9 +231,11 @@ function useOrderedEffects(
 
 export function BattleCanvas({
   atlas,
+  attackFeedback = null,
   commandFeedback,
   eventBatches,
   playerBoardOverlay,
+  reducedMotion = false,
   selectedRow,
   skin,
   view,
@@ -245,10 +251,41 @@ export function BattleCanvas({
     ? textureCacheRef.current.resolveAtlas(atlas)
     : atlas;
   const boardEffects = effects.filter((effect) => effect.group !== 'attack-shot');
-  const attackEffects = effects.filter((effect) => effect.group === 'attack-shot');
-  const hasAttackAtlas = resolveBattleAnimationFrames(textures, 'attack-shot') !== null;
-  const fallbackAttacks = hasAttackAtlas ? [] : attackEffects;
   const layout = computeBoardLayout(metrics.width, metrics.height);
+  const attackSource = attackFeedback?.source ?? 'player';
+  const attackReducedMotion = attackFeedback?.reducedMotion ?? false;
+  const sourceRect = attackFeedback?.source === 'opponent' ? layout.opponent : layout.player;
+  const targetRect = attackFeedback?.target === 'player' ? layout.player : layout.opponent;
+  const playerOffset = boardImpactOffset(attackFeedback, 'player', sourceRect, targetRect);
+  const opponentOffset = boardImpactOffset(attackFeedback, 'opponent', sourceRect, targetRect);
+  const presentedPlayer = {
+    ...layout.player,
+    x: layout.player.x + playerOffset.x,
+    y: layout.player.y + playerOffset.y,
+  };
+  const presentedOpponent = {
+    ...layout.opponent,
+    x: layout.opponent.x + opponentOffset.x,
+    y: layout.opponent.y + opponentOffset.y,
+  };
+  const launchRibbon = attackFeedback?.phase === 'launch'
+    ? computeAttackRibbon(
+      sourceRect,
+      targetRect,
+      attackReducedMotion
+        ? 1
+        : 1 - (1 - attackFeedback.phaseProgress) ** 3,
+    )
+    : null;
+  const attackFrames = launchRibbon === null
+    ? null
+    : resolveBattleAnimationFrames(textures, 'attack-shot');
+  const launchAlpha = attackReducedMotion
+    ? 0.35 + Math.min(1, Math.max(0, attackFeedback?.phaseProgress ?? 0)) * 0.65
+    : 1;
+  const impactProgress = attackFeedback?.phase === 'impact'
+    ? Math.min(1, Math.max(0, attackFeedback.phaseProgress))
+    : null;
 
   useEffect(() => () => textureCacheRef.current?.destroy(), []);
 
@@ -307,7 +344,8 @@ export function BattleCanvas({
           effectProgress={effectProgress}
           effects={boardEffects}
           model={view.sides.player}
-          rect={layout.player}
+          rect={presentedPlayer}
+          reducedMotion={reducedMotion}
           selectedRow={selectedRow}
           skin={skin}
           side="player"
@@ -318,70 +356,77 @@ export function BattleCanvas({
           effectProgress={effectProgress}
           effects={boardEffects}
           model={view.sides.opponent}
-          rect={layout.opponent}
+          rect={presentedOpponent}
+          reducedMotion={reducedMotion}
           selectedRow={null}
           skin={skin}
           side="opponent"
           textureCache={textureCacheRef.current}
         />
-        {attackEffects.flatMap((effect) => {
-          if (effect.group !== 'attack-shot') return [];
-          const frames = resolveBattleAnimationFrames(textures, effect.group);
-          if (frames === null) return [];
-          const from = effect.side === 'player' ? layout.player : layout.opponent;
-          const to = effect.side === 'player' ? layout.opponent : layout.player;
-          const progress = effect.presentationProgress ?? effectProgress;
-          const ribbon = computeAttackRibbon(from, to, progress);
-          const size = Math.max(24, Math.min(72, ribbon.length * 0.2));
-          return [
-            <pixiAnimatedSprite
-              anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
-              animationSpeed={BATTLE_ANIMATIONS['attack-shot'].fps / 60}
-              autoPlay
-              data-testid="attack-shot-sprite"
-              height={size}
-              key={effect.id}
-              loop
-              rotation={ribbon.angle}
-              textures={frames}
-              width={size}
-              x={ribbon.x}
-              y={ribbon.y}
-            />,
-          ];
-        })}
-        {fallbackAttacks.length > 0 && (
+        {launchRibbon !== null && attackFrames !== null && (
+          <pixiAnimatedSprite
+            alpha={launchAlpha}
+            anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
+            animationSpeed={BATTLE_ANIMATIONS['attack-shot'].fps / 60}
+            autoPlay
+            data-testid="attack-shot-sprite"
+            height={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+            loop
+            rotation={launchRibbon.angle}
+            textures={attackFrames}
+            width={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+            x={launchRibbon.x}
+            y={launchRibbon.y}
+          />
+        )}
+        {launchRibbon !== null && attackFrames === null && (
           <pixiGraphics
+            alpha={launchAlpha}
             data-testid="attack-ribbon"
             draw={(graphics: Graphics) => {
               graphics.clear();
-              for (const effect of fallbackAttacks) {
-                const from = effect.side === 'player' ? layout.player : layout.opponent;
-                const to = effect.side === 'player' ? layout.opponent : layout.player;
-                const progress = effect.presentationProgress ?? effectProgress;
-                const ribbon = computeAttackRibbon(from, to, progress);
-                const half = Math.max(12, Math.min(42, ribbon.length * 0.16));
-                const directionX = Math.cos(ribbon.angle);
-                const directionY = Math.sin(ribbon.angle);
-                graphics
-                  .moveTo(ribbon.x - directionX * half, ribbon.y - directionY * half)
-                  .lineTo(ribbon.x + directionX * half, ribbon.y + directionY * half)
-                  .stroke({
-                    color: effect.side === 'player' ? 0x65d8ff : 0xff6fb1,
-                    width: Math.max(4, Math.min(from.width, from.height) * 0.06),
-                  });
-                graphics.circle(
-                  ribbon.x,
-                  ribbon.y,
-                  Math.max(5, Math.min(from.width, from.height) * 0.1),
-                ).fill({ color: 0xffca5c });
-                graphics.circle(
-                  ribbon.x,
-                  ribbon.y,
-                  Math.max(8, Math.min(from.width, from.height) * 0.15),
-                ).stroke({ color: 0xfff4cf, width: 2 });
-              }
+              const half = Math.max(12, Math.min(42, launchRibbon.length * 0.16));
+              const directionX = Math.cos(launchRibbon.angle);
+              const directionY = Math.sin(launchRibbon.angle);
+              graphics
+                .moveTo(-directionX * half, -directionY * half)
+                .lineTo(directionX * half, directionY * half)
+                .stroke({
+                  color: attackSource === 'player' ? 0x65d8ff : 0xff6fb1,
+                  width: Math.max(4, Math.min(sourceRect.width, sourceRect.height) * 0.06),
+                });
+              graphics.circle(
+                0,
+                0,
+                Math.max(5, Math.min(sourceRect.width, sourceRect.height) * 0.1),
+              ).fill({ color: 0xffca5c });
+              graphics.circle(
+                0,
+                0,
+                Math.max(8, Math.min(sourceRect.width, sourceRect.height) * 0.15),
+              ).stroke({ color: 0xfff4cf, width: 2 });
             }}
+            x={launchRibbon.x}
+            y={launchRibbon.y}
+          />
+        )}
+        {impactProgress !== null && (
+          <pixiGraphics
+            alpha={1 - impactProgress}
+            data-testid="attack-impact-ring"
+            draw={(graphics: Graphics) => {
+              const boardSize = Math.min(targetRect.width, targetRect.height);
+              const radius = attackReducedMotion
+                ? Math.max(8, Math.min(18, boardSize * 0.1))
+                : Math.max(8, Math.min(24, boardSize * (0.08 + impactProgress * 0.07)));
+              graphics.clear();
+              graphics.circle(0, 0, radius).stroke({
+                color: attackSource === 'player' ? 0x65d8ff : 0xff6fb1,
+                width: 2,
+              });
+            }}
+            x={targetRect.x + targetRect.width / 2}
+            y={targetRect.y + targetRect.height / 2}
           />
         )}
       </Application>
@@ -390,10 +435,10 @@ export function BattleCanvas({
           className="battle-canvas__player-overlay"
           data-testid="player-board-overlay"
           style={{
-            height: layout.player.height,
-            left: layout.player.x,
-            top: layout.player.y,
-            width: layout.player.width,
+            height: presentedPlayer.height,
+            left: presentedPlayer.x,
+            top: presentedPlayer.y,
+            width: presentedPlayer.width,
           }}
         >
           {playerBoardOverlay}
