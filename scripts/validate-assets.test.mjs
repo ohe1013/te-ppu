@@ -1,0 +1,708 @@
+import assert from 'node:assert/strict';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import test from 'node:test';
+import sharp from 'sharp';
+import { validateAssets } from './validate-assets.mjs';
+
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const MAX_RUNTIME_BYTES = 30 * 1024 * 1024;
+const ATLAS_GROUPS = [
+  ['move-dust', 4, 64, 64],
+  ['rotate-spark', 5, 64, 64],
+  ['land-impact', 5, 128, 64],
+  ['line-clear', 6, 640, 64],
+  ['attack-shot', 6, 64, 64],
+  ['garbage-land', 5, 128, 64],
+  ['item-acquire', 8, 128, 128],
+  ['freeze-overlay', 8, 64, 64],
+  ['combo-pop', 6, 256, 128],
+];
+const PLAYER_PORTRAITS = ['idle', 'focus', 'attack', 'hit', 'win', 'loss'];
+const NEW_PLAYER_IDS = ['cloud-courier', 'star-alchemist'];
+const NEW_PLAYER_SLOTS = NEW_PLAYER_IDS.flatMap((characterId) => [
+  [characterId, 'full'],
+  ...PLAYER_PORTRAITS.map((state) => [characterId, state]),
+]);
+
+function withWorkspace(run) {
+  const root = mkdtempSync(join(tmpdir(), 'te-ppu-assets-'));
+  return Promise.resolve()
+    .then(() => run(root))
+    .finally(() => rmSync(root, { recursive: true, force: true }));
+}
+
+function writeFile(root, relativePath, bytes) {
+  const path = join(root, 'public', 'assets', relativePath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, bytes);
+}
+
+function writeManifest(root, manifest) {
+  writeFile(root, 'manifest.json', JSON.stringify(manifest));
+}
+
+function pngChunk(type, data) {
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  chunk.write(type, 4, 'ascii');
+  data.copy(chunk, 8);
+  return chunk;
+}
+
+function png(width, height, colorType = 6, trns = false) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colorType;
+  const chunks = [PNG_SIGNATURE, pngChunk('IHDR', ihdr)];
+  if (trns) chunks.push(pngChunk('tRNS', Buffer.from([0])));
+  chunks.push(pngChunk('IEND', Buffer.alloc(0)));
+  return Buffer.concat(chunks);
+}
+
+function truncatedPng() {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(100, 0);
+  return Buffer.concat([PNG_SIGNATURE, length, Buffer.from('IHDR')]);
+}
+
+function riffWebp(chunkType, payload) {
+  const padded = payload.length % 2 === 0 ? payload : Buffer.concat([payload, Buffer.alloc(1)]);
+  const chunk = Buffer.alloc(8);
+  chunk.write(chunkType, 0, 'ascii');
+  chunk.writeUInt32LE(payload.length, 4);
+  const riffSize = 4 + chunk.length + padded.length;
+  const header = Buffer.alloc(12);
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(riffSize, 4);
+  header.write('WEBP', 8, 'ascii');
+  return Buffer.concat([header, chunk, padded]);
+}
+
+function vp8xWebp(width, height, alpha = true) {
+  const payload = Buffer.alloc(10);
+  payload[0] = alpha ? 0x10 : 0;
+  payload.writeUIntLE(width - 1, 4, 3);
+  payload.writeUIntLE(height - 1, 7, 3);
+  return riffWebp('VP8X', payload);
+}
+
+async function decodedWebp(width, height, transparent = false) {
+  const channels = transparent ? 4 : 3;
+  const pixels = Buffer.alloc(width * height * channels, 255);
+  if (transparent) pixels[3] = 0;
+  return sharp(pixels, { raw: { width, height, channels } })
+    .webp({ lossless: true, effort: 0 })
+    .toBuffer();
+}
+
+async function alphaFlaggedOpaqueWebp(width, height) {
+  const bytes = await decodedWebp(width, height, false);
+  const payloadStart = bytes.indexOf(Buffer.from('VP8L')) + 8;
+  assert.ok(payloadStart >= 8);
+  const mutated = Buffer.from(bytes);
+  mutated[payloadStart + 4] |= 0x10;
+  return mutated;
+}
+
+const VALID_TRANSPARENT_FULL_WEBP = await decodedWebp(1024, 1024, true);
+const VALID_TRANSPARENT_PORTRAIT_WEBP = await decodedWebp(256, 256, true);
+const VALID_OPAQUE_BACKGROUND_WEBP = await decodedWebp(840, 1480, false);
+const ALPHA_FLAGGED_OPAQUE_PORTRAIT_WEBP = await alphaFlaggedOpaqueWebp(256, 256);
+
+function geometrySvg() {
+  return Buffer.from('<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#6c5ce7" d="M2 2h20v20H2z"/></svg>');
+}
+
+function mp3Frame() {
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0x00]);
+  return frame;
+}
+
+function id3Mp3() {
+  return Buffer.concat([
+    Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]),
+    mp3Frame(),
+  ]);
+}
+
+function ref(path) {
+  return { path };
+}
+
+function portraits(character, ids) {
+  return Object.fromEntries(ids.map((id) => [id, ref('characters/' + character + '/portrait-' + id + '.webp')]));
+}
+
+function completeManifest() {
+  const lieutenant = ['idle', 'smug', 'attack', 'hit', 'panic', 'defeat'];
+  const rival = (character) => ({
+    fullArt: ref('characters/' + character + '/full.webp'),
+    portraits: portraits(character, lieutenant),
+  });
+  return {
+    schemaVersion: 3,
+    mode: 'assets',
+    brand: { logo: ref('brand/app-logo.png') },
+    common: {
+      backgrounds: { tower: ref('backgrounds/tower-exterior.webp') },
+      characters: {
+        'hero-engineer': {
+          fullArt: ref('characters/hero-engineer/full.webp'),
+          portraits: portraits('hero-engineer', PLAYER_PORTRAITS),
+        },
+        'cloud-courier': {
+          fullArt: ref('characters/cloud-courier/full.webp'),
+          portraits: portraits('cloud-courier', PLAYER_PORTRAITS),
+        },
+        'star-alchemist': {
+          fullArt: ref('characters/star-alchemist/full.webp'),
+          portraits: portraits('star-alchemist', PLAYER_PORTRAITS),
+        },
+        'owl-companion': {
+          fullArt: ref('characters/owl-companion/full.webp'),
+          portraits: portraits('owl-companion', ['idle', 'worry', 'cheer']),
+        },
+        quartermaster: rival('quartermaster'),
+        alchemist: rival('alchemist'),
+        'guard-captain': rival('guard-captain'),
+        'dark-engineer': rival('dark-engineer'),
+        'clock-moth': rival('clock-moth'),
+        'glass-oracle': rival('glass-oracle'),
+        'moss-golem': rival('moss-golem'),
+        'spark-slime': rival('spark-slime'),
+        'frost-smith': rival('frost-smith'),
+        'storm-harpy': rival('storm-harpy'),
+        'brass-minotaur': rival('brass-minotaur'),
+        'cinder-witch': rival('cinder-witch'),
+        'chain-knight': rival('chain-knight'),
+        'night-archivist': rival('night-archivist'),
+        'demon-king': {
+          fullArt: ref('characters/demon-king/full.webp'),
+          portraits: portraits('demon-king', ['idle', 'attack', 'hit', 'rage', 'defeat']),
+        },
+      },
+      tiles: {
+        I: ref('blocks/tile-i.png'),
+        J: ref('blocks/tile-j.png'),
+        L: ref('blocks/tile-l.png'),
+        O: ref('blocks/tile-o.png'),
+        S: ref('blocks/tile-s.png'),
+        T: ref('blocks/tile-t.png'),
+        Z: ref('blocks/tile-z.png'),
+        garbage: ref('blocks/garbage.png'),
+      },
+      items: {
+        'row-clear': ref('items/row-clear.png'),
+        freeze: ref('items/freeze.png'),
+        'queue-swap': ref('items/queue-swap.png'),
+      },
+      icons: {
+        rotate: ref('ui/rotate.svg'),
+        settings: ref('ui/settings.svg'),
+        'sound-on': ref('ui/sound-on.svg'),
+        'sound-off': ref('ui/sound-off.svg'),
+        'haptics-on': ref('ui/haptics-on.svg'),
+        'haptics-off': ref('ui/haptics-off.svg'),
+        exit: ref('ui/exit.svg'),
+      },
+      atlas: {
+        image: ref('effects/battle-atlas.png'),
+        data: ref('effects/battle-atlas.json'),
+      },
+      audio: {
+        sfx: Object.fromEntries(
+          ['move', 'rotate', 'land', 'clear', 'attack', 'item', 'win', 'loss']
+            .map((id) => [id, ref('audio/sfx/' + id + '.mp3')]),
+        ),
+        bgm: Object.fromEntries(
+          ['tower', 'early-floors', 'late-floors', 'demon-king', 'ending']
+            .map((id) => [id, ref('audio/bgm/' + id + '.mp3')]),
+        ),
+      },
+    },
+    floors: {
+      1: {
+        music: 'early-floors',
+        background: ref('backgrounds/floor-01.webp'),
+        encounters: ['quartermaster', 'clock-moth', 'moss-golem'],
+      },
+      2: {
+        music: 'early-floors',
+        background: ref('backgrounds/floor-02.webp'),
+        encounters: ['alchemist', 'glass-oracle', 'spark-slime'],
+      },
+      3: {
+        music: 'late-floors',
+        background: ref('backgrounds/floor-03.webp'),
+        encounters: ['guard-captain', 'frost-smith', 'storm-harpy'],
+      },
+      4: {
+        music: 'late-floors',
+        background: ref('backgrounds/floor-04.webp'),
+        encounters: ['dark-engineer', 'brass-minotaur', 'cinder-witch'],
+      },
+      5: {
+        music: 'demon-king',
+        background: ref('backgrounds/floor-05.webp'),
+        encounters: ['chain-knight', 'night-archivist', 'demon-king'],
+      },
+    },
+  };
+}
+
+function allPaths(value) {
+  if (Array.isArray(value)) return value.flatMap(allPaths);
+  if (value && typeof value === 'object') {
+    if (Object.keys(value).join(',') === 'path') return [value.path];
+    return Object.values(value).flatMap(allPaths);
+  }
+  return [];
+}
+
+function frameName(group, index) {
+  return group + '/' + String(index).padStart(2, '0') + '.png';
+}
+
+function atlasJson() {
+  const frames = {};
+  let x = 0;
+  let y = 0;
+  let rowHeight = 0;
+  for (const [group, count, width, height] of ATLAS_GROUPS) {
+    for (let index = 0; index < count; index += 1) {
+      if (x + width > 2048) {
+        x = 0;
+        y += rowHeight;
+        rowHeight = 0;
+      }
+      frames[frameName(group, index)] = {
+        frame: { x, y, w: width, h: height },
+        rotated: false,
+        trimmed: false,
+        spriteSourceSize: { x: 0, y: 0, w: width, h: height },
+        sourceSize: { w: width, h: height },
+      };
+      x += width;
+      rowHeight = Math.max(rowHeight, height);
+    }
+  }
+  return {
+    frames,
+    meta: {
+      image: 'battle-atlas.png',
+      format: 'RGBA8888',
+      scale: '1',
+      size: { w: 2048, h: 2048 },
+    },
+  };
+}
+
+function legacyHyphenatedAtlasJson() {
+  const atlas = atlasJson();
+  const frames = {};
+  for (const [name, frame] of Object.entries(atlas.frames)) {
+    frames[name.replace('/', '-')] = frame;
+  }
+  atlas.frames = frames;
+  return atlas;
+}
+
+function bytesFor(path) {
+  if (path === 'brand/app-logo.png') return png(600, 600, 2);
+  if (path === 'effects/battle-atlas.png') return png(2048, 2048, 6);
+  if (path === 'effects/battle-atlas.json') return Buffer.from(JSON.stringify(atlasJson()));
+  if (path.startsWith('blocks/') || path.startsWith('items/')) return png(64, 64, 6);
+  if (path.endsWith('.svg')) return geometrySvg();
+  if (path.endsWith('.mp3')) return mp3Frame();
+  if (path.endsWith('/full.webp')) return VALID_TRANSPARENT_FULL_WEBP;
+  if (path.includes('/portrait-')) return VALID_TRANSPARENT_PORTRAIT_WEBP;
+  if (path.startsWith('backgrounds/')) return VALID_OPAQUE_BACKGROUND_WEBP;
+  throw new Error('unexpected fixture path ' + path);
+}
+
+function writeCompleteAssets(root) {
+  const manifest = completeManifest();
+  writeManifest(root, manifest);
+  for (const path of allPaths(manifest)) writeFile(root, path, bytesFor(path));
+  return manifest;
+}
+
+function writeFallback(root) {
+  writeManifest(root, { schemaVersion: 1, mode: 'procedural-fallback' });
+  writeFile(root, 'brand/app-logo.png', png(600, 600, 2));
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function rewriteAtlas(root, mutate) {
+  const atlas = atlasJson();
+  mutate(atlas);
+  writeFile(root, 'effects/battle-atlas.json', JSON.stringify(atlas));
+}
+
+test('accepts fallback locally and rejects it when authored assets are required', async () => {
+  await withWorkspace(async (fallbackRoot) => {
+    writeFallback(fallbackRoot);
+    await assert.doesNotReject(() => validateAssets(fallbackRoot, { assetsRequired: false }));
+    await assert.rejects(
+      () => validateAssets(fallbackRoot, { assetsRequired: true }),
+      /authored asset manifest is required/,
+    );
+  });
+});
+
+test('accepts a complete schema 3 authored pack with all three playable characters', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    await assert.doesNotReject(() => validateAssets(root));
+  });
+});
+
+test('rejects a floor with duplicate encounter ids', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.floors[1].encounters[1] = manifest.floors[1].encounters[0];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects an encounter id reused across two floors', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.floors[2].encounters[0] = manifest.floors[1].encounters[0];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects unique encounter ids moved out of their canonical tower slots', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    const firstRival = manifest.floors[1].encounters[0];
+    manifest.floors[1].encounters[0] = manifest.floors[5].encounters[2];
+    manifest.floors[5].encounters[2] = firstRival;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /encounter/i);
+  });
+});
+
+test('rejects a rival character with a missing portrait', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    delete manifest.common.characters['clock-moth'].portraits.panic;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /manifest|portrait/i);
+  });
+});
+
+test('rejects a duplicate canonical rival character path', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.common.characters['clock-moth'].fullArt.path =
+      manifest.common.characters['glass-oracle'].fullArt.path;
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /canonical asset path/i);
+  });
+});
+
+test('rejects the complete legacy authored schema 2 player shape', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.schemaVersion = 2;
+    delete manifest.common.characters['cloud-courier'];
+    delete manifest.common.characters['star-alchemist'];
+    writeManifest(root, manifest);
+    await assert.rejects(() => validateAssets(root), /asset manifest/i);
+  });
+});
+
+for (const [label, mutate] of [
+  ['a missing playable character', (manifest) => {
+    delete manifest.common.characters['cloud-courier'];
+  }],
+  ['an extra playable character', (manifest) => {
+    manifest.common.characters['guest-player'] = manifest.common.characters['hero-engineer'];
+  }],
+]) {
+  test('rejects schema 3 with ' + label, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      mutate(manifest);
+      writeManifest(root, manifest);
+      await assert.rejects(() => validateAssets(root), /asset manifest/i);
+    });
+  });
+}
+
+for (const [characterId, state] of NEW_PLAYER_SLOTS) {
+  const canonicalPath = state === 'full'
+    ? 'characters/' + characterId + '/full.webp'
+    : 'characters/' + characterId + '/portrait-' + state + '.webp';
+
+  test('enforces the canonical path for new player asset ' + canonicalPath, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      const character = manifest.common.characters[characterId];
+      const slot = state === 'full' ? character.fullArt : character.portraits[state];
+      slot.path = 'characters/' + characterId + '/wrong.webp';
+      writeManifest(root, manifest);
+
+      await assert.rejects(() => validateAssets(root), /canonical asset path/i);
+    });
+  });
+}
+
+for (const characterId of NEW_PLAYER_IDS) {
+  test('checks full-art dimensions and alpha for ' + characterId, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/full.webp', vp8xWebp(1023, 1024));
+      await assert.rejects(() => validateAssets(root), /1024x1024/i);
+    });
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/full.webp', vp8xWebp(1024, 1024, false));
+      await assert.rejects(() => validateAssets(root), /alpha/i);
+    });
+  });
+
+  test('checks portrait dimensions and alpha for ' + characterId, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/portrait-hit.webp', vp8xWebp(255, 256));
+      await assert.rejects(() => validateAssets(root), /256x256/i);
+    });
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'characters/' + characterId + '/portrait-hit.webp', vp8xWebp(256, 256, false));
+      await assert.rejects(() => validateAssets(root), /alpha/i);
+    });
+  });
+}
+
+test('accepts an ID3-skipped complete MPEG audio frame', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'audio/sfx/move.mp3', id3Mp3());
+    await assert.doesNotReject(() => validateAssets(root));
+  });
+});
+
+test('rejects an authored manifest that references a missing runtime file', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rmSync(join(root, 'public', 'assets', 'blocks', 'tile-i.png'));
+    await assert.rejects(() => validateAssets(root), /missing referenced asset.*blocks\/tile-i\.png/i);
+  });
+});
+
+test('rejects a duplicate asset path assigned to two canonical manifest slots', async () => {
+  await withWorkspace(async (root) => {
+    const manifest = writeCompleteAssets(root);
+    manifest.common.tiles.I.path = manifest.common.tiles.J.path;
+    writeManifest(root, manifest);
+
+    await assert.rejects(
+      () => validateAssets(root),
+      /canonical asset path.*common\.tiles\.I/i,
+    );
+  });
+});
+
+for (const [label, path] of [
+  ['parent traversal', 'blocks/../tile-i.png'],
+  ['absolute path', '/blocks/tile-i.png'],
+  ['Windows absolute path', 'C:/blocks/tile-i.png'],
+  ['underscore name', 'blocks/tile_i.png'],
+  ['non-ASCII name', 'blocks/tile-한.png'],
+]) {
+  test('rejects an unsafe runtime path: ' + label, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      manifest.common.tiles.I.path = path;
+      writeManifest(root, manifest);
+      await assert.rejects(() => validateAssets(root), /invalid runtime asset path/i);
+    });
+  });
+}
+
+for (const [label, mutate] of [
+  ['an extra manifest key', (manifest) => { manifest.extra = true; }],
+  ['a missing required manifest key', (manifest) => { delete manifest.common.tiles.I; }],
+]) {
+  test('rejects ' + label, async () => {
+    await withWorkspace(async (root) => {
+      const manifest = writeCompleteAssets(root);
+      mutate(manifest);
+      writeManifest(root, manifest);
+      await assert.rejects(() => validateAssets(root), /asset manifest/i);
+    });
+  });
+}
+
+test('rejects wrong transparent PNG dimensions and alpha support', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'blocks/tile-i.png', png(63, 64, 6));
+    await assert.rejects(() => validateAssets(root), /64x64/);
+  });
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'items/freeze.png', png(64, 64, 2));
+    await assert.rejects(() => validateAssets(root), /alpha/i);
+  });
+});
+
+test('rejects wrong transparent WebP dimensions and missing alpha metadata', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'characters/hero-engineer/full.webp', vp8xWebp(1023, 1024));
+    await assert.rejects(() => validateAssets(root), /1024x1024/);
+  });
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'characters/owl-companion/portrait-idle.webp', vp8xWebp(256, 256, false));
+    await assert.rejects(() => validateAssets(root), /alpha/i);
+  });
+});
+
+test('rejects a WebP that declares dimensions and alpha without decodable pixels', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'characters/owl-companion/portrait-idle.webp', vp8xWebp(256, 256));
+    await assert.rejects(() => validateAssets(root), /decode.*WebP/i);
+  });
+});
+
+test('rejects a decoded character WebP with no transparent pixels', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(
+      root,
+      'characters/owl-companion/portrait-idle.webp',
+      ALPHA_FLAGGED_OPAQUE_PORTRAIT_WEBP,
+    );
+    await assert.rejects(() => validateAssets(root), /transparent pixel/i);
+  });
+});
+
+for (const [label, bytes] of [
+  ['an alpha color type', png(600, 600, 6)],
+  ['a tRNS chunk', png(600, 600, 2, true)],
+]) {
+  test('rejects an opaque logo with ' + label, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'brand/app-logo.png', bytes);
+      await assert.rejects(() => validateAssets(root), /opaque logo/i);
+    });
+  });
+}
+
+test('rejects PNG chunk declarations that cross EOF', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'blocks/tile-i.png', truncatedPng());
+    await assert.rejects(() => validateAssets(root), /PNG chunk.*EOF/i);
+  });
+});
+
+for (const [label, source] of [
+  ['script', '<svg><script>alert(1)</script></svg>'],
+  ['event attribute', '<svg onclick="x()"><path d="M0 0"/></svg>'],
+  ['foreign object', '<svg><foreignObject/></svg>'],
+  ['doctype', '<!DOCTYPE svg><svg/>'],
+  ['entity', '<!ENTITY x "x"><svg/>'],
+  ['style', '<svg><style>path { fill: red }</style></svg>'],
+  ['text font usage', '<svg><text font-family="serif">x</text></svg>'],
+  ['href', '<svg><use href="#local"/></svg>'],
+  ['xlink href', '<svg xmlns:xlink="x"><use xlink:href="#local"/></svg>'],
+  ['external URL paint', '<svg><path fill="url(https://example.test/a)"/></svg>'],
+]) {
+  test('rejects unsafe SVG ' + label, async () => {
+    await withWorkspace(async (root) => {
+      writeCompleteAssets(root);
+      writeFile(root, 'ui/rotate.svg', Buffer.from(source));
+      await assert.rejects(() => validateAssets(root), /SVG/i);
+    });
+  });
+}
+
+test('rejects an MP3 without a direct or ID3-skipped complete MPEG frame', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'audio/sfx/move.mp3', Buffer.from('not an mp3'));
+    await assert.rejects(() => validateAssets(root), /MPEG audio frame/i);
+  });
+});
+
+test('rejects forbidden atlas rotation and exact frame-set drift', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { atlas.frames['move-dust/00.png'].rotated = true; });
+    await assert.rejects(() => validateAssets(root), /rotated/i);
+  });
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { delete atlas.frames['move-dust/03.png']; });
+    await assert.rejects(() => validateAssets(root), /frame names/i);
+  });
+});
+
+test('rejects legacy hyphenated atlas frame names', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    writeFile(root, 'effects/battle-atlas.json', JSON.stringify(legacyHyphenatedAtlasJson()));
+
+    await assert.rejects(() => validateAssets(root), /atlas frame names/i);
+  });
+});
+
+test('rejects atlas source-size and sprite-source geometry drift', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { atlas.frames['line-clear/00.png'].sourceSize.w = 639; });
+    await assert.rejects(() => validateAssets(root), /sourceSize/i);
+  });
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { atlas.frames['attack-shot/00.png'].spriteSourceSize.w = 63; });
+    await assert.rejects(() => validateAssets(root), /frame.*spriteSourceSize/i);
+  });
+});
+
+test('rejects inconsistent untrimmed atlas offsets and the wrong atlas metadata image', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { atlas.frames['combo-pop/00.png'].spriteSourceSize.x = 1; });
+    await assert.rejects(() => validateAssets(root), /untrimmed/i);
+  });
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    rewriteAtlas(root, (atlas) => { atlas.meta.image = 'wrong.png'; });
+    await assert.rejects(() => validateAssets(root), /meta\.image/i);
+  });
+});
+
+test('rejects runtime assets above the 30 MiB delivery ceiling', async () => {
+  await withWorkspace(async (root) => {
+    writeCompleteAssets(root);
+    const oversized = Buffer.alloc(MAX_RUNTIME_BYTES + 1);
+    mp3Frame().copy(oversized);
+    writeFile(root, 'audio/sfx/extra.mp3', oversized);
+    await assert.rejects(() => validateAssets(root), /30 MiB/i);
+  });
+});

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="teppu_background">#101026</color>
+    <color name="teppu_accent">#FFD85A</color>
+</resources>

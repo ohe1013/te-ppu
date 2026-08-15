@@ -1,0 +1,136 @@
+import type { Floor } from '../progression/index';
+import type { Difficulty } from '../progression/index';
+import type { AiFloorProfile } from './types';
+
+export const AI_FLOOR_PROFILES: readonly AiFloorProfile[] = [
+  {
+    floor: 1,
+    reactionTicks: 48,
+    lookahead: 0,
+    topK: 5,
+    rankWeights: [0.2, 0.2, 0.2, 0.2, 0.2],
+    futureDiscount: 0,
+    weights: {
+      aggregateHeight: -0.25,
+      maxHeight: -0.5,
+      holes: -2,
+      bumpiness: -0.25,
+      clearedLines: 0.8,
+      combo: 0.3,
+      incomingOffset: 0.4,
+      itemGain: 0.5,
+      opponentPressure: 0,
+    },
+    itemPolicy: 'FIRST_VALID',
+  },
+  {
+    floor: 2,
+    reactionTicks: 38,
+    lookahead: 0,
+    topK: 4,
+    rankWeights: [0.4, 0.3, 0.2, 0.1],
+    futureDiscount: 0,
+    weights: {
+      aggregateHeight: -0.3,
+      maxHeight: -0.65,
+      holes: -2.75,
+      bumpiness: -0.35,
+      clearedLines: 1,
+      combo: 0.6,
+      incomingOffset: 0.75,
+      itemGain: 0.8,
+      opponentPressure: 0.1,
+    },
+    itemPolicy: 'RISK_AWARE',
+  },
+  {
+    floor: 3,
+    reactionTicks: 27,
+    lookahead: 1,
+    topK: 3,
+    rankWeights: [0.6, 0.3, 0.1],
+    futureDiscount: 0.65,
+    weights: {
+      aggregateHeight: -0.35,
+      maxHeight: -0.8,
+      holes: -3.5,
+      bumpiness: -0.45,
+      clearedLines: 1.2,
+      combo: 0.9,
+      incomingOffset: 1.1,
+      itemGain: 1.2,
+      opponentPressure: 0.2,
+    },
+    itemPolicy: 'RISK_AWARE',
+  },
+  {
+    floor: 4,
+    reactionTicks: 19,
+    lookahead: 1,
+    topK: 2,
+    rankWeights: [0.75, 0.25],
+    futureDiscount: 0.68,
+    weights: {
+      aggregateHeight: -0.4,
+      maxHeight: -1,
+      holes: -4.27,
+      bumpiness: -0.63,
+      clearedLines: 1.35,
+      combo: 1.35,
+      incomingOffset: 1.45,
+      itemGain: 1.35,
+      opponentPressure: 0.4,
+    },
+    itemPolicy: 'TACTICAL',
+  },
+  {
+    floor: 5,
+    reactionTicks: 12,
+    lookahead: 2,
+    topK: 1,
+    rankWeights: [1],
+    futureDiscount: 0.7,
+    weights: {
+      aggregateHeight: -0.45,
+      maxHeight: -1.2,
+      holes: -5,
+      bumpiness: -0.65,
+      clearedLines: 1.5,
+      combo: 1.8,
+      incomingOffset: 1.8,
+      itemGain: 1.5,
+      opponentPressure: 0.6,
+    },
+    itemPolicy: 'TACTICAL',
+  },
+];
+
+function scaledReactionTicks(base: number, difficulty: Difficulty): number {
+  if (difficulty === 'easy') return base;
+  const multiplier = difficulty === 'normal' ? 0.84 : 0.68;
+  return Math.max(4, Math.round(base * multiplier));
+}
+
+function scaledLookahead(base: 0 | 1 | 2, difficulty: Difficulty): 0 | 1 | 2 {
+  if (difficulty === 'easy') return base;
+  const bonus = difficulty === 'normal' ? 1 : 2;
+  return Math.min(2, base + bonus) as 0 | 1 | 2;
+}
+
+function scaledTopK(base: 1 | 2 | 3 | 4 | 5, difficulty: Difficulty): 1 | 2 | 3 | 4 | 5 {
+  if (difficulty === 'easy') return base;
+  const reduction = difficulty === 'normal' ? 1 : 2;
+  return Math.max(1, base - reduction) as 1 | 2 | 3 | 4 | 5;
+}
+
+export function getAiFloorProfile(floor: Floor, difficulty: Difficulty = 'easy'): AiFloorProfile {
+  const profile = AI_FLOOR_PROFILES.find((candidate) => candidate.floor === floor);
+  if (profile === undefined) throw new RangeError(`Missing AI profile for floor ${floor}`);
+  if (difficulty === 'easy') return profile;
+  return {
+    ...profile,
+    reactionTicks: scaledReactionTicks(profile.reactionTicks, difficulty),
+    lookahead: scaledLookahead(profile.lookahead, difficulty),
+    topK: scaledTopK(profile.topK, difficulty),
+  };
+}

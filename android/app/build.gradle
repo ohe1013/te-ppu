@@ -1,0 +1,98 @@
+apply plugin: 'com.android.application'
+
+def teppuKeystorePath = System.getenv('TEPPU_KEYSTORE_PATH')
+def teppuKeystorePassword = System.getenv('TEPPU_KEYSTORE_PASSWORD')
+def teppuKeyAlias = System.getenv('TEPPU_KEY_ALIAS')
+def teppuKeyPassword = System.getenv('TEPPU_KEY_PASSWORD')
+def teppuSigningValues = [
+    teppuKeystorePath,
+    teppuKeystorePassword,
+    teppuKeyAlias,
+    teppuKeyPassword,
+]
+def teppuSigningReady = teppuSigningValues.every { value ->
+    value != null && !value.trim().isEmpty()
+}
+
+android {
+    namespace = "io.github.ohe1013.teppu"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "io.github.ohe1013.teppu"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (teppuSigningReady) {
+                storeFile file(teppuKeystorePath)
+                storePassword teppuKeystorePassword
+                keyAlias teppuKeyAlias
+                keyPassword teppuKeyPassword
+                storeType 'JKS'
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseRequested = taskGraph.allTasks.any { task ->
+        def taskName = task.name.toLowerCase(Locale.ROOT)
+        task.project == project && (
+            taskName.startsWith('assemblerelease') ||
+            taskName.startsWith('bundlerelease') ||
+            taskName.startsWith('packagerelease')
+        )
+    }
+    if (releaseRequested && !teppuSigningReady) {
+        throw new GradleException(
+            'TEPPU_ANDROID_RELEASE_SIGNING_MISSING: release signing environment is incomplete.'
+        )
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

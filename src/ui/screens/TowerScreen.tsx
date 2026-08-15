@@ -1,0 +1,221 @@
+import { useLayoutEffect, useRef } from 'react';
+import {
+  DIFFICULTIES,
+  FLOORS,
+  getDifficultyProgress,
+  type Difficulty,
+  type EncounterIndex,
+  type Floor,
+  type ProgressState,
+  getFloorEncounters,
+} from '../../progression/index';
+import type { CommonAssets } from '../../assets';
+import { AssetImage } from '../match/AssetImage';
+import { CharacterStrip } from '../characters/CharacterStrip';
+import { ScreenBackdrop } from './ScreenBackdrop';
+
+export interface TowerScreenProps {
+  readonly progress: ProgressState;
+  readonly notice: string | null;
+  readonly onBack?: () => void;
+  readonly onSelectFloor: (floor: Floor) => void;
+  readonly onSelectDifficulty?: (difficulty: Difficulty) => void;
+  readonly commonAssets?: CommonAssets | null;
+  readonly continuation: TowerContinuation;
+  readonly administratorFreeSelection?: boolean;
+  readonly difficultySelectionLocked?: boolean;
+  readonly requiredFloor: Floor;
+  readonly runActive: boolean;
+  readonly runScore: number;
+}
+
+export type TowerContinuation =
+  | { readonly kind: 'floor'; readonly floor: Floor; readonly encounterIndex: EncounterIndex }
+  | { readonly kind: 'owl' }
+  | null;
+
+const DIFFICULTY_LABELS: Readonly<Record<Difficulty, string>> = {
+  easy: '쉬움',
+  normal: '보통',
+  hard: '어려움',
+};
+
+export function TowerScreen({
+  administratorFreeSelection = false,
+  commonAssets,
+  continuation,
+  difficultySelectionLocked = false,
+  notice,
+  onBack = () => undefined,
+  onSelectDifficulty = () => undefined,
+  onSelectFloor,
+  progress,
+  requiredFloor,
+  runActive,
+  runScore,
+}: TowerScreenProps) {
+  const routeRef = useRef<HTMLDivElement>(null);
+  const activeProgress = getDifficultyProgress(progress, progress.selectedDifficulty);
+  const targetFloor: Floor = continuation?.kind === 'floor'
+    ? continuation.floor
+    : continuation?.kind === 'owl'
+      ? 5
+      : requiredFloor;
+  const runTarget = continuation?.kind === 'floor'
+    ? `${continuation.floor}층 ${continuation.encounterIndex + 1}번째 상대`
+    : continuation?.kind === 'owl'
+      ? '최종전 계속'
+      : `다음 ${requiredFloor}층`;
+  const administratorRunStatus = continuation?.kind === 'floor'
+    ? `관리자 테스트 · ${continuation.floor}층 ${continuation.encounterIndex + 1}번째 상대 이어하기 · 모든 층 선택 가능`
+    : continuation?.kind === 'owl'
+      ? '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능'
+      : '관리자 테스트 · 모든 층 선택 가능';
+
+  useLayoutEffect(() => {
+    const route = routeRef.current;
+    const target = route?.querySelector<HTMLElement>(`[data-floor="${targetFloor}"]`);
+    if (route === null || target === null || target === undefined) return;
+
+    const maximum = Math.max(0, route.scrollHeight - route.clientHeight);
+    const desired = target.offsetTop + target.offsetHeight - route.clientHeight;
+    route.scrollTop = Math.min(maximum, Math.max(0, desired));
+  }, [targetFloor]);
+
+  return (
+    <section
+      className="screen-shell tower-screen"
+      data-difficulty={progress.selectedDifficulty}
+      data-testid="tower-screen"
+    >
+      <ScreenBackdrop
+        className="screen-backdrop--demon"
+        image={commonAssets?.rivals?.['demon-king']?.fullArt}
+      />
+      <div className="tower-screen__header">
+        <div className="tower-screen__brand">
+          <span className="tower-screen__mascot">
+            <AssetImage
+              alt="태엽 부엉이 안내자"
+              className="tower-screen__mascot-image"
+              url={commonAssets?.owl.fullArt?.url}
+            />
+          </span>
+          <div>
+            <p className="eyebrow">기어라이트 타워</p>
+            <h1>꼭대기까지 올라가자!</h1>
+          </div>
+        </div>
+        <button className="secondary-button tower-screen__back" onClick={onBack} type="button">
+          처음으로
+        </button>
+        <p className="tower-screen__subtitle">태엽 부엉이와 함께 별빛 동력핵을 되찾으세요.</p>
+      </div>
+      {notice !== null && <p className="notice" role="status">{notice}</p>}
+      {(runActive || administratorFreeSelection) && (
+        <p className="tower-run-status" data-testid="tower-run-status">
+          {administratorFreeSelection
+            ? administratorRunStatus
+            : <>도전 중 · {runTarget} · 점수 {String(runScore).padStart(6, '0')}</>}
+        </p>
+      )}
+      {difficultySelectionLocked && !administratorFreeSelection && (
+        <p className="tower-run-lock-notice" role="status">도전 중에는 난이도를 바꿀 수 없습니다.</p>
+      )}
+      <fieldset aria-label="난이도 선택" className="difficulty-selector">
+        <legend>난이도</legend>
+        <div className="difficulty-selector__options">
+          {DIFFICULTIES.map((difficulty) => {
+            const unlocked = administratorFreeSelection || progress.unlockedDifficulties[difficulty];
+            return (
+              <button
+                aria-label={DIFFICULTY_LABELS[difficulty]}
+                aria-pressed={progress.selectedDifficulty === difficulty}
+                className={`difficulty-selector__option difficulty-selector__option--${difficulty}`}
+                data-difficulty={difficulty}
+                disabled={!unlocked || (difficultySelectionLocked && !administratorFreeSelection)}
+                key={difficulty}
+                onClick={() => onSelectDifficulty(difficulty)}
+                type="button"
+              >
+                {DIFFICULTY_LABELS[difficulty]}
+                {!unlocked && <small>잠김</small>}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div
+        aria-label="타워 층 선택"
+        className="floor-list tower-route tower-route--ascending tower-route--scrollable"
+        data-testid="tower-route"
+        ref={routeRef}
+        tabIndex={0}
+      >
+        <div className="tower-route__content">
+          <ScreenBackdrop
+            className="screen-backdrop--tower-route"
+            image={commonAssets?.towerBackdrop}
+          />
+          <span aria-hidden="true" className="tower-route__shaft" />
+          {FLOORS.map((floor, index) => {
+            const historicallyUnlocked = floor <= activeProgress.highestUnlockedFloor;
+            const unlocked = administratorFreeSelection
+              || (historicallyUnlocked && (!runActive || floor === requiredFloor));
+            const cleared = activeProgress.clearedFloors[floor];
+            const status = administratorFreeSelection
+              ? cleared ? '클리어 완료 · 재도전 가능' : '관리자 선택 가능'
+              : runActive
+                ? floor === requiredFloor ? '현재 도전 층' : `진행 순서 잠김 · 다음 ${requiredFloor}층`
+                : cleared ? '클리어 완료 · 재도전 가능' : unlocked ? '도전 가능' : '잠김';
+            const statusId = `floor-${floor}-status`;
+            const floorContinuation = continuation?.kind === 'floor'
+              && continuation.floor === floor
+              ? continuation
+              : null;
+            const owlContinuation = continuation?.kind === 'owl' && floor === 5;
+            const actionLabel = floorContinuation !== null
+              ? `${floor}층 ${floorContinuation.encounterIndex + 1}번째 상대부터 계속`
+              : owlContinuation
+                ? '최종전 계속'
+                : `${floor}층 선택`;
+            return (
+              <div
+                className={`tower-node tower-node--${index % 2 === 0 ? 'left' : 'right'} ${
+                  cleared ? 'tower-node--cleared' : unlocked ? 'tower-node--open' : 'tower-node--locked'
+                }`}
+                data-floor={floor}
+                key={floor}
+              >
+                <span aria-hidden="true" className="tower-node__marker">{String(floor).padStart(2, '0')}층</span>
+                <div className="tower-node__card">
+                  <div className="tower-node__title">
+                    <span>{floor === 5 ? '마왕의 왕좌' : `${floor}층 관문`}</span>
+                    <small>3연전</small>
+                  </div>
+                  <CharacterStrip
+                    activeIndex={floorContinuation?.encounterIndex ?? 0}
+                    encounters={getFloorEncounters(floor)}
+                    rivals={commonAssets?.rivals ?? {}}
+                    unlocked={unlocked}
+                  />
+                  <button
+                    aria-describedby={statusId}
+                    aria-label={actionLabel}
+                    className="floor-card"
+                    disabled={!unlocked}
+                    onClick={() => onSelectFloor(floor)}
+                    type="button"
+                  >
+                    <span>{actionLabel}</span>
+                    <small id={statusId}>{status}</small>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}

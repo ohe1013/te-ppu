@@ -1,0 +1,445 @@
+import type { MatchResult } from '../../src/app/app-route';
+import {
+  chooseArcadeLetters,
+  completeFirstRunProfile,
+  expect,
+  openMatch,
+  openTower,
+  seedReturningProfile,
+  test,
+} from './helpers';
+
+const forbiddenGameCopy = /START RUN|RUN ACTIVE|NEXT \dF|SCORE|EASY|NORMAL|HARD|HIDDEN BOSS|READY|DANGER|countdown|playing|player-won|opponent-won|draw/i;
+
+const RETURNING_PROFILE = {
+  initials: 'RVT',
+  characterId: 'hero-engineer',
+} as const;
+
+test('registers arcade initials and a character before the first easy run', async ({ page }) => {
+  await page.goto('/');
+
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await expect(page.getByTestId('title-screen')).not.toContainText(forbiddenGameCopy);
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await expect(page.getByTestId('name-entry-screen')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'END' })).toBeDisabled();
+  await chooseArcadeLetters(page, 'LUM');
+  await expect(page.getByRole('status', { name: '입력한 이니셜' })).toHaveText('LUM');
+  await expect(page.getByRole('button', { name: 'END' })).toBeEnabled();
+  await page.getByRole('button', { name: 'END' }).click();
+  await expect(page.getByTestId('character-select-screen')).toBeVisible();
+  await page.locator('[data-character-id="cloud-courier"]').click();
+  await page.getByRole('button', { name: 'SELECT' }).click();
+
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
+  await expect(page.getByTestId('tower-run-status')).toHaveText(
+    '도전 중 · 다음 1층 · 점수 000000',
+  );
+  await expect(page.getByTestId('tower-screen')).not.toContainText(forbiddenGameCopy);
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+  for (const floor of [2, 3, 4, 5]) {
+    await expect(page.getByRole('button', { name: `${floor}층 선택` })).toBeDisabled();
+  }
+});
+
+test('supports touch selection with Back above the initials form', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  const nameScreen = page.getByTestId('name-entry-screen');
+  await expect(nameScreen).toBeVisible();
+
+  const screenBox = await nameScreen.boundingBox();
+  const backBox = await page.getByRole('button', { name: 'BACK' }).boundingBox();
+  const eyebrowBox = await nameScreen.locator('.eyebrow').boundingBox();
+  expect(screenBox).not.toBeNull();
+  expect(backBox).not.toBeNull();
+  expect(eyebrowBox).not.toBeNull();
+  expect(backBox!.x).toBeLessThan(screenBox!.x + screenBox!.width / 2);
+  expect(backBox!.y).toBeLessThan(screenBox!.y + 100);
+
+  const overlapsEyebrow = !(
+    backBox!.x + backBox!.width <= eyebrowBox!.x
+    || eyebrowBox!.x + eyebrowBox!.width <= backBox!.x
+    || backBox!.y + backBox!.height <= eyebrowBox!.y
+    || eyebrowBox!.y + eyebrowBox!.height <= backBox!.y
+  );
+  expect(overlapsEyebrow).toBe(false);
+
+  await page.getByRole('button', { name: '오른쪽' }).click();
+  await page.getByRole('button', { name: '선택' }).click();
+  await page.getByRole('button', { name: 'A', exact: true }).click();
+  await page.getByRole('button', { name: 'C', exact: true }).click();
+  await expect(page.getByRole('status', { name: '입력한 이니셜' })).toHaveText('BAC');
+  await expect(page.getByRole('button', { name: 'END' })).toBeEnabled();
+});
+
+test('returns to title when the visible initials Back control is touched', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await expect(page.getByTestId('name-entry-screen')).toBeVisible();
+
+  const back = page.getByRole('button', { name: 'BACK' });
+  const box = await back.boundingBox();
+  expect(box).not.toBeNull();
+  const center = {
+    x: box!.x + box!.width / 2,
+    y: box!.y + box!.height / 2,
+  };
+  const hit = await page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    return {
+      buttonText: element?.closest('button')?.textContent?.trim() ?? null,
+      tagName: element?.tagName ?? null,
+    };
+  }, center);
+
+  expect(hit).toEqual({ buttonText: 'BACK', tagName: 'BUTTON' });
+  await page.touchscreen.tap(center.x, center.y);
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await expect(page.getByTestId('name-entry-screen')).toHaveCount(0);
+});
+
+test('completes first-run character selection for all three equal-performance heroes', async ({ page }) => {
+  for (const { characterId, initials, name } of [
+    { characterId: 'hero-engineer', initials: 'RVT', name: '리벳' },
+    { characterId: 'cloud-courier', initials: 'LUM', name: '루미' },
+    { characterId: 'star-alchemist', initials: 'SER', name: '세라' },
+  ] as const) {
+    await completeFirstRunProfile(page, initials, characterId);
+    await expect(page.getByTestId('tower-screen')).toBeVisible();
+    const stored = await page.evaluate(() => {
+      const raw = window.localStorage.getItem('te-ppu.progress.identity.local.local-browser');
+      return raw === null ? null : JSON.parse(raw) as {
+        profile: { initials: string; characterId: string } | null;
+      };
+    });
+    expect(stored?.profile).toEqual({ initials, characterId });
+    await page.getByRole('button', { name: '1층 선택' }).click();
+    await expect(page.getByRole('group', { name: `${name} player identity` })).toBeVisible();
+    await page.evaluate(() => window.localStorage.clear());
+  }
+});
+
+test('records a partial run and shows it on local ranking', async ({ page }) => {
+  await seedReturningProfile(page, { initials: 'RVT', characterId: 'hero-engineer' });
+  await openMatch(page);
+
+  await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+  await expect(page.getByTestId('result-score')).toHaveText('RUN SCORE 001000');
+  await page.getByRole('button', { name: '다음 상대' }).click();
+  await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+    'data-encounter-index',
+    '1',
+  );
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await expect(page.getByTestId('match-screen')).toBeVisible();
+  await expect(page.getByTestId('match-screen')).not.toContainText(forbiddenGameCopy);
+  await page.evaluate(async () => window.__TE_PPU_E2E__.finish('loss'));
+  await expect(page.getByRole('button', { name: '도전 종료' })).toBeEnabled();
+  await page.getByRole('button', { name: '도전 종료' }).click();
+
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await expect(page.getByTestId('tower-screen')).toHaveCount(0);
+  await page.getByRole('button', { name: '랭킹' }).click();
+  await expect(page.getByTestId('ranking-screen')).toBeVisible();
+  await expect(page.getByText('LOCAL RECORDS')).toBeVisible();
+  const record = page.getByRole('row').filter({ hasText: 'RVT' });
+  await expect(record).toContainText('리벳');
+  await expect(record).toContainText('1,000');
+  await expect(page.getByText('ONLINE RANKING SYNC PENDING')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'BACK' }).click();
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await expect(page.getByTestId('tower-run-status')).toHaveText(
+    '도전 중 · 다음 1층 · 점수 000000',
+  );
+});
+
+test('shows a usable tower screen in under ten seconds', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  const elapsedMs = await openTower(page);
+
+  expect(elapsedMs).toBeLessThan(10_000);
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+});
+
+test('keeps floor one at the bottom and confines scrolling to the tower route', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openTower(page);
+
+  const app = page.getByTestId('app-shell');
+  const route = page.getByTestId('tower-route');
+  const floorOne = route.locator('[data-floor="1"]');
+  const metrics = await route.evaluate((element) => {
+    const routeRect = element.getBoundingClientRect();
+    const floorOneRect = element.querySelector<HTMLElement>('[data-floor="1"]')!
+      .getBoundingClientRect();
+    const order = [...element.querySelectorAll<HTMLElement>('[data-floor]')]
+      .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)
+      .map((node) => node.dataset.floor);
+    const style = getComputedStyle(element);
+    const webkitScrollbar = getComputedStyle(element, '::-webkit-scrollbar');
+    return {
+      floorOneBottomGap:
+        routeRect.top + element.clientTop + element.clientHeight - floorOneRect.bottom,
+      order,
+      overflowY: style.overflowY,
+      routeScrollable: element.scrollHeight > element.clientHeight,
+      scrollbarHidden: style.scrollbarWidth === 'none'
+        || webkitScrollbar.display === 'none'
+        || webkitScrollbar.width === '0px',
+      scrollTop: element.scrollTop,
+    };
+  });
+
+  expect(metrics.order).toEqual(['5', '4', '3', '2', '1']);
+  expect(metrics.floorOneBottomGap).toBeGreaterThanOrEqual(-1);
+  expect(metrics.floorOneBottomGap).toBeLessThanOrEqual(2);
+  expect(metrics.scrollTop).toBeGreaterThan(0);
+  expect(metrics.overflowY).toBe('auto');
+  expect(metrics.routeScrollable).toBe(true);
+  expect(metrics.scrollbarHidden).toBe(true);
+  await expect(floorOne).toBeInViewport();
+
+  await route.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(route.locator('[data-floor="5"]')).toBeInViewport();
+  expect(await app.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
+test('resumes the same active run after visiting the title', async ({ page }) => {
+  const expectFloorAtRouteBottom = async (floor: number) => {
+    const route = page.getByTestId('tower-route');
+    await expect.poll(() => route.evaluate((element, floorNumber) => {
+      const routeRect = element.getBoundingClientRect();
+      const floorRect = element.querySelector<HTMLElement>(`[data-floor="${floorNumber}"]`)!
+        .getBoundingClientRect();
+      return routeRect.top + element.clientTop + element.clientHeight - floorRect.bottom;
+    }, floor)).toBeGreaterThanOrEqual(-1);
+    const gap = await route.evaluate((element, floorNumber) => {
+      const routeRect = element.getBoundingClientRect();
+      const floorRect = element.querySelector<HTMLElement>(`[data-floor="${floorNumber}"]`)!
+        .getBoundingClientRect();
+      return routeRect.top + element.clientTop + element.clientHeight - floorRect.bottom;
+    }, floor);
+    expect(gap).toBeLessThanOrEqual(32);
+  };
+
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (let encounterIndex = 0; encounterIndex < 3; encounterIndex += 1) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  await expectFloorAtRouteBottom(2);
+  const status = await page.getByTestId('tower-run-status').textContent();
+
+  await page.getByRole('button', { name: '처음으로' }).click();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: '도전 계속' }).click();
+
+  await expect(page.getByTestId('tower-run-status')).toHaveText(status ?? '');
+  await expectFloorAtRouteBottom(2);
+  await expect(page.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeDisabled();
+});
+
+test('returns from floor two opponent two and restarts that opponent fresh', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (const encounterIndex of [0, 1, 2] as const) {
+    await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+    }
+  }
+  await page.getByRole('button', { name: '다음 층' }).click();
+  await page.getByRole('button', { name: '2층 선택' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+  await page.getByRole('button', { name: '다음 상대' }).click();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  const confirmedScore = await page.getByTestId('run-score').textContent();
+  expect(confirmedScore).not.toBeNull();
+
+  await page.getByRole('button', { name: '타워로 나가기' }).click();
+  await page.getByRole('button', { name: '타워로 나가기 확인' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByTestId('tower-run-status')).toContainText('2층 2번째 상대');
+  await expect(page.getByTestId('tower-run-status')).toContainText(confirmedScore!);
+  expect(await page.evaluate(() => window.__TE_PPU_E2E__.closeCount)).toBe(0);
+
+  await page.getByRole('button', { name: '2층 2번째 상대부터 계속' }).click();
+  await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+    'data-encounter-index',
+    '1',
+  );
+  await expect(page.getByText('유리 예언자 프리즘', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '대전 시작' }).click();
+  await expect.poll(
+    () => page.evaluate(() => window.__TE_PPU_E2E__.currentMatch),
+  ).toEqual({ floor: 2, encounterIndex: 1, wins: 1 });
+  await expect(page.getByTestId('run-score')).toHaveText(confirmedScore!);
+});
+
+test('shows the mascot and all three ordered floor-one rivals', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openTower(page);
+
+  await expect(page.getByAltText('태엽 부엉이 안내자')).toBeVisible();
+  const floorOneRivals = page
+    .getByRole('list', { name: '층별 라이벌 순서' })
+    .first();
+  for (const name of ['기어 창고장', '시계나방 틱', '이끼 골렘 모스']) {
+    await expect(floorOneRivals.getByText(name, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText('대전 진행 중', { exact: true })).toHaveCount(0);
+});
+
+for (const { result, heading } of [
+  { result: 'win', heading: '승리' },
+  { result: 'loss', heading: '패배' },
+  { result: 'draw', heading: '무승부' },
+] satisfies readonly { result: MatchResult; heading: string }[]) {
+  test(`routes tower to intro to match to forced ${result}`, async ({ page }) => {
+    await seedReturningProfile(page, RETURNING_PROFILE);
+    await openMatch(page);
+
+    await page.evaluate(async (forcedResult) => {
+      await window.__TE_PPU_E2E__.finish(forcedResult);
+    }, result);
+
+    await expect(page.getByTestId('result-screen')).toBeVisible();
+    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  });
+}
+
+test('keeps historically unlocked floors behind the active ranked-run order', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE, {
+    difficultyProgress: {
+      easy: {
+        highestUnlockedFloor: 5,
+        clearedFloors: { 1: true, 2: true, 3: true, 4: true, 5: false },
+      },
+    },
+  });
+  await openTower(page);
+
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+  for (const floor of [2, 3, 4, 5]) {
+    await expect(page.getByRole('button', { name: `${floor}층 선택` })).toBeDisabled();
+  }
+});
+
+test('climbs all five floors in order, defeats the owl, and unlocks Normal', async ({ page }) => {
+  test.setTimeout(30_000);
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+
+  for (const floor of [1, 2, 3, 4, 5] as const) {
+    for (const encounterIndex of [0, 1, 2] as const) {
+      const currentMatch = await page.evaluate(() => window.__TE_PPU_E2E__.currentMatch);
+      expect(currentMatch).toEqual({ floor, encounterIndex, wins: encounterIndex });
+      await expect(page.getByTestId('match-screen')).toHaveAttribute('data-floor', String(floor));
+      await page.evaluate(async () => window.__TE_PPU_E2E__.finish('win'));
+      await expect(page.getByTestId('result-screen')).toHaveAttribute(
+        'data-series-complete',
+        encounterIndex === 2 ? 'true' : 'false',
+      );
+
+      if (encounterIndex < 2) {
+        await expect(page.getByText(`층 승리 ${encounterIndex + 1}/3`)).toBeVisible();
+        await page.getByRole('button', { name: '다음 상대' }).click();
+        await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+          'data-encounter-index',
+          String(encounterIndex + 1),
+        );
+        await page.getByRole('button', { name: '대전 시작' }).click();
+        await expect(page.getByTestId('match-screen')).toBeVisible();
+      } else if (floor < 5) {
+        await page.getByRole('button', { name: '다음 층' }).click();
+        await expect(page.getByTestId('tower-screen')).toBeVisible();
+        await expect(page.getByTestId('tower-run-status')).toContainText(`다음 ${floor + 1}층`);
+        await expect(page.getByTestId('tower-screen')).not.toContainText(forbiddenGameCopy);
+        await page.getByRole('button', { name: `${floor + 1}층 선택` }).click();
+        await expect(page.getByTestId('floor-intro-screen')).toHaveAttribute(
+          'data-encounter-index',
+          '0',
+        );
+        await page.getByRole('button', { name: '대전 시작' }).click();
+        await expect(page.getByTestId('match-screen')).toBeVisible();
+      }
+    }
+  }
+
+  await page.getByRole('button', { name: '탑으로' }).click();
+  await expect(page.getByTestId('owl-reveal-screen')).toBeVisible();
+  await expect(page.getByText('탑의 설계자')).toBeVisible();
+  await page.getByRole('button', { name: '부엉이와 대결' }).click();
+  await expect(page.getByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+  await expect(page.getByText('탑의 설계자', { exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    await window.__TE_PPU_E2E__.finish('win');
+  });
+  await expect(page.getByTestId('owl-result-screen')).toBeVisible();
+  await page.getByRole('button', { name: '엔딩 보기' }).click();
+  await expect(page.getByTestId('ending-screen')).toBeVisible();
+  await expect(page.getByText('NORMAL 난이도 해금')).toBeVisible();
+  await page.getByRole('button', { name: '타이틀로 돌아가기' }).click();
+  await expect(page.getByTestId('title-screen')).toBeVisible();
+  await page.getByRole('button', { name: '도전 시작' }).click();
+  await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByRole('button', { name: '보통' })).toBeEnabled();
+  await page.getByRole('button', { name: '보통' }).click();
+  await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'normal');
+});
+
+test('keeps floor two locked until all three floor-one wins are complete', async ({ page }) => {
+  await seedReturningProfile(page, RETURNING_PROFILE);
+  await openMatch(page);
+  await expect(page.getByRole('heading', { name: '기어 창고장' })).toBeVisible();
+
+  for (const encounterIndex of [0, 1, 2] as const) {
+    const currentMatch = await page.evaluate(() => window.__TE_PPU_E2E__.currentMatch);
+    expect(currentMatch).toEqual({ floor: 1, encounterIndex, wins: encounterIndex });
+    await page.evaluate(async () => {
+      await window.__TE_PPU_E2E__.finish('win');
+    });
+
+    const progress = await page.evaluate(() => {
+      const raw = window.localStorage.getItem('te-ppu.progress.identity.local.local-browser')
+        ?? window.localStorage.getItem('te-ppu.progress');
+      return raw === null ? null : JSON.parse(raw) as {
+        highestUnlockedFloor?: number;
+        difficultyProgress?: { easy?: { highestUnlockedFloor: number } };
+      };
+    });
+    expect(progress?.difficultyProgress?.easy?.highestUnlockedFloor
+      ?? progress?.highestUnlockedFloor
+      ?? 1).toBe(encounterIndex === 2 ? 2 : 1);
+
+    if (encounterIndex < 2) {
+      await page.getByRole('button', { name: '다음 상대' }).click();
+      await page.getByRole('button', { name: '대전 시작' }).click();
+      await expect(page.getByTestId('match-screen')).toBeVisible();
+    } else {
+      await page.getByRole('button', { name: '다음 층' }).click();
+      await expect(page.getByTestId('tower-screen')).toBeVisible();
+      await expect(page.getByRole('button', { name: '2층 선택' })).toBeEnabled();
+    }
+  }
+});

@@ -1,0 +1,178 @@
+import { describe, expect, it } from 'vitest';
+import { ScoreRunController } from './score-run-controller';
+
+function complete(
+  run: ScoreRunController,
+  outcome: Parameters<ScoreRunController['completeMatch']>[0],
+) {
+  run.beginMatch();
+  return run.completeMatch(outcome);
+}
+
+describe('ScoreRunController', () => {
+  it('rolls back only the active opponent score and allows a fresh restart', () => {
+    const run = ScoreRunController.start('easy');
+    run.beginMatch();
+    run.recordEvents([{ type: 'lines-cleared', side: 'player', amount: 1 }]);
+    run.completeMatch({
+      floor: 1,
+      encounterIndex: 0,
+      isOwl: false,
+      result: 'win',
+      durationTicks: 300,
+    });
+    const confirmed = run.snapshot;
+
+    run.beginMatch();
+    run.recordEvents([{ type: 'lines-cleared', side: 'player', amount: 4 }]);
+    expect(run.snapshot.score).toBeGreaterThan(confirmed.score);
+    run.abandonMatch();
+
+    expect(run.snapshot).toEqual(confirmed);
+    run.beginMatch();
+    expect(run.snapshot).toEqual(confirmed);
+  });
+
+  it('forces floor one, advances after each three-win floor, and ends on loss', () => {
+    const run = ScoreRunController.start('easy');
+    expect(run.canSelectFloor(1)).toBe(true);
+    expect(run.canSelectFloor(2)).toBe(false);
+
+    complete(run, { floor: 1, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 600 });
+    complete(run, { floor: 1, encounterIndex: 1, isOwl: false, result: 'win', durationTicks: 500 });
+    complete(run, { floor: 1, encounterIndex: 2, isOwl: false, result: 'win', durationTicks: 400 });
+    expect(run.snapshot).toMatchObject({ score: 5_000, requiredFloor: 2, encountersWon: 3 });
+
+    const ended = complete(run, {
+      floor: 2, encounterIndex: 0, isOwl: false, result: 'loss', durationTicks: 300,
+    });
+    expect(ended.kind).toBe('ended');
+    expect(run.snapshot.phase).toBe('ended');
+  });
+
+  it('starts an administrator run at the requested floor without changing normal starts', () => {
+    const administrator = ScoreRunController.startAtFloor('hard', 5);
+
+    expect(administrator.snapshot).toMatchObject({
+      difficulty: 'hard',
+      requiredFloor: 5,
+      score: 0,
+      encountersWon: 0,
+      phase: 'active',
+    });
+    expect(administrator.canSelectFloor(5)).toBe(true);
+    expect(administrator.canSelectFloor(1)).toBe(false);
+
+    const resolution = complete(administrator, {
+      floor: 5,
+      encounterIndex: 0,
+      isOwl: false,
+      result: 'win',
+      durationTicks: 120,
+    });
+    expect(resolution).toMatchObject({
+      kind: 'continued',
+      snapshot: { requiredFloor: 5, encountersWon: 1 },
+    });
+    expect(ScoreRunController.start('hard').snapshot.requiredFloor).toBe(1);
+  });
+
+  it('awards the normal win and owl bonuses and records all sixteen victories', () => {
+    const run = ScoreRunController.start('easy');
+    for (const floor of [1, 2, 3, 4, 5] as const) {
+      for (const encounterIndex of [0, 1, 2] as const) {
+        complete(run, {
+          floor,
+          encounterIndex,
+          isOwl: false,
+          result: 'win',
+          durationTicks: 240,
+        });
+      }
+    }
+    const result = complete(run, {
+      floor: 5, encounterIndex: 2, isOwl: true, result: 'win', durationTicks: 240,
+    });
+    expect(result).toMatchObject({ kind: 'ended', summary: { owlDefeated: true, encountersWon: 16 } });
+    expect(run.snapshot.score).toBe(31_000);
+  });
+
+  it('adds only player event points with no difficulty multiplier', () => {
+    const easy = ScoreRunController.start('easy');
+    const hard = ScoreRunController.start('hard');
+    const events = [
+      { type: 'lines-cleared' as const, side: 'player' as const, amount: 4 },
+      { type: 'attack-sent' as const, side: 'player' as const, amount: 2 },
+      { type: 'item-used' as const, side: 'player' as const, item: 'freeze' as const },
+      { type: 'piece-locked' as const, side: 'player' as const },
+    ];
+
+    easy.beginMatch();
+    hard.beginMatch();
+    easy.recordEvents(events);
+    hard.recordEvents(events);
+
+    expect(easy.snapshot.score).toBe(1_000);
+    expect(hard.snapshot.score).toBe(1_000);
+  });
+
+  it('rejects out-of-order outcomes and calls after a run ends', () => {
+    const run = ScoreRunController.start('normal');
+    run.beginMatch();
+    expect(() => run.completeMatch({
+      floor: 2, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 1,
+    })).toThrow(RangeError);
+    expect(() => run.completeMatch({
+      floor: 1, encounterIndex: 1, isOwl: false, result: 'win', durationTicks: 1,
+    })).toThrow(RangeError);
+
+    run.completeMatch({
+      floor: 1, encounterIndex: 0, isOwl: false, result: 'draw', durationTicks: 1,
+    });
+    expect(() => run.recordEvents([{ type: 'item-used', side: 'player', item: 'freeze' }]))
+      .toThrow(RangeError);
+    expect(() => run.completeMatch({
+      floor: 1, encounterIndex: 0, isOwl: false, result: 'win', durationTicks: 1,
+    })).toThrow(RangeError);
+  });
+
+  it('requires one active score transaction for record, completion, and abandon', () => {
+    const run = ScoreRunController.start('normal');
+    const outcome = {
+      floor: 1 as const,
+      encounterIndex: 0 as const,
+      isOwl: false,
+      result: 'win' as const,
+      durationTicks: 1,
+    };
+
+    expect(() => run.recordEvents([
+      { type: 'item-used', side: 'player', item: 'freeze' },
+    ])).toThrow(RangeError);
+    expect(() => run.completeMatch(outcome)).toThrow(RangeError);
+    expect(() => run.abandonMatch()).toThrow(RangeError);
+
+    run.beginMatch();
+    expect(() => run.beginMatch()).toThrow(RangeError);
+    run.completeMatch(outcome);
+    expect(() => run.abandonMatch()).toThrow(RangeError);
+  });
+
+  it('returns snapshots detached from its private mutable state', () => {
+    const run = ScoreRunController.start('easy');
+    const leaked = run.snapshot as { score: number; requiredFloor: number; phase: string };
+    leaked.score = 99_999;
+    leaked.requiredFloor = 5;
+    leaked.phase = 'ended';
+
+    expect(run.snapshot).toEqual({
+      difficulty: 'easy',
+      score: 0,
+      durationTicks: 0,
+      requiredFloor: 1,
+      encountersWon: 0,
+      owlDefeated: false,
+      phase: 'active',
+    });
+  });
+});
