@@ -1558,6 +1558,37 @@ describe('AppRoot', () => {
     expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
   });
 
+  it('keeps a suspended administrator continuation when reselecting the current difficulty', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(createDevClearedProgress());
+    renderAdministratorGame(repository);
+
+    await enterMatch(user, 2, 0);
+    await finishWin(user);
+    await user.click(within(screen.getByTestId('result-screen')).getByRole('button'));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 001000');
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+
+    const saveCount = repository.saves.length;
+    const currentDifficulty = screen.getByRole('button', { name: '어려움' });
+    expect(currentDifficulty).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /2층 2번째 상대부터 계속/ })).toBeEnabled();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+
+    await user.click(currentDifficulty);
+
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '1000');
+    expect(screen.getByRole('button', { name: /2층 2번째 상대부터 계속/ })).toBeEnabled();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+    expect(repository.saves).toHaveLength(saveCount);
+  });
+
   it('resumes the suspended administrator owl battle', async () => {
     const user = userEvent.setup();
     renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));

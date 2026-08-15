@@ -611,6 +611,7 @@ export function AppRoot({
     difficulty: ProgressState['selectedDifficulty'],
   ): Promise<boolean> {
     if (controller === null) return false;
+    if (devClearedMode && controller.progress.selectedDifficulty === difficulty) return true;
     const activeRun = scoreRunRef.current;
     if (!devClearedMode && activeRun !== null && !isPristineRun(activeRun.snapshot)) return false;
     const save = controller.selectDifficulty(difficulty);
