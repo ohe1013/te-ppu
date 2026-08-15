@@ -199,7 +199,10 @@ export function portraitStateWithAttackFeedback(
 ): PortraitState {
   if (terminal || feedback === null) return base;
   if (feedback.phase === 'launch' && feedback.source === side) return 'attack';
-  if (feedback.phase === 'impact' && feedback.target === side) return 'hit';
+  if (
+    (feedback.phase === 'impact' || feedback.phase === 'settle')
+    && feedback.target === side
+  ) return 'hit';
   return base;
 }
 

@@ -306,13 +306,6 @@
 }
 
 .battle-hud {
-  --battle-hud-impact-light: 2px;
-  --battle-hud-impact-medium: 4px;
-  --battle-hud-impact-strong: 6px;
-  --battle-hud-impact-distance: var(--battle-hud-impact-light);
-  --battle-hud-impact-direction: -1;
-  --battle-hud-impact-duration: 120ms;
-  --battle-hud-launch-offset: 2px;
   position: relative;
   min-width: 0;
   padding: 0.35rem 0.4rem;
@@ -321,21 +314,6 @@
   border-radius: 0.65rem;
   background: #fff4cf;
   box-shadow: 3px 3px 0 rgb(23 18 57 / 72%);
-}
-
-.battle-hud[data-side="opponent"] {
-  --battle-hud-impact-direction: 1;
-  --battle-hud-launch-offset: -2px;
-}
-
-.battle-hud[data-impact-intensity="medium"] {
-  --battle-hud-impact-distance: var(--battle-hud-impact-medium);
-  --battle-hud-impact-duration: 150ms;
-}
-
-.battle-hud[data-impact-intensity="strong"] {
-  --battle-hud-impact-distance: var(--battle-hud-impact-strong);
-  --battle-hud-impact-duration: 180ms;
 }
 
 .battle-hud__header {
@@ -374,7 +352,6 @@
   position: relative;
   border-radius: 0.72rem;
   box-shadow: 0 0 0 2px #fff4cf, 2px 2px 0 rgb(23 18 57 / 66%);
-  transition: transform 100ms ease-out;
 }
 
 .battle-hud__portrait--plate::after {
@@ -389,22 +366,18 @@
 }
 
 .battle-hud[data-attack-role="source"][data-attack-phase="launch"]
-  .battle-hud__portrait--plate {
-  transform: translateX(var(--battle-hud-launch-offset));
-}
-
+  .battle-hud__portrait--plate,
 .battle-hud[data-attack-role="target"][data-attack-phase="impact"]
   .battle-hud__portrait--plate {
-  animation: battle-hud-impact-plate var(--battle-hud-impact-duration) ease-out both;
+  transform: translateX(var(--battle-hud-feedback-offset-x, 0));
 }
 
 .battle-hud[data-attack-role="target"][data-attack-phase="impact"]
   .battle-hud__portrait--plate::after {
-  animation: battle-hud-impact-outline var(--battle-hud-impact-duration) ease-out both;
+  opacity: var(--battle-hud-feedback-outline-opacity, 0);
 }
 
 .battle-hud[data-reduced-motion="true"] .battle-hud__portrait--plate {
-  animation-name: none;
   transform: none;
 }
 
@@ -427,30 +400,8 @@
   transform: translateX(-50%);
 }
 
-@keyframes battle-hud-impact-plate {
-  0% { transform: translateX(0); }
-  45% {
-    transform: translateX(calc(
-      var(--battle-hud-impact-distance) * var(--battle-hud-impact-direction)
-    ));
-  }
-  72% {
-    transform: translateX(calc(
-      var(--battle-hud-impact-distance) * var(--battle-hud-impact-direction) * -0.35
-    ));
-  }
-  100% { transform: translateX(0); }
-}
-
-@keyframes battle-hud-impact-outline {
-  0% { opacity: 0; }
-  35% { opacity: 0.72; }
-  100% { opacity: 0; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .battle-hud__portrait--plate {
-    animation-name: none !important;
     transform: none !important;
   }
 }

@@ -108,7 +108,7 @@ describe('portrait state', () => {
       'opponent',
       false,
       { ...impactFeedback, phase: 'settle' },
-    )).toBe('panic');
+    )).toBe('hit');
     expect(portraitStateWithAttackFeedback(
       'defeat',
       'opponent',

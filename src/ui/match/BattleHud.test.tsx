@@ -62,6 +62,10 @@ describe('BattleHud', () => {
     expect(hud).toHaveAttribute('data-attack-phase', 'launch');
     expect(hud).toHaveAttribute('data-impact-intensity', 'medium');
     expect(hud).toHaveAttribute('data-reduced-motion', 'false');
+    expect(hud).toHaveStyle({
+      '--battle-hud-feedback-offset-x': '1px',
+      '--battle-hud-feedback-outline-opacity': '0',
+    });
     expect(within(hud).getByText('2 COMBO!')).toBeVisible();
   });
 
@@ -69,7 +73,12 @@ describe('BattleHud', () => {
     render(
       <BattleHud
         character={character}
-        feedback={{ ...launchFeedback, phase: 'impact' }}
+        feedback={{
+          ...launchFeedback,
+          intensity: 'strong',
+          phase: 'impact',
+          phaseProgress: 0.25,
+        }}
         model={model}
         side="opponent"
       />,
@@ -78,7 +87,11 @@ describe('BattleHud', () => {
 
     expect(hud).toHaveAttribute('data-attack-role', 'target');
     expect(hud).toHaveAttribute('data-attack-phase', 'impact');
-    expect(hud).toHaveAttribute('data-impact-intensity', 'medium');
+    expect(hud).toHaveAttribute('data-impact-intensity', 'strong');
+    expect(hud).toHaveStyle({
+      '--battle-hud-feedback-offset-x': '3px',
+      '--battle-hud-feedback-outline-opacity': '0.707',
+    });
     expect(within(hud).queryByText('2 COMBO!')).not.toBeInTheDocument();
   });
 
@@ -86,7 +99,16 @@ describe('BattleHud', () => {
     render(
       <BattleHud
         character={character}
-        feedback={{ ...launchFeedback, displacementPx: 0, reducedMotion: true }}
+        feedback={{
+          ...launchFeedback,
+          comboLabel: null,
+          displacementPx: 4,
+          phase: 'impact',
+          phaseProgress: 0.25,
+          reducedMotion: true,
+          source: 'opponent',
+          target: 'player',
+        }}
         model={model}
         side="player"
       />,
@@ -94,7 +116,10 @@ describe('BattleHud', () => {
     const hud = screen.getByRole('region', { name: `${character.name} 대전 상태` });
 
     expect(hud).toHaveAttribute('data-reduced-motion', 'true');
-    expect(within(hud).getByText('2 COMBO!')).toBeVisible();
+    expect(hud).toHaveStyle({
+      '--battle-hud-feedback-offset-x': '0px',
+      '--battle-hud-feedback-outline-opacity': '0.707',
+    });
   });
 
   it('shows every public side field without private match data', () => {
