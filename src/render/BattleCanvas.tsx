@@ -364,20 +364,34 @@ export function BattleCanvas({
           textureCache={textureCacheRef.current}
         />
         {launchRibbon !== null && attackFrames !== null && (
-          <pixiAnimatedSprite
-            alpha={launchAlpha}
-            anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
-            animationSpeed={BATTLE_ANIMATIONS['attack-shot'].fps / 60}
-            autoPlay
-            data-testid="attack-shot-sprite"
-            height={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
-            loop
-            rotation={launchRibbon.angle}
-            textures={attackFrames}
-            width={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
-            x={launchRibbon.x}
-            y={launchRibbon.y}
-          />
+          attackReducedMotion ? (
+            <pixiSprite
+              alpha={launchAlpha}
+              anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
+              data-testid="attack-shot-sprite"
+              height={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+              rotation={launchRibbon.angle}
+              texture={attackFrames[0]!}
+              width={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+              x={launchRibbon.x}
+              y={launchRibbon.y}
+            />
+          ) : (
+            <pixiAnimatedSprite
+              alpha={launchAlpha}
+              anchor={{ x: BATTLE_ANIMATIONS['attack-shot'].anchor[0], y: BATTLE_ANIMATIONS['attack-shot'].anchor[1] }}
+              animationSpeed={BATTLE_ANIMATIONS['attack-shot'].fps / 60}
+              autoPlay
+              data-testid="attack-shot-sprite"
+              height={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+              loop
+              rotation={launchRibbon.angle}
+              textures={attackFrames}
+              width={Math.max(24, Math.min(72, launchRibbon.length * 0.2))}
+              x={launchRibbon.x}
+              y={launchRibbon.y}
+            />
+          )
         )}
         {launchRibbon !== null && attackFrames === null && (
           <pixiGraphics

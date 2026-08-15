@@ -394,8 +394,65 @@ describe('BattleCanvas', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('attack-shot-sprite')).toHaveLength(1);
+    const projectile = screen.getByTestId('attack-shot-sprite');
+    expect(projectile.tagName).toBe('PIXIANIMATEDSPRITE');
+    expect(projectile).toHaveAttribute('autoplay');
+    expect(projectile).toHaveAttribute('loop');
     expect(screen.queryByTestId('attack-ribbon')).not.toBeInTheDocument();
+  });
+
+  it('freezes an atlas-backed reduced-motion launch at the target with alpha-only change', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const atlas = Object.fromEntries(battleAnimationFrameNames('attack-shot').map((name) => [name, {}]));
+    const result = render(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.2,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+    act(() => notifyResize([], {} as ResizeObserver));
+    const first = screen.getByTestId('attack-shot-sprite');
+    const firstAlpha = Number(first.getAttribute('alpha'));
+
+    result.rerender(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.8,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const second = screen.getByTestId('attack-shot-sprite');
+
+    expect(first.tagName).toBe('PIXISPRITE');
+    expect(first).not.toHaveAttribute('autoplay');
+    expect(first).not.toHaveAttribute('loop');
+    expect(first).toHaveAttribute('x', '248');
+    expect(second).toHaveAttribute('x', '248');
+    expect(Number(second.getAttribute('alpha'))).toBeGreaterThan(firstAlpha);
   });
 
   it('eases normal launch progress toward the target', () => {
