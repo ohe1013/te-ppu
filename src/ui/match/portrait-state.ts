@@ -7,6 +7,7 @@ import {
   type SideId,
 } from '../../core/index';
 import type { Floor } from '../../progression/index';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 
 const HIT_TICKS = 25;
 const ATTACK_TICKS = 18;
@@ -188,6 +189,18 @@ export function resolvePortraitState({
   if (tick < focusUntil) return 'focus';
   if (tick < smugUntil) return 'smug';
   return 'idle';
+}
+
+export function portraitStateWithAttackFeedback(
+  base: PortraitState,
+  side: SideId,
+  terminal: boolean,
+  feedback: AttackFeedbackPresentation | null,
+): PortraitState {
+  if (terminal || feedback === null) return base;
+  if (feedback.phase === 'launch' && feedback.source === side) return 'attack';
+  if (feedback.phase === 'impact' && feedback.target === side) return 'hit';
+  return base;
 }
 
 function usableUrl(url: string | undefined): string | undefined {

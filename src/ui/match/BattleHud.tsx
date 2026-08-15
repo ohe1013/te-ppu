@@ -5,11 +5,13 @@ import {
   createCharacterPlateModel,
   type CharacterPlateCharacter,
 } from './character-plate';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 import { PiecePreview } from './piece-preview';
 import type { PortraitPresentation } from './portrait-state';
 
 export interface BattleHudProps {
   readonly character: CharacterPlateCharacter;
+  readonly feedback?: AttackFeedbackPresentation | null;
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
   readonly side: SideId;
@@ -25,6 +27,7 @@ const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
 
 export function BattleHud({
   character,
+  feedback = null,
   items,
   model,
   portrait,
@@ -36,15 +39,27 @@ export function BattleHud({
     state: 'idle' as const,
   };
   const plate = createCharacterPlateModel(character, side, presentation, model);
+  const attackRole = feedback === null
+    ? undefined
+    : feedback.source === side ? 'source' : 'target';
   return (
     <section
       aria-label={`${character.name} 대전 상태`}
       className="battle-hud"
+      data-attack-phase={feedback?.phase}
+      data-attack-role={attackRole}
       data-character-id={plate.characterId}
       data-danger={plate.danger ? 'true' : 'false'}
+      data-impact-intensity={feedback?.intensity}
+      data-reduced-motion={feedback?.reducedMotion ? 'true' : 'false'}
       data-side={side}
       role="region"
     >
+      {feedback?.source === side && feedback.comboLabel !== null ? (
+        <output className="battle-hud__combo-pop" key={feedback.id}>
+          {feedback.comboLabel}!
+        </output>
+      ) : null}
       <header className="battle-hud__header">
         <span
           className="battle-hud__portrait battle-hud__portrait--plate"

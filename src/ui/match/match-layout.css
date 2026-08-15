@@ -306,6 +306,14 @@
 }
 
 .battle-hud {
+  --battle-hud-impact-light: 2px;
+  --battle-hud-impact-medium: 4px;
+  --battle-hud-impact-strong: 6px;
+  --battle-hud-impact-distance: var(--battle-hud-impact-light);
+  --battle-hud-impact-direction: -1;
+  --battle-hud-impact-duration: 120ms;
+  --battle-hud-launch-offset: 2px;
+  position: relative;
   min-width: 0;
   padding: 0.35rem 0.4rem;
   overflow: hidden;
@@ -313,6 +321,21 @@
   border-radius: 0.65rem;
   background: #fff4cf;
   box-shadow: 3px 3px 0 rgb(23 18 57 / 72%);
+}
+
+.battle-hud[data-side="opponent"] {
+  --battle-hud-impact-direction: 1;
+  --battle-hud-launch-offset: -2px;
+}
+
+.battle-hud[data-impact-intensity="medium"] {
+  --battle-hud-impact-distance: var(--battle-hud-impact-medium);
+  --battle-hud-impact-duration: 150ms;
+}
+
+.battle-hud[data-impact-intensity="strong"] {
+  --battle-hud-impact-distance: var(--battle-hud-impact-strong);
+  --battle-hud-impact-duration: 180ms;
 }
 
 .battle-hud__header {
@@ -348,13 +371,88 @@
 }
 
 .battle-hud__portrait--plate {
+  position: relative;
   border-radius: 0.72rem;
   box-shadow: 0 0 0 2px #fff4cf, 2px 2px 0 rgb(23 18 57 / 66%);
+  transition: transform 100ms ease-out;
+}
+
+.battle-hud__portrait--plate::after {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 2px solid #ff6fb1;
+  border-radius: inherit;
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+}
+
+.battle-hud[data-attack-role="source"][data-attack-phase="launch"]
+  .battle-hud__portrait--plate {
+  transform: translateX(var(--battle-hud-launch-offset));
+}
+
+.battle-hud[data-attack-role="target"][data-attack-phase="impact"]
+  .battle-hud__portrait--plate {
+  animation: battle-hud-impact-plate var(--battle-hud-impact-duration) ease-out both;
+}
+
+.battle-hud[data-attack-role="target"][data-attack-phase="impact"]
+  .battle-hud__portrait--plate::after {
+  animation: battle-hud-impact-outline var(--battle-hud-impact-duration) ease-out both;
+}
+
+.battle-hud[data-reduced-motion="true"] .battle-hud__portrait--plate {
+  animation-name: none;
+  transform: none;
 }
 
 .battle-hud[data-danger="true"] .battle-hud__portrait--plate {
   border-color: #ff6fb1;
   box-shadow: 0 0 0 2px #ffca5c, 0 0 0 4px rgb(255 111 177 / 34%), 2px 2px 0 rgb(23 18 57 / 66%);
+}
+
+.battle-hud__combo-pop {
+  position: absolute;
+  z-index: 2;
+  top: 0.25rem;
+  left: 50%;
+  color: #d14479;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  text-shadow: 1px 1px 0 #fff4cf;
+  transform: translateX(-50%);
+}
+
+@keyframes battle-hud-impact-plate {
+  0% { transform: translateX(0); }
+  45% {
+    transform: translateX(calc(
+      var(--battle-hud-impact-distance) * var(--battle-hud-impact-direction)
+    ));
+  }
+  72% {
+    transform: translateX(calc(
+      var(--battle-hud-impact-distance) * var(--battle-hud-impact-direction) * -0.35
+    ));
+  }
+  100% { transform: translateX(0); }
+}
+
+@keyframes battle-hud-impact-outline {
+  0% { opacity: 0; }
+  35% { opacity: 0.72; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-hud__portrait--plate {
+    animation-name: none !important;
+    transform: none !important;
+  }
 }
 
 .asset-image {

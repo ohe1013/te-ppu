@@ -6,6 +6,7 @@ import {
   type PublicMatchView,
   type SideId,
 } from '../../core/index';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 
 type EventBatch = {
   readonly events: readonly GameEvent[];
@@ -58,6 +59,65 @@ async function portraitRuntime() {
 }
 
 describe('portrait state', () => {
+  it('overrides only the active attack side and phase while preserving terminal portraits', async () => {
+    const { portraitStateWithAttackFeedback } = await portraitRuntime();
+    const launchFeedback: AttackFeedbackPresentation = {
+      amount: 2,
+      combo: 2,
+      comboLabel: '2 COMBO',
+      displacementPx: 4,
+      id: 'attack:12:0',
+      intensity: 'medium',
+      phase: 'launch',
+      phaseProgress: 0.5,
+      reducedMotion: false,
+      source: 'player',
+      target: 'opponent',
+    };
+    const impactFeedback: AttackFeedbackPresentation = {
+      ...launchFeedback,
+      phase: 'impact',
+    };
+
+    expect(portraitStateWithAttackFeedback(
+      'idle',
+      'player',
+      false,
+      launchFeedback,
+    )).toBe('attack');
+    expect(portraitStateWithAttackFeedback(
+      'smug',
+      'opponent',
+      false,
+      launchFeedback,
+    )).toBe('smug');
+    expect(portraitStateWithAttackFeedback(
+      'idle',
+      'opponent',
+      false,
+      impactFeedback,
+    )).toBe('hit');
+    expect(portraitStateWithAttackFeedback(
+      'focus',
+      'player',
+      false,
+      impactFeedback,
+    )).toBe('focus');
+    expect(portraitStateWithAttackFeedback(
+      'panic',
+      'opponent',
+      false,
+      { ...impactFeedback, phase: 'settle' },
+    )).toBe('panic');
+    expect(portraitStateWithAttackFeedback(
+      'defeat',
+      'opponent',
+      true,
+      impactFeedback,
+    )).toBe('defeat');
+    expect(portraitStateWithAttackFeedback('rage', 'opponent', false, null)).toBe('rage');
+  });
+
   it('resolves terminal, hit, attack, danger, focus, smug, and idle in priority order', async () => {
     const { resolvePortraitState } = await portraitRuntime();
 

@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PublicSideView } from '../../core/index';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 import { BattleHud } from './BattleHud';
 
 afterEach(cleanup);
@@ -25,7 +26,77 @@ const model: PublicSideView = {
   topOut: false,
 };
 
+const launchFeedback: AttackFeedbackPresentation = {
+  amount: 2,
+  combo: 2,
+  comboLabel: '2 COMBO',
+  displacementPx: 4,
+  id: 'attack:12:0',
+  intensity: 'medium',
+  phase: 'launch',
+  phaseProgress: 0.5,
+  reducedMotion: false,
+  source: 'player',
+  target: 'opponent',
+};
+
+const character = {
+  id: 'hero-engineer',
+  name: '견습 마도공학자',
+  title: '별빛 다루기',
+} as const;
+
 describe('BattleHud', () => {
+  it('marks source launch feedback and shows a transient combo label', () => {
+    render(
+      <BattleHud
+        character={character}
+        feedback={launchFeedback}
+        model={model}
+        side="player"
+      />,
+    );
+    const hud = screen.getByRole('region', { name: `${character.name} 대전 상태` });
+
+    expect(hud).toHaveAttribute('data-attack-role', 'source');
+    expect(hud).toHaveAttribute('data-attack-phase', 'launch');
+    expect(hud).toHaveAttribute('data-impact-intensity', 'medium');
+    expect(hud).toHaveAttribute('data-reduced-motion', 'false');
+    expect(within(hud).getByText('2 COMBO!')).toBeVisible();
+  });
+
+  it('marks target impact without borrowing the source combo label', () => {
+    render(
+      <BattleHud
+        character={character}
+        feedback={{ ...launchFeedback, phase: 'impact' }}
+        model={model}
+        side="opponent"
+      />,
+    );
+    const hud = screen.getByRole('region', { name: `${character.name} 대전 상태` });
+
+    expect(hud).toHaveAttribute('data-attack-role', 'target');
+    expect(hud).toHaveAttribute('data-attack-phase', 'impact');
+    expect(hud).toHaveAttribute('data-impact-intensity', 'medium');
+    expect(within(hud).queryByText('2 COMBO!')).not.toBeInTheDocument();
+  });
+
+  it('exposes reduced-motion attack feedback without hiding non-motion feedback', () => {
+    render(
+      <BattleHud
+        character={character}
+        feedback={{ ...launchFeedback, displacementPx: 0, reducedMotion: true }}
+        model={model}
+        side="player"
+      />,
+    );
+    const hud = screen.getByRole('region', { name: `${character.name} 대전 상태` });
+
+    expect(hud).toHaveAttribute('data-reduced-motion', 'true');
+    expect(within(hud).getByText('2 COMBO!')).toBeVisible();
+  });
+
   it('shows every public side field without private match data', () => {
     render(
       <BattleHud
