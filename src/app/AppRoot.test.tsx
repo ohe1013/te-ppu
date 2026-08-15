@@ -1536,17 +1536,55 @@ describe('AppRoot', () => {
     await enterTower(user);
     await user.click(screen.getByRole('button', { name: '3층 선택' }));
     await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await finishWin(user);
+    await user.click(within(screen.getByTestId('result-screen')).getByRole('button'));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('second-opponent checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
     await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
     await screen.findByTestId('tower-screen');
-    await user.click(screen.getByRole('button', { name: /3층 1번째 상대부터 계속/ }));
+    await user.click(screen.getByRole('button', { name: /3층 2번째 상대부터 계속/ }));
     expect(await screen.findByTestId('floor-intro-screen')).toHaveAttribute(
       'data-encounter-index',
-      '0',
+      '1',
     );
     await user.click(screen.getByRole('button', { name: '대전 시작' }));
 
     expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-floor', '3');
-    expect(screen.getByTestId('match-encounter')).toHaveTextContent('0:0');
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('1:1');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+  });
+
+  it('resumes the suspended administrator owl battle', async () => {
+    const user = userEvent.setup();
+    renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '5층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('owl score checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-screen')).toHaveTextContent(
+      '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능',
+    );
+    await user.click(screen.getByRole('button', { name: '최종전 계속' }));
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
   });
 
   it('switches administrator difficulty after progress and starts the next test at zero', async () => {
@@ -1559,9 +1597,14 @@ describe('AppRoot', () => {
     await user.click(screen.getByRole('button', { name: '대전 시작' }));
     await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
     await screen.findByTestId('tower-screen');
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '1000');
     await user.click(screen.getByRole('button', { name: '쉬움' }));
 
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '0');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 모든 층 선택 가능',
+    );
     for (const floor of [1, 2, 3, 4, 5]) {
       expect(screen.getByRole('button', { name: `${floor}층 선택` })).toBeEnabled();
     }

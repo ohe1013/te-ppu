@@ -1087,6 +1087,7 @@ export function AppRoot({
     <main
       className="app-shell"
       data-difficulty={controller?.progress.selectedDifficulty ?? 'easy'}
+      data-run-score={scoreRunSnapshot?.score ?? 0}
       data-runtime-mode={services.platform.kind}
       data-testid="app-shell"
       id="app-shell"
