@@ -48,6 +48,7 @@ test('npm run dev opens ADM with every difficulty and floor cleared', async ({ p
     await page.locator(`.difficulty-selector__option[data-difficulty="${difficulty}"]`).click();
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', difficulty);
     await expect(page.locator('.tower-node--cleared')).toHaveCount(5);
+    expect(persisted.difficultyProgress[difficulty]?.owlDefeated).toBe(true);
     for (const floor of [1, 2, 3, 4, 5]) {
       await expect(page.getByRole('button', { name: `${floor}층 선택` })).toBeEnabled();
     }
