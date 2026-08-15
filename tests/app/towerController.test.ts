@@ -629,6 +629,33 @@ describe('tower controller', () => {
     expect(repository.saved).toEqual([]);
   });
 
+  it('resets a suspended battle in memory without changing or saving progress', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+    await controller.completeEncounter('WIN');
+    controller.startEncounter(11);
+    controller.abandonMatch();
+    const progressBeforeReset = controller.progress;
+
+    expect(controller.resetBattleSession()).toBe(true);
+    expect(controller.route).toBe('TOWER');
+    expect(controller.selectedFloor).toBeNull();
+    expect(controller.currentSeries).toBeNull();
+    expect(controller.suspendedBattle).toBeNull();
+    expect(controller.progress).toEqual(progressBeforeReset);
+    expect(repository.saved).toEqual([]);
+  });
+
+  it('refuses to reset transient state during a live match', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    controller.startFloor(1, 10);
+
+    expect(controller.resetBattleSession()).toBe(false);
+    expect(controller.match).not.toBeNull();
+    expect(controller.selectedFloor).toBe(1);
+  });
+
   it('returns detached suspension snapshots and consumes one on a fresh restart', async () => {
     const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
     controller.startFloor(1, 10);
