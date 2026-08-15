@@ -12,7 +12,6 @@ import {
   canPlace,
   clearFullRows,
   deleteVisibleRow,
-  dropGarbageCell,
   emptyBoard,
   lockPiece,
   occupiedCells,
@@ -182,45 +181,20 @@ describe('garbage physics', () => {
     expect(board.cells).toEqual(snapshot);
   });
 
-  it('lands immediately above a column top rather than filling its hole', () => {
-    let board = boardWithCell(emptyBoard(), 20, 4);
-    board = boardWithCell(board, 22, 4);
-    const snapshot = [...board.cells];
-
-    const result = dropGarbageCell(board, 4);
-
-    expect(result).toMatchObject({ landedY: 19, topOut: false });
-    expect(result.board.cells[19 * BOARD_WIDTH + 4]).toEqual({ kind: 'O', garbage: true });
-    expect(result.board.cells[21 * BOARD_WIDTH + 4]).toBeNull();
-    expect(board.cells).toEqual(snapshot);
-  });
-
-  it('reports top-out without mutating when garbage would land above the board', () => {
-    const board = boardWithCell(emptyBoard(), 0, 4);
-    const snapshot = [...board.cells];
-
-    const result = dropGarbageCell(board, 4);
-
-    expect(result).toEqual({ board, landedY: null, topOut: true });
-    expect(board.cells).toEqual(snapshot);
-  });
-
-  it('lands in the floor cell for an empty column', () => {
-    expect(dropGarbageCell(emptyBoard(), 3)).toMatchObject({ landedY: BOARD_ROWS - 1, topOut: false });
-  });
-
   it('keeps garbage identity through a different full-row clear and never assigns it to locked O cells', () => {
     let full = emptyBoard();
     for (let x = 0; x < BOARD_WIDTH; x += 1) full = boardWithCell(full, BOARD_ROWS - 1, x, { kind: 'T' });
-    const garbage = dropGarbageCell(full, 3).board;
+    const garbage = raiseGarbageRow(full, 3).board;
     const locked = lockPiece(emptyBoard(), active('O', 3, 5));
 
     const garbageCells = occupiedCells(garbage).filter((cell) => cell.garbage === true);
+    const cleared = clearFullRows(garbage);
     expect(garbageCells.every((cell) => cell.garbage === true)).toBe(true);
-    expect(garbageCells).toHaveLength(1);
+    expect(garbageCells).toHaveLength(9);
     expect(occupiedCells(locked).every((cell) => cell.garbage !== true)).toBe(true);
-    expect(clearFullRows(garbage).rows).toEqual([BOARD_ROWS - 1]);
-    expect(clearFullRows(garbage).board.cells[(BOARD_ROWS - 1) * BOARD_WIDTH + 3])
+    expect(cleared.rows).toEqual([BOARD_ROWS - 2]);
+    expect(cleared.board.cells[(BOARD_ROWS - 1) * BOARD_WIDTH + 3]).toBeNull();
+    expect(cleared.board.cells[(BOARD_ROWS - 1) * BOARD_WIDTH + 4])
       .toEqual({ kind: 'O', garbage: true });
   });
 });

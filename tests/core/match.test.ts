@@ -286,10 +286,14 @@ describe('simultaneous attack, garbage, and top-out', () => {
 
     expect(result.state.sides.player.incoming).toBe(0);
     expect(result.state.sides.player.garbageDrawIndex).toBe(3);
-    expect(occupiedCells(result.state.sides.player.board)).toHaveLength(7);
+    expect(occupiedCells(result.state.sides.player.board)).toHaveLength(31);
     expect(result.state.sides.player.active?.token).toEqual(nextToken);
-    expect(result.events.filter(({ type, side }) => type === 'garbage-landed' && side === 'player'))
-      .toHaveLength(3);
+    expect(result.events.filter(({ type }) => type === 'garbage-raised')).toEqual([{
+      type: 'garbage-raised',
+      side: 'player',
+      amount: 3,
+      holeColumns: [3, 2, 4],
+    }]);
   });
 
   it('finishes both same-tick garbage top-outs before declaring a draw', () => {

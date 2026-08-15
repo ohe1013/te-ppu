@@ -296,13 +296,12 @@ describe('canonical replay', () => {
           expect(event.rows!.every((row) => Number.isInteger(row) && row >= 0 && row < VISIBLE_ROWS))
             .toBe(true);
         }
-        if (event.type === 'garbage-landed') {
-          expect(Number.isInteger(event.column)).toBe(true);
-          expect(event.column).toBeGreaterThanOrEqual(0);
-          expect(event.column).toBeLessThan(BOARD_WIDTH);
-          expect(Number.isInteger(event.landingRow)).toBe(true);
-          expect(event.landingRow).toBeGreaterThanOrEqual(-HIDDEN_ROWS);
-          expect(event.landingRow).toBeLessThan(VISIBLE_ROWS);
+        if (event.type === 'garbage-raised') {
+          expect(event.holeColumns).toBeDefined();
+          expect(event.amount).toBe(event.holeColumns!.length);
+          expect(event.holeColumns!.every((hole) => (
+            Number.isInteger(hole) && hole >= 0 && hole < BOARD_WIDTH
+          ))).toBe(true);
         }
       }
     }), { numRuns: 500, seed: 0x5eed });
@@ -310,7 +309,7 @@ describe('canonical replay', () => {
     expect(eventCoverage.get('piece-locked')).toBeGreaterThan(10_000);
     expect(eventCoverage.get('lines-cleared')).toBeGreaterThan(30);
     expect(eventCoverage.get('attack-sent')).toBeGreaterThan(30);
-    expect(eventCoverage.get('garbage-landed')).toBeGreaterThan(30);
+    expect(eventCoverage.get('garbage-raised')).toBeGreaterThan(30);
     expect(eventCoverage.get('item-acquired')).toBeGreaterThan(8);
     expect(eventCoverage.get('item-used')).toBeGreaterThan(12);
     expect(usedItems).toEqual(new Set(['row-clear', 'freeze', 'queue-swap']));

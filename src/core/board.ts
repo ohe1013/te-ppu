@@ -23,12 +23,6 @@ export type DeleteRowResult = {
   readonly markers: readonly ItemType[];
 };
 
-export type GarbageResult = {
-  readonly board: Board;
-  readonly landedY: number | null;
-  readonly topOut: boolean;
-};
-
 export type RaiseGarbageRowResult =
   | { readonly board: Board; readonly status: 'raised' }
   | { readonly board: Board; readonly status: 'top-out' | 'invalid-hole' };
@@ -109,25 +103,6 @@ export function deleteVisibleRow(board: Board, row: number): DeleteRowResult {
     deleted: true,
     markers: markersIn(removedRow),
   };
-}
-
-export function dropGarbageCell(board: Board, x: number): GarbageResult {
-  if (!Number.isInteger(x) || x < 0 || x >= BOARD_WIDTH) throw new RangeError('garbage column is outside the board');
-
-  let topmostOccupiedY: number | null = null;
-  for (let y = 0; y < BOARD_ROWS; y += 1) {
-    if (board.cells[indexFor(x, y)] !== null) {
-      topmostOccupiedY = y;
-      break;
-    }
-  }
-
-  const landingY = topmostOccupiedY === null ? BOARD_ROWS - 1 : topmostOccupiedY - 1;
-  if (landingY < 0) return { board, landedY: null, topOut: true };
-
-  const cells = [...board.cells];
-  cells[indexFor(x, landingY)] = { kind: 'O', garbage: true };
-  return { board: { cells }, landedY: landingY, topOut: false };
 }
 
 export function raiseGarbageRow(board: Board, holeColumn: number): RaiseGarbageRowResult {

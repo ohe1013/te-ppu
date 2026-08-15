@@ -64,12 +64,13 @@ export type GameCommand =
 export type TimedCommand = { readonly tick: number; readonly side: SideId; readonly command: GameCommand };
 
 export type GameEvent = {
-  readonly type: 'piece-locked' | 'lines-cleared' | 'attack-sent' | 'garbage-landed' | 'item-acquired' | 'item-used' | 'freeze-applied' | 'top-out' | 'match-ended';
+  readonly type: 'piece-locked' | 'lines-cleared' | 'attack-sent' | 'garbage-raised' | 'garbage-landed' | 'item-acquired' | 'item-used' | 'freeze-applied' | 'top-out' | 'match-ended';
   readonly side: SideId;
   readonly amount?: number;
   readonly item?: ItemType;
   readonly row?: number;
   readonly rows?: readonly number[];
+  readonly holeColumns?: readonly number[];
   readonly column?: number;
   readonly landingRow?: number;
 };
