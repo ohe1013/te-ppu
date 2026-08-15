@@ -28,7 +28,6 @@ function groupForEvent(event: GameEvent): BattleAnimationGroup | null {
   if (event.type === 'piece-locked') return 'land-impact';
   if (event.type === 'lines-cleared') return 'line-clear';
   if (event.type === 'garbage-raised') return 'garbage-land';
-  if (event.type === 'garbage-landed') return 'garbage-land';
   if (event.type === 'item-acquired') return 'item-acquire';
   return null;
 }

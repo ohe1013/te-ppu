@@ -125,7 +125,7 @@ function totalScore(
   return { features, score: currentScore + profile.futureDiscount * bestFuture };
 }
 
-function landingRow(candidate: PlacementCandidate): number {
+function placementLandingRow(candidate: PlacementCandidate): number {
   return Math.max(...candidate.landingCells.map(({ y }) => y));
 }
 
@@ -136,7 +136,7 @@ function commandKey(candidate: PlacementCandidate): string {
 function comparePlacements(left: PlacementCandidate, right: PlacementCandidate): number {
   if (left.rotation !== right.rotation) return left.rotation - right.rotation;
   if (left.column !== right.column) return left.column - right.column;
-  const rowDifference = landingRow(left) - landingRow(right);
+  const rowDifference = placementLandingRow(left) - placementLandingRow(right);
   if (rowDifference !== 0) return rowDifference;
   return commandKey(left).localeCompare(commandKey(right));
 }
