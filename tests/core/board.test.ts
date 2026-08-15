@@ -16,7 +16,9 @@ import {
   emptyBoard,
   lockPiece,
   occupiedCells,
+  raiseGarbageRow,
 } from '../../src/core/board';
+import type { RaiseGarbageRowResult } from '../../src/core/board';
 
 const BLOCK: Cell = { kind: 'O' };
 
@@ -135,6 +137,42 @@ describe('explicit visible-row deletion', () => {
 });
 
 describe('garbage physics', () => {
+  it('raises every fixed cell one row and appends nine garbage cells around one hole', () => {
+    let board = boardWithCell(emptyBoard(), 5, 1, {
+      kind: 'T',
+      marker: 'freeze',
+    });
+    const snapshot = [...board.cells];
+
+    const result: RaiseGarbageRowResult = raiseGarbageRow(board, 4);
+
+    expect(result.status).toBe('raised');
+    expect(result.board.cells[4 * BOARD_WIDTH + 1]).toEqual({
+      kind: 'T',
+      marker: 'freeze',
+    });
+    const bottom = result.board.cells.slice((BOARD_ROWS - 1) * BOARD_WIDTH);
+    expect(bottom[4]).toBeNull();
+    expect(bottom.filter((cell) => cell?.garbage === true)).toHaveLength(9);
+    expect(board.cells).toEqual(snapshot);
+  });
+
+  it.each([-1, 10, 1.5, Number.NaN])(
+    'returns an invalid-hole failure without mutation for %s',
+    (holeColumn) => {
+      const board = emptyBoard();
+      expect(raiseGarbageRow(board, holeColumn)).toEqual({
+        board,
+        status: 'invalid-hole',
+      });
+    },
+  );
+
+  it('returns top-out before discarding an occupied top stored row', () => {
+    const board = boardWithCell(emptyBoard(), 0, 7);
+    expect(raiseGarbageRow(board, 3)).toEqual({ board, status: 'top-out' });
+  });
+
   it('lands immediately above a column top rather than filling its hole', () => {
     let board = boardWithCell(emptyBoard(), 20, 4);
     board = boardWithCell(board, 22, 4);

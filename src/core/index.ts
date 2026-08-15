@@ -49,8 +49,9 @@ export {
   emptyBoard,
   lockPiece,
   occupiedCells,
+  raiseGarbageRow,
 } from './board';
-export type { ClearResult, DeleteRowResult, GarbageResult } from './board';
+export type { ClearResult, DeleteRowResult, GarbageResult, RaiseGarbageRowResult } from './board';
 export {
   advanceSideTick,
   applySideCommands,

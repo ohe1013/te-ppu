@@ -29,6 +29,10 @@ export type GarbageResult = {
   readonly topOut: boolean;
 };
 
+export type RaiseGarbageRowResult =
+  | { readonly board: Board; readonly status: 'raised' }
+  | { readonly board: Board; readonly status: 'top-out' | 'invalid-hole' };
+
 function indexFor(x: number, y: number): number {
   return y * BOARD_WIDTH + x;
 }
@@ -124,6 +128,23 @@ export function dropGarbageCell(board: Board, x: number): GarbageResult {
   const cells = [...board.cells];
   cells[indexFor(x, landingY)] = { kind: 'O', garbage: true };
   return { board: { cells }, landedY: landingY, topOut: false };
+}
+
+export function raiseGarbageRow(board: Board, holeColumn: number): RaiseGarbageRowResult {
+  if (!Number.isInteger(holeColumn) || holeColumn < 0 || holeColumn >= BOARD_WIDTH) {
+    return { board, status: 'invalid-hole' };
+  }
+  if (board.cells.slice(0, BOARD_WIDTH).some((cell) => cell !== null)) {
+    return { board, status: 'top-out' };
+  }
+
+  const garbageRow = Array.from({ length: BOARD_WIDTH }, (_, x): Cell | null => (
+    x === holeColumn ? null : { kind: 'O', garbage: true }
+  ));
+  return {
+    board: { cells: [...board.cells.slice(BOARD_WIDTH), ...garbageRow] },
+    status: 'raised',
+  };
 }
 
 export function occupiedCells(board: Board): readonly PositionedCell[] {
