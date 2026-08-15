@@ -14,6 +14,9 @@ test('npm run dev:clean loads only pre-existing ordinary browser progress', asyn
   await expect(page.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
   await page.locator('.title-screen__action--start').click();
   await expect(page.getByTestId('tower-screen')).toBeVisible();
+  await expect(page.getByRole('button', { name: '1층 선택' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '2층 선택' })).toBeDisabled();
+  await expect(page.getByTestId('tower-run-status')).not.toContainText('관리자 테스트');
 
   const stored = await page.evaluate(({ clearedKey, ordinaryKey }) => ({
     cleared: window.localStorage.getItem(clearedKey),

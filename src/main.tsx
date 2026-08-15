@@ -46,7 +46,11 @@ async function mountApplication(): Promise<void> {
     <StrictMode>
       <PlatformBackProvider platform={services.platform}>
         <SafeAreaProvider platform={services.platform}>
-          <AppRoot services={services} renderMatch={renderMatch} />
+          <AppRoot
+            devClearedMode={devClearedProgress}
+            services={services}
+            renderMatch={renderMatch}
+          />
         </SafeAreaProvider>
       </PlatformBackProvider>
     </StrictMode>,
