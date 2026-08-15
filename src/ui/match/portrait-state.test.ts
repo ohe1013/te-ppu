@@ -204,7 +204,7 @@ describe('portrait state', () => {
       role: 'lieutenant',
       side: 'opponent',
     });
-    expect(opponent.attackUntil).toBe(36);
+    expect(opponent.attackUntil).toBe(0);
     expect(opponent.hitUntil).toBe(44);
     expect(opponent.smugUntil).toBe(57);
     expect(resolvePortraitState({
@@ -282,12 +282,9 @@ describe('portrait state', () => {
       reducePortraitBatches,
       resolvePortraitState,
     } = await portraitRuntime();
-    const hit = reducePortraitBatches(createPortraitMemory(), {
+    const raised = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
-        events: [
-          { amount: 1, side: 'player', type: 'garbage-landed' },
-          { item: 'freeze', side: 'player', type: 'freeze-applied' },
-        ],
+        events: [{ amount: 4, side: 'player', type: 'garbage-raised' }],
         tick: 10,
         view: viewAt(10),
       }],
@@ -296,9 +293,35 @@ describe('portrait state', () => {
       role: 'hero',
       side: 'player',
     });
-    expect(hit.hitUntil).toBe(35);
-    expect(resolvePortraitState({ ...hit, tick: 34 })).toBe('hit');
-    expect(resolvePortraitState({ ...hit, tick: 35 })).toBe('idle');
+    expect(raised.hitUntil).toBe(0);
+
+    const legacyLanded = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [{ amount: 1, side: 'player', type: 'garbage-landed' }],
+        tick: 10,
+        view: viewAt(10),
+      }],
+      floor: 1,
+      latestView: viewAt(10),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(legacyLanded.hitUntil).toBe(0);
+
+    const frozen = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [{ item: 'freeze', side: 'player', type: 'freeze-applied' }],
+        tick: 10,
+        view: viewAt(10),
+      }],
+      floor: 1,
+      latestView: viewAt(10),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(frozen.hitUntil).toBe(35);
+    expect(resolvePortraitState({ ...frozen, tick: 34 })).toBe('hit');
+    expect(resolvePortraitState({ ...frozen, tick: 35 })).toBe('idle');
 
     const hero = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
@@ -330,10 +353,9 @@ describe('portrait state', () => {
       role: 'lieutenant',
       side: 'opponent',
     });
-    expect(lieutenant.attackUntil).toBe(48);
+    expect(lieutenant.attackUntil).toBe(0);
     expect(lieutenant.smugUntil).toBe(69);
-    expect(resolvePortraitState({ ...lieutenant, tick: 47 })).toBe('attack');
-    expect(resolvePortraitState({ ...lieutenant, tick: 48 })).toBe('smug');
+    expect(resolvePortraitState({ ...lieutenant, tick: 30 })).toBe('smug');
     expect(resolvePortraitState({ ...lieutenant, tick: 69 })).toBe('idle');
 
     const safeLater = reducePortraitBatches(createPortraitMemory(), {
