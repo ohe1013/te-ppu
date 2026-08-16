@@ -309,10 +309,15 @@ export function selectCandidate(
   const draw = boundedDraw(rng);
   const available = scored.slice(0, Math.min(profile.topK, scored.length));
   const weights = profile.rankWeights.slice(0, available.length);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    throw new RangeError('available candidate weights must have positive finite mass');
+  }
+  const selectionPoint = draw * totalWeight;
   let cumulative = 0;
   for (let index = 0; index < available.length; index += 1) {
     cumulative += weights[index] ?? 0;
-    if (draw < cumulative) return available[index]!;
+    if (selectionPoint < cumulative) return available[index]!;
   }
   return available.at(-1)!;
 }

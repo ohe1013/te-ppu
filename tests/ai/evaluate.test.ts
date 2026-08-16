@@ -346,6 +346,32 @@ describe('public preview lookahead', () => {
 });
 
 describe('seeded top-K selection', () => {
+  it.each([
+    { draw: .30, expectedIndex: 0 },
+    { draw: 1 / 3, expectedIndex: 1 },
+    { draw: .66, expectedIndex: 1 },
+    { draw: 2 / 3, expectedIndex: 2 },
+    { draw: .99, expectedIndex: 2 },
+  ])('renormalizes a uniform five-rank profile over three available candidates at $draw', (
+    { draw, expectedIndex },
+  ) => {
+    const ranked = scoreCandidates(observation(), zeroProfile()).slice(0, 3);
+    const profile = getAiFloorProfile(1, 'easy');
+    let draws = 0;
+    const selected = selectCandidate(ranked, profile, () => {
+      draws += 1;
+      return draw;
+    });
+
+    expect(selected).toBe(ranked[expectedIndex]);
+    expect(draws).toBe(1);
+  });
+
+  it('rejects an empty candidate list', () => {
+    expect(() => selectCandidate([], getAiFloorProfile(1, 'easy'), () => 0))
+      .toThrow('cannot select from an empty candidate list');
+  });
+
   it('selects representative ladder candidates at hand-derived cumulative boundaries', () => {
     const ranked = scoreCandidates(observation(), zeroProfile());
     // These are the exact IEEE-754 running totals used by cumulative selection.
