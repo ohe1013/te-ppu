@@ -42,8 +42,9 @@
 
 ### Test ownership
 
-- `tests/ai/profiles.test.ts`: exact 15-level data, mapping, runtime invariants, interpolation, and boundary regressions.
-- `tests/ai/evaluate.test.ts`: exact normalized candidate-selection boundaries.
+- `tests/ai/profiles.test.ts`: 15-level mapping, runtime invariants, validation, caching, interpolation relationships, and boundary regressions without snapshotting the ladder constants.
+- `tests/ai/controller.test.ts`: real-controller reaction cadence for the approved 15 levels.
+- `tests/ai/evaluate.test.ts`: generated-profile lookahead behavior and exact normalized candidate-selection boundaries.
 - `tests/ai/items.test.ts`: item behavior named by `FIRST_VALID`, `RISK_AWARE`, and `TACTICAL` skill profiles instead of obsolete Easy-floor policy assumptions.
 - `tests/sim/aiSimulation.test.ts`: explicit difficulty/default compatibility and controller determinism.
 - `tests/sim/aiDifficultyCalibration.test.ts`: pure mirrored scoring, exact sign p-values, thresholds, and a one-seed runner smoke.
@@ -60,6 +61,7 @@
 - Modify: `src/ai/profiles.ts:1-138`
 - Modify: `src/ai/index.ts:1-4`
 - Test: `tests/ai/profiles.test.ts`
+- Test: `tests/ai/controller.test.ts`
 - Test: `tests/ai/evaluate.test.ts`
 - Test: `tests/ai/items.test.ts`
 
@@ -117,52 +119,34 @@ it('keeps both difficulty boundaries strict and Hard 5 globally maximal', () => 
 });
 ```
 
-Assert the exact compact step data without duplicating heuristic maps:
+Do not snapshot `AI_SKILL_LADDER` or assert its entire constant array. The exact
+approved values remain the production implementation source in Step 3; tests must
+catch gameplay regressions through generated profiles and real consumers.
 
-```ts
-expect(AI_SKILL_LADDER.map((step) => [
-  step.reactionTicks,
-  step.lookahead,
-  step.rankWeights,
-  step.futureDiscount,
-  step.heuristicBlend,
-  step.itemPolicy,
-])).toEqual([
-  [48, 0, [.20, .20, .20, .20, .20], .00, .00, 'FIRST_VALID'],
-  [44, 0, [.28, .24, .20, .16, .12], .00, .07, 'FIRST_VALID'],
-  [40, 0, [.36, .26, .18, .12, .08], .00, .14, 'FIRST_VALID'],
-  [36, 0, [.44, .27, .16, .09, .04], .00, .21, 'RISK_AWARE'],
-  [32, 0, [.52, .28, .14, .06], .00, .29, 'RISK_AWARE'],
-  [29, 1, [.56, .28, .12, .04], .56, .36, 'RISK_AWARE'],
-  [26, 1, [.62, .25, .10, .03], .58, .43, 'RISK_AWARE'],
-  [23, 1, [.68, .22, .08, .02], .60, .50, 'RISK_AWARE'],
-  [20, 1, [.74, .20, .06], .62, .57, 'RISK_AWARE'],
-  [17, 1, [.80, .16, .04], .64, .64, 'TACTICAL'],
-  [14, 2, [.84, .13, .03], .66, .71, 'TACTICAL'],
-  [12, 2, [.88, .10, .02], .68, .79, 'TACTICAL'],
-  [10, 2, [.92, .08], .70, .86, 'TACTICAL'],
-  [8, 2, [.96, .04], .72, .93, 'TACTICAL'],
-  [6, 2, [1], .74, 1, 'TACTICAL'],
-]);
-```
+For every adjacent pair, zero-pad rank arrays to five entries and assert reaction
+ticks strictly decrease, lookahead/future discount/blend/policy do not regress,
+and every best-N cumulative probability does not decrease. Also assert each
+generated profile has `topK === rankWeights.length`, a probability sum close to
+1, finite weights, and the encounter floor `((level - 1) % 5) + 1`.
 
-For every adjacent pair, zero-pad rank arrays to five entries and assert reaction ticks strictly decrease, lookahead/future discount/blend/policy do not regress, and every best-N cumulative probability does not decrease. Also assert each generated profile has `topK === rankWeights.length`, a probability sum close to 1, finite weights, and the encounter floor `((level - 1) % 5) + 1`.
+In `tests/ai/controller.test.ts`, add a hand-derived table for all fifteen
+`(difficulty, floor, firstCommandTick)` cases using the approved reaction schedule
+`48, 44, 40, 36, 32, 29, 26, 23, 20, 17, 14, 12, 10, 8, 6`. For each row, build a
+real controller from `getAiFloorProfile`, feed a real `createAiObservation` from a
+fixed empty-board match, assert no command before the literal boundary, and assert
+the first valid opponent command at that boundary. This tests the behavior that
+depends on reaction ticks rather than the constant itself.
 
-Prove interpolation uses the approved endpoints and not the raw floor number:
+Prove interpolation is level-driven without snapshotting full weight objects:
 
-```ts
-expect(getAiFloorProfile(1, 'easy').weights).toEqual({
-  aggregateHeight: -0.25, maxHeight: -0.5, holes: -2, bumpiness: -0.25,
-  clearedLines: 0.8, combo: 0.3, incomingOffset: 0.4, itemGain: 0.5,
-  opponentPressure: 0,
-});
-expect(getAiFloorProfile(5, 'hard').weights).toEqual({
-  aggregateHeight: -0.45, maxHeight: -1.2, holes: -5, bumpiness: -0.65,
-  clearedLines: 1.5, combo: 1.8, incomingOffset: 1.8, itemGain: 1.5,
-  opponentPressure: 0.6,
-});
-expect(getAiFloorProfile(1, 'normal').weights.holes).toBeCloseTo(-3.08, 10);
-```
+- the generated Easy-1 and Hard-5 profiles preserve the approved rookie/expert
+  ordering of penalties and rewards;
+- every Normal-1 heuristic is between the corresponding Easy-1 and Hard-5
+  endpoint values, with at least one strict interior value;
+- profiles from different difficulty bands but the same floor are distinct cached
+  objects, while repeated calls for one `(difficulty, floor)` return the same object;
+- use hand-authored evaluator fixtures to prove zero-, one-, and two-preview
+  generated profiles respond only to the number of previews their level exposes.
 
 Add malformed-ladder tests with exact failures:
 
@@ -356,7 +340,16 @@ const NORMAL_1 = getAiFloorProfile(1, 'normal');
 const HARD_1 = getAiFloorProfile(1, 'hard');
 ```
 
-Use `EASY_1` for zero-preview assertions, `NORMAL_1` for one-preview assertions, and `HARD_1` for two-preview assertions. Keep handcrafted `zeroProfile()` tests unchanged except for spreading a generated profile.
+Use `EASY_1` for zero-preview assertions, `NORMAL_1` for one-preview assertions,
+and `HARD_1` for two-preview assertions. Each test must vary the unseen preview
+independently and assert the selected/scored real candidates, so it fails if the
+generated profile consumes too few or too many previews. Keep handcrafted
+`zeroProfile()` tests unchanged except for spreading a generated profile.
+
+Use real ranked candidates and hand-derived RNG cut points for representative
+Easy-1, Normal-1, Hard-1, and Hard-5 profiles. Assert the selected candidate
+identity at each literal probability boundary; do not read expected cut points
+back from `rankWeights`. Task 2 separately covers truncated-prefix normalization.
 
 In `tests/ai/items.test.ts`, name profiles by behavior:
 
@@ -381,7 +374,7 @@ Expected: all named tests and typecheck PASS; no production item logic changes.
 - [ ] **Step 7: Commit the global ladder**
 
 ```powershell
-git add -- src/ai/types.ts src/ai/profiles.ts src/ai/index.ts tests/ai/profiles.test.ts tests/ai/evaluate.test.ts tests/ai/items.test.ts
+git add -- src/ai/types.ts src/ai/profiles.ts src/ai/index.ts tests/ai/profiles.test.ts tests/ai/controller.test.ts tests/ai/evaluate.test.ts tests/ai/items.test.ts
 git diff --cached --check
 git commit -m "feat: define global AI difficulty ladder"
 ```
@@ -922,28 +915,7 @@ git commit -m "test: gate global AI difficulty ordering"
 - Consumes: existing `TowerController.startEncounter`, `TowerController.startOwlMatch`, and `MatchScreen` calls to `getAiFloorProfile`.
 - Produces: behavior-level regression coverage that Hard floor 1 uses level 11, Hard owl uses level 15, and `MatchScreen` forwards its explicit difficulty.
 
-- [ ] **Step 1: Wrap the real AI factory with a test spy**
-
-In `tests/app/towerController.test.ts`, import `beforeEach` and `vi`, then use the real implementation through a hoisted spy:
-
-```ts
-const aiSpies = vi.hoisted(() => ({ createAiController: vi.fn() }));
-
-vi.mock('../../src/ai/index', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/ai/index')>();
-  aiSpies.createAiController.mockImplementation(actual.createAiController);
-  return { ...actual, createAiController: aiSpies.createAiController };
-});
-
-beforeEach(() => {
-  aiSpies.createAiController.mockClear();
-});
-```
-
-Import `getAiFloorProfile`, `getAiStrengthLevel`, `counterU32`, `RandomStream`, and
-the `Difficulty` type for exact expected arguments and helper typing.
-
-- [ ] **Step 2: Add regular-floor and hidden-owl handoff tests**
+- [ ] **Step 1: Extend the progress fixture for explicit difficulty**
 
 Extend the progress helper with a difficulty parameter and initialize the selected difficulty's five-floor run:
 
@@ -970,52 +942,45 @@ function progressUnlockedThrough(
 }
 ```
 
-Keep its default `easy` so every existing caller retains the same state. Add:
+Keep its default `easy` so every existing caller retains the same state.
 
-```ts
-it('starts Hard floor 1 with global skill level 11', () => {
-  const progress = progressUnlockedThrough(1, 'hard');
-  const controller = new TowerController(progress, new RecordingRepository());
+- [ ] **Step 2: Exercise the regular-floor and hidden-owl controllers as real behavior**
 
-  expect(controller.startFloor(1, 101)).toMatchObject({ ok: true });
-  expect(aiSpies.createAiController).toHaveBeenLastCalledWith(
-    getAiFloorProfile(1, 'hard'),
-    counterU32(101, RandomStream.AI_MISTAKE, 1),
-    'opponent',
-  );
-});
+Do not mock or assert calls to `createAiController`. Use the public `controller.ai`
+instance and a real `createAiObservation(controller.match!, 'opponent')`.
 
-it('starts the Hard owl with the global maximum level 15 profile', async () => {
-  const controller = new TowerController(
-    progressUnlockedThrough(5, 'hard'),
-    new RecordingRepository(),
-  );
-  controller.startFloor(5, 50);
-  for (let encounter = 0; encounter < 3; encounter += 1) {
-    if (encounter > 0) controller.startEncounter(50 + encounter);
-    await controller.completeEncounter('WIN');
-  }
+For Hard floor 1, start seed `101`, call `update` for ticks 1 through 14, assert
+that ticks 1 through 13 emit no commands, and assert tick 14 emits a valid
+opponent command. The literal boundary 14 is the approved level-11 reaction
+behavior; the test must fail if the tower accidentally hands off an Easy/Normal
+profile.
 
-  expect(controller.startOwlMatch(77)).toMatchObject({ ok: true });
-  expect(aiSpies.createAiController).toHaveBeenLastCalledWith(
-    getAiFloorProfile(5, 'hard'),
-    counterU32(77, RandomStream.AI_MISTAKE, 1),
-    'opponent',
-  );
-  expect(getAiStrengthLevel('hard', 5)).toBe(15);
-});
-```
+For the Hard owl, complete the three Hard floor-5 encounters, start the owl with
+seed `77`, then call its real controller for ticks 1 through 6 against the real
+owl match observation. Assert no command before tick 6 and a valid opponent
+command at tick 6. This is the approved level-15/global-maximum behavior.
 
-- [ ] **Step 3: Make the existing MatchScreen spy test assert explicit Hard**
+It is acceptable to share a small test-only helper that validates the emitted
+command shape, but expected ticks must remain hand-derived literals and must not
+be read from `getAiFloorProfile` in the assertion.
 
-In `src/app/use-match-loop.test.tsx`, add `difficulty="hard"` to the existing floor-2 render and replace the Easy expectation with:
+- [ ] **Step 3: Exercise MatchScreen's returned real controller**
 
-```ts
-expect(aiSpies.createAiController).toHaveBeenCalledWith(
-  getAiFloorProfile(2, 'hard'),
-  73,
-);
-```
+In `src/app/use-match-loop.test.tsx`, add `difficulty="hard"` to the existing
+floor-2 render. The file already wraps the real AI factory for unrelated hook
+tests; use that passthrough only to retrieve the actual returned `AiController`.
+Do not assert mock arguments, call counts, or mock ordering.
+
+Before advancing the installed frame clock, feed the returned real controller a
+real fixed observation for ticks 1 through 12. Assert no command through tick 11
+and a valid opponent command at the hand-derived literal tick 12, the approved
+Hard-floor-2/level-12 boundary. Keep the existing DOM assertions for the public
+match view and cleanup. This test fails if `MatchScreen` drops its explicit Hard
+difficulty even though the factory wrapper itself still exists.
+
+As a mutation check, temporarily route the tested handoff to Easy, run the two
+call-site tests and observe the new timing assertions fail, then restore the real
+handoff before the GREEN run. Do not commit the temporary mutation.
 
 - [ ] **Step 4: Run the call-site tests**
 
