@@ -4,6 +4,7 @@ import {
   AI_DIFFICULTY_COMPARISONS,
   assertAiDifficultyCalibration,
   exactOneSidedSignPValue,
+  planMirroredDifficultyPair,
   runAiDifficultyCalibration,
   summarizeDifficultyComparison,
   type AiDifficultyComparisonReport,
@@ -120,10 +121,28 @@ describe('AI difficulty calibration statistics', () => {
 describe('AI difficulty calibration thresholds', () => {
   it('accepts complete canonical reports that clear every threshold', () => {
     expect(AI_DIFFICULTY_CALIBRATION_SEED_PAIRS).toBe(128);
-    expect(AI_DIFFICULTY_COMPARISONS.map((comparison) => comparison.id)).toEqual([
-      'easy5-normal1',
-      'normal5-hard1',
-      'easy1-hard5',
+    expect(AI_DIFFICULTY_COMPARISONS).toEqual([
+      {
+        id: 'easy5-normal1',
+        lower: { difficulty: 'easy', floor: 5 },
+        higher: { difficulty: 'normal', floor: 1 },
+        minimumHigherShare: .5,
+        strictShare: true,
+      },
+      {
+        id: 'normal5-hard1',
+        lower: { difficulty: 'normal', floor: 5 },
+        higher: { difficulty: 'hard', floor: 1 },
+        minimumHigherShare: .5,
+        strictShare: true,
+      },
+      {
+        id: 'easy1-hard5',
+        lower: { difficulty: 'easy', floor: 1 },
+        higher: { difficulty: 'hard', floor: 5 },
+        minimumHigherShare: .65,
+        strictShare: false,
+      },
     ]);
     expect(() => assertAiDifficultyCalibration(passingReports())).not.toThrow();
   });
@@ -157,6 +176,59 @@ describe('AI difficulty calibration thresholds', () => {
 });
 
 describe('AI difficulty calibration runner', () => {
+  it('plans each higher endpoint on both side-specific controller streams', () => {
+    expect(AI_DIFFICULTY_COMPARISONS.map(planMirroredDifficultyPair)).toEqual([
+      {
+        higherAsPlayer: {
+          floor: 1,
+          endpoints: {
+            player: { difficulty: 'normal', floor: 1 },
+            opponent: { difficulty: 'easy', floor: 5 },
+          },
+        },
+        higherAsOpponent: {
+          floor: 1,
+          endpoints: {
+            player: { difficulty: 'easy', floor: 5 },
+            opponent: { difficulty: 'normal', floor: 1 },
+          },
+        },
+      },
+      {
+        higherAsPlayer: {
+          floor: 1,
+          endpoints: {
+            player: { difficulty: 'hard', floor: 1 },
+            opponent: { difficulty: 'normal', floor: 5 },
+          },
+        },
+        higherAsOpponent: {
+          floor: 1,
+          endpoints: {
+            player: { difficulty: 'normal', floor: 5 },
+            opponent: { difficulty: 'hard', floor: 1 },
+          },
+        },
+      },
+      {
+        higherAsPlayer: {
+          floor: 5,
+          endpoints: {
+            player: { difficulty: 'hard', floor: 5 },
+            opponent: { difficulty: 'easy', floor: 1 },
+          },
+        },
+        higherAsOpponent: {
+          floor: 5,
+          endpoints: {
+            player: { difficulty: 'easy', floor: 1 },
+            opponent: { difficulty: 'hard', floor: 5 },
+          },
+        },
+      },
+    ]);
+  });
+
   it.each([
     { seeds: [], label: 'empty' },
     { seeds: [1, 1], label: 'duplicate' },

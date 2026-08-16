@@ -41,6 +41,16 @@ export interface AiDifficultyComparisonReport {
   readonly cappedMatches: number;
 }
 
+interface AiDifficultyGamePlan {
+  readonly floor: Floor;
+  readonly endpoints: Readonly<Record<SideId, AiDifficultyEndpoint>>;
+}
+
+interface MirroredDifficultyPairPlan {
+  readonly higherAsPlayer: AiDifficultyGamePlan;
+  readonly higherAsOpponent: AiDifficultyGamePlan;
+}
+
 export const AI_DIFFICULTY_CALIBRATION_SEED_PAIRS = 128;
 
 export const AI_DIFFICULTY_COMPARISONS = [
@@ -66,6 +76,27 @@ export const AI_DIFFICULTY_COMPARISONS = [
     strictShare: false,
   },
 ] as const satisfies readonly AiDifficultyComparison[];
+
+export function planMirroredDifficultyPair(
+  comparison: AiDifficultyComparison,
+): MirroredDifficultyPairPlan {
+  return {
+    higherAsPlayer: {
+      floor: comparison.higher.floor,
+      endpoints: {
+        player: comparison.higher,
+        opponent: comparison.lower,
+      },
+    },
+    higherAsOpponent: {
+      floor: comparison.higher.floor,
+      endpoints: {
+        player: comparison.lower,
+        opponent: comparison.higher,
+      },
+    },
+  };
+}
 
 export function exactOneSidedSignPValue(wins: number, losses: number): number {
   if (!Number.isSafeInteger(wins) || wins < 0
@@ -130,17 +161,29 @@ export function summarizeDifficultyComparison(
 
 function controllersFor(
   seed: number,
-  player: AiDifficultyEndpoint,
-  opponent: AiDifficultyEndpoint,
+  endpoints: Readonly<Record<SideId, AiDifficultyEndpoint>>,
 ): Readonly<Record<SideId, SimulationController>> {
   return {
     player: createSimulationController(
-      getAiFloorProfile(player.floor, player.difficulty), seed, 'player',
+      getAiFloorProfile(endpoints.player.floor, endpoints.player.difficulty), seed, 'player',
     ),
     opponent: createSimulationController(
-      getAiFloorProfile(opponent.floor, opponent.difficulty), seed, 'opponent',
+      getAiFloorProfile(endpoints.opponent.floor, endpoints.opponent.difficulty), seed, 'opponent',
     ),
   };
+}
+
+function runPlannedGame(
+  plan: AiDifficultyGamePlan,
+  seed: number,
+  tickLimit?: number,
+): SimulationSummary {
+  return runAiSimulation({
+    seed,
+    floor: plan.floor,
+    controllers: controllersFor(seed, plan.endpoints),
+    ...(tickLimit === undefined ? {} : { tickLimit }),
+  });
 }
 
 function runPair(
@@ -148,20 +191,11 @@ function runPair(
   seed: number,
   tickLimit?: number,
 ): MirroredDifficultyPair {
+  const plan = planMirroredDifficultyPair(comparison);
   return {
     seed,
-    higherAsPlayer: runAiSimulation({
-      seed,
-      floor: comparison.higher.floor,
-      controllers: controllersFor(seed, comparison.higher, comparison.lower),
-      ...(tickLimit === undefined ? {} : { tickLimit }),
-    }),
-    higherAsOpponent: runAiSimulation({
-      seed,
-      floor: comparison.higher.floor,
-      controllers: controllersFor(seed, comparison.lower, comparison.higher),
-      ...(tickLimit === undefined ? {} : { tickLimit }),
-    }),
+    higherAsPlayer: runPlannedGame(plan.higherAsPlayer, seed, tickLimit),
+    higherAsOpponent: runPlannedGame(plan.higherAsOpponent, seed, tickLimit),
   };
 }
 
