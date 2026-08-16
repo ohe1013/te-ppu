@@ -348,15 +348,19 @@ describe('public preview lookahead', () => {
 describe('seeded top-K selection', () => {
   it('selects representative ladder candidates at hand-derived cumulative boundaries', () => {
     const ranked = scoreCandidates(observation(), zeroProfile());
+    // These are the exact IEEE-754 running totals used by cumulative selection.
     const cases = [
-      { profile: EASY_1, draw: 0.199_999, expectedColumn: -1 },
       { profile: EASY_1, draw: 0.2, expectedColumn: 0 },
+      { profile: EASY_1, draw: 0.4, expectedColumn: 1 },
+      { profile: EASY_1, draw: 0.600_000_000_000_000_1, expectedColumn: 2 },
+      { profile: EASY_1, draw: 0.8, expectedColumn: 3 },
       { profile: NORMAL_1, draw: 0.559_999, expectedColumn: -1 },
       { profile: NORMAL_1, draw: 0.56, expectedColumn: 0 },
-      { profile: NORMAL_1, draw: 0.840_001, expectedColumn: 1 },
+      { profile: NORMAL_1, draw: 0.840_000_000_000_000_1, expectedColumn: 1 },
+      { profile: NORMAL_1, draw: 0.960_000_000_000_000_1, expectedColumn: 2 },
       { profile: HARD_1, draw: 0.839_999, expectedColumn: -1 },
       { profile: HARD_1, draw: 0.84, expectedColumn: 0 },
-      { profile: HARD_1, draw: 0.970_001, expectedColumn: 1 },
+      { profile: HARD_1, draw: 0.97, expectedColumn: 1 },
       { profile: HARD_5, draw: 0.999_999, expectedColumn: -1 },
     ] as const;
 
