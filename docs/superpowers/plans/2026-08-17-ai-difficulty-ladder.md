@@ -163,10 +163,10 @@ expect(() => getAiFloorProfile(6 as never)).toThrow('Missing AI profile for floo
 - [ ] **Step 2: Run the profile test and verify RED**
 
 ```powershell
-& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' test -- tests/ai/profiles.test.ts
+& 'C:\Users\USER\AppData\Roaming\nvm\v24.15.0\npm.cmd' test -- tests/ai/profiles.test.ts tests/ai/controller.test.ts tests/ai/evaluate.test.ts
 ```
 
-Expected: FAIL because the level type, 15-step ladder, mapping function, and validator do not exist, and the current Normal-1 profile still derives from Easy floor 1.
+Expected: FAIL because the level type, 15-step ladder, mapping function, and validator do not exist; the old controllers also miss the approved global reaction boundaries.
 
 - [ ] **Step 3: Add the level type and centralized ladder data**
 
@@ -1004,7 +1004,9 @@ git commit -m "test: cover tower difficulty AI handoffs"
 
 **Files:**
 - Modify only if a statistical gate fails: `src/ai/profiles.ts`
-- Modify only with the same data change: `tests/ai/profiles.test.ts`
+- Modify only when a fallback changes a hand-derived behavior expectation:
+  `tests/ai/controller.test.ts`, `tests/ai/evaluate.test.ts`, or
+  `tests/ai/profiles.test.ts`.
 - Do not modify call sites, formulas, progression, `tmp/`, or historical specs.
 
 **Interfaces:**
@@ -1029,7 +1031,11 @@ Expected: 5,000 existing floor matches have zero rejected commands, zero capped 
 
 - [ ] **Step 3: Apply the bounded calibration fallback only for a failed statistical ordering gate**
 
-If structural tests pass but the named statistical gate fails, make only the corresponding exact data change below, update the exact array in `tests/ai/profiles.test.ts`, rerun Tasks 1 Step 6 and Task 7 Step 2, and keep every ladder invariant:
+If structural tests pass but the named statistical gate fails, make only the
+corresponding exact data change below. Update only the affected hand-derived
+reaction boundary, candidate-selection boundary, or structural behavior
+expectation; do not add an exact ladder-array snapshot. Rerun Tasks 1 Step 6 and
+Task 7 Step 2, and keep every ladder invariant:
 
 | Failed comparison | Exact fallback step change |
 | --- | --- |
@@ -1046,7 +1052,7 @@ If more than one ordering fails, apply the named rows together in one calibratio
 When a fallback was required, commit it:
 
 ```powershell
-git add -- src/ai/profiles.ts tests/ai/profiles.test.ts
+git add -- src/ai/profiles.ts tests/ai/profiles.test.ts tests/ai/controller.test.ts tests/ai/evaluate.test.ts
 git diff --cached --check
 git commit -m "fix: calibrate global AI difficulty boundaries"
 ```
