@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_FLOOR_PROFILES } from '../../src/ai/profiles';
+import { getAiFloorProfile } from '../../src/ai/profiles';
 import {
   LOOKAHEAD_BEAM_WIDTH,
   scoreCandidates,
@@ -19,11 +19,10 @@ import {
 } from '../../src/core/index';
 
 const VISIBLE_ROWS = 20;
-const FLOOR_1 = AI_FLOOR_PROFILES[0]!;
-const FLOOR_2 = AI_FLOOR_PROFILES[1]!;
-const FLOOR_3 = AI_FLOOR_PROFILES[2]!;
-const FLOOR_4 = AI_FLOOR_PROFILES[3]!;
-const FLOOR_5 = AI_FLOOR_PROFILES[4]!;
+const EASY_1 = getAiFloorProfile(1, 'easy');
+const NORMAL_1 = getAiFloorProfile(1, 'normal');
+const HARD_1 = getAiFloorProfile(1, 'hard');
+const HARD_5 = getAiFloorProfile(5, 'hard');
 
 function emptyBoard(): (Cell | null)[] {
   return Array<Cell | null>(BOARD_WIDTH * VISIBLE_ROWS).fill(null);
@@ -91,7 +90,7 @@ function observation(options: {
 
 function zeroProfile(): AiFloorProfile {
   return {
-    ...FLOOR_3,
+    ...EASY_1,
     lookahead: 0,
     topK: 1,
     rankWeights: [1],
@@ -258,14 +257,14 @@ describe('public preview lookahead', () => {
     expect(first.slice(1).every(({ score }) => score === Number.NEGATIVE_INFINITY)).toBe(true);
   });
 
-  it('floor 1 ignores both previews', () => {
+  it('Easy 1 ignores both previews', () => {
     const first = observation({ next: [token('I'), token('O')] });
     const changed = observation({ next: [token('Z'), token('S')] });
 
-    expect(scores(first, FLOOR_1)).toEqual(scores(changed, FLOOR_1));
+    expect(scores(first, EASY_1)).toEqual(scores(changed, EASY_1));
   });
 
-  it('floor 1 keeps near-top vertical-I scores and ranking independent of previews', () => {
+  it('Easy 1 keeps near-top vertical-I scores and ranking independent of previews', () => {
     const board = emptyBoard();
     board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
     const safePreview = observation({
@@ -279,28 +278,28 @@ describe('public preview lookahead', () => {
       next: [token('I'), token('L')],
     });
 
-    expect(scoreCandidates(safePreview, FLOOR_1)).toEqual(
-      scoreCandidates(blockedPreview, FLOOR_1),
+    expect(scoreCandidates(safePreview, EASY_1)).toEqual(
+      scoreCandidates(blockedPreview, EASY_1),
     );
   });
 
-  it('floor 3 changes for preview one but ignores preview two', () => {
+  it('Normal 1 changes for preview one but ignores preview two', () => {
     const base = observation({ next: [token('I'), token('O')] });
     const previewOneChanged = observation({ next: [token('O'), token('O')] });
     const previewTwoChanged = observation({ next: [token('I'), token('Z')] });
 
-    expect(scores(base, FLOOR_3)).not.toEqual(scores(previewOneChanged, FLOOR_3));
-    expect(scores(base, FLOOR_3)).toEqual(scores(previewTwoChanged, FLOOR_3));
+    expect(scores(base, NORMAL_1)).not.toEqual(scores(previewOneChanged, NORMAL_1));
+    expect(scores(base, NORMAL_1)).toEqual(scores(previewTwoChanged, NORMAL_1));
   });
 
-  it('floor 5 changes when only preview two changes', () => {
+  it('Hard 1 changes when only preview two changes', () => {
     const base = observation({ next: [token('O'), token('I')] });
     const previewTwoChanged = observation({ next: [token('O'), token('Z')] });
 
-    expect(scores(base, FLOOR_5)).not.toEqual(scores(previewTwoChanged, FLOOR_5));
+    expect(scores(base, HARD_1)).not.toEqual(scores(previewTwoChanged, HARD_1));
   });
 
-  it('uses exactly one near-top preview on floor 3 and two on floor 5', () => {
+  it('uses exactly one near-top preview on Normal 1 and two on Hard 1', () => {
     const board = emptyBoard();
     board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
     const base = observation({
@@ -319,12 +318,12 @@ describe('public preview lookahead', () => {
       next: [token('O'), token('Z')],
     });
 
-    expect(scores(base, FLOOR_3)).not.toEqual(scores(previewOneChanged, FLOOR_3));
-    expect(scoreCandidates(base, FLOOR_3)).toEqual(scoreCandidates(previewTwoChanged, FLOOR_3));
-    expect(scores(base, FLOOR_5)).not.toEqual(scores(previewTwoChanged, FLOOR_5));
+    expect(scores(base, NORMAL_1)).not.toEqual(scores(previewOneChanged, NORMAL_1));
+    expect(scoreCandidates(base, NORMAL_1)).toEqual(scoreCandidates(previewTwoChanged, NORMAL_1));
+    expect(scores(base, HARD_1)).not.toEqual(scores(previewTwoChanged, HARD_1));
   });
 
-  it('ignores a runtime third preview even for floor 5 near the top', () => {
+  it('ignores a runtime third preview even for Hard 1 near the top', () => {
     const board = emptyBoard();
     board[2 * BOARD_WIDTH + 3] = { kind: 'J' };
     const base = observation({
@@ -340,25 +339,25 @@ describe('public preview lookahead', () => {
       },
     });
 
-    expect(scoreCandidates(withThird(token('Z')), FLOOR_5)).toEqual(
-      scoreCandidates(withThird(token('S')), FLOOR_5),
+    expect(scoreCandidates(withThird(token('Z')), HARD_1)).toEqual(
+      scoreCandidates(withThird(token('S')), HARD_1),
     );
   });
 });
 
 describe('seeded top-K selection', () => {
-  it('selects floor 2 and 4 candidates at exact cumulative boundaries with one draw per profile', () => {
+  it('selects representative ladder candidates at hand-derived cumulative boundaries', () => {
     const ranked = scoreCandidates(observation(), zeroProfile());
     const cases = [
-      { profile: FLOOR_1, draw: 0.99, expectedColumn: 3 },
-      { profile: FLOOR_2, draw: 0.399_999, expectedColumn: -1 },
-      { profile: FLOOR_2, draw: 0.4, expectedColumn: 0 },
-      { profile: FLOOR_2, draw: 0.7, expectedColumn: 1 },
-      { profile: FLOOR_2, draw: 0.9, expectedColumn: 2 },
-      { profile: FLOOR_3, draw: 0.99, expectedColumn: 1 },
-      { profile: FLOOR_4, draw: 0.749_999, expectedColumn: -1 },
-      { profile: FLOOR_4, draw: 0.75, expectedColumn: 0 },
-      { profile: FLOOR_5, draw: 0.99, expectedColumn: -1 },
+      { profile: EASY_1, draw: 0.199_999, expectedColumn: -1 },
+      { profile: EASY_1, draw: 0.2, expectedColumn: 0 },
+      { profile: NORMAL_1, draw: 0.559_999, expectedColumn: -1 },
+      { profile: NORMAL_1, draw: 0.56, expectedColumn: 0 },
+      { profile: NORMAL_1, draw: 0.840_001, expectedColumn: 1 },
+      { profile: HARD_1, draw: 0.839_999, expectedColumn: -1 },
+      { profile: HARD_1, draw: 0.84, expectedColumn: 0 },
+      { profile: HARD_1, draw: 0.970_001, expectedColumn: 1 },
+      { profile: HARD_5, draw: 0.999_999, expectedColumn: -1 },
     ] as const;
 
     for (const testCase of cases) {
@@ -382,8 +381,8 @@ describe('seeded top-K selection', () => {
       };
     };
 
-    expect(selectCandidate(ranked, FLOOR_5, seeded(7))).toEqual(
-      selectCandidate(ranked, FLOOR_5, seeded(7)),
+    expect(selectCandidate(ranked, HARD_5, seeded(7))).toEqual(
+      selectCandidate(ranked, HARD_5, seeded(7)),
     );
   });
 });

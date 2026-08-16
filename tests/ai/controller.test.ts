@@ -7,12 +7,29 @@ import {
   type MatchState,
   type TimedCommand,
 } from '../../src/core/index';
-import { createAiController } from '../../src/ai/index';
+import { createAiController, getAiFloorProfile } from '../../src/ai/index';
 import { AI_FLOOR_PROFILES } from '../../src/ai/profiles';
 
 describe('AI controller', () => {
   it('creates an opponent controller by default', () => {
     expect(createAiController(AI_FLOOR_PROFILES[0]!, 11).side).toBe('opponent');
+  });
+
+  it.each([
+    ['easy', 1, 48], ['easy', 2, 44], ['easy', 3, 40], ['easy', 4, 36], ['easy', 5, 32],
+    ['normal', 1, 29], ['normal', 2, 26], ['normal', 3, 23], ['normal', 4, 20], ['normal', 5, 17],
+    ['hard', 1, 14], ['hard', 2, 12], ['hard', 3, 10], ['hard', 4, 8], ['hard', 5, 6],
+  ] as const)('first reacts at literal %s floor %i boundary %i', (difficulty, floor, boundary) => {
+    const ai = createAiController(getAiFloorProfile(floor, difficulty), 11);
+    const view = createAiObservation(
+      createMatch({ matchSeed: 7, countdownTicks: 0 }),
+      'opponent',
+    );
+
+    for (let tick = 1; tick < boundary; tick += 1) expect(ai.update(view, tick)).toEqual([]);
+    expect(ai.update(view, boundary)).toEqual([
+      expect.objectContaining({ tick: boundary, side: 'opponent' }),
+    ]);
   });
 
   it('preempts and discards a placement route for an item, then replans after execution', () => {
@@ -119,7 +136,8 @@ describe('AI controller', () => {
           opponent: { ...state.sides.opponent, board: { cells } },
         },
       } satisfies MatchState;
-      const ai = createAiController(AI_FLOOR_PROFILES[4]!, 11);
+      const profile = getAiFloorProfile(5, 'hard');
+      const ai = createAiController(profile, 11);
       const emitted: TimedCommand[] = [];
       let lockedAt: number | null = null;
 
@@ -142,11 +160,11 @@ describe('AI controller', () => {
     const second = run();
     expect(first).toEqual(second);
     expect(first.emitted[0]).toEqual({
-      tick: 12,
+      tick: 6,
       side: 'opponent',
       command: { type: 'move', dx: 1 },
     });
-    expect(first.emitted[1]?.tick).toBe(24);
+    expect(first.emitted[1]?.tick).toBe(12);
     expect(first.emitted[1]?.command).not.toEqual({ type: 'move', dx: 1 });
     expect(first.lockedAt).not.toBeNull();
     expect(first.lockedAt!).toBeLessThanOrEqual(240);
@@ -185,7 +203,8 @@ describe('AI controller', () => {
       createMatch({ matchSeed: 9, countdownTicks: 0 }),
       'opponent',
     );
-    const ai = createAiController(AI_FLOOR_PROFILES[4]!, 11);
+    const profile = getAiFloorProfile(5, 'hard');
+    const ai = createAiController(profile, 11);
     const emitted: TimedCommand[] = [];
 
     for (let tick = 1; tick <= 60; tick += 1) {
@@ -200,7 +219,7 @@ describe('AI controller', () => {
       .map(({ command }) => JSON.stringify(command));
     expect(new Set(movementKeys).size).toBe(movementKeys.length);
     expect(emitted.map(({ tick }) => tick)).toEqual(
-      emitted.map((_, index) => (index + 1) * AI_FLOOR_PROFILES[4]!.reactionTicks),
+      emitted.map((_, index) => (index + 1) * profile.reactionTicks),
     );
   });
 
