@@ -4,6 +4,11 @@ import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { runAiSimulation } from '../src/sim/aiSimulation';
+import {
+  assertAiDifficultyCalibration,
+  runAiDifficultyCalibration,
+  type AiDifficultyComparisonReport,
+} from '../src/sim/aiDifficultyCalibration';
 import { FLOORS, isFloor, type Floor } from '../src/progression/index';
 
 const VALIDATION_MATCHES_PER_FLOOR = 1_000;
@@ -827,6 +832,13 @@ export function parseValidationArguments(args: readonly string[]): ValidationArg
   };
 }
 
+export function formatAiDifficultyReport(report: AiDifficultyComparisonReport): string {
+  const { comparison, higherShare, pairedWins, pairedLosses, pairedTies, oneSidedPValue } = report;
+  return `${comparison.id}: higher=${(higherShare * 100).toFixed(1)}%; `
+    + `pairs=${pairedWins}/${pairedLosses}/${pairedTies}; `
+    + `p=${oneSidedPValue.toFixed(6)}`;
+}
+
 function logProblemCase(problem: ValidationProblemCase): void {
   console.error(
     `case=floor${problem.floor}/seed${problem.seed}; rejected=${problem.rejectedCommands}; `
@@ -864,6 +876,11 @@ async function main(): Promise<void> {
     return;
   }
   assertValidation(report);
+  const difficultyReports = runAiDifficultyCalibration();
+  assertAiDifficultyCalibration(difficultyReports);
+  for (const difficultyReport of difficultyReports) {
+    console.log(formatAiDifficultyReport(difficultyReport));
+  }
   const rates = FLOORS.map((floor) => (report.winRates[floor] * 100).toFixed(1));
   const ordering = FLOORS.map((floor) => `floor${floor}`).join(' < ');
   console.log(
