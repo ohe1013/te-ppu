@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { TowerController } from '../../src/app/towerController';
-import { createAiObservation, createMatch } from '../../src/core/index';
+import {
+  createAiObservation,
+  createMatch,
+  stepMatch,
+  type AiObservation,
+  type MatchState,
+  type TimedCommand,
+} from '../../src/core/index';
 import type { PlayerProfile } from '../../src/player';
 import {
   cloneProgressState,
@@ -11,6 +18,7 @@ import {
   type ProgressSaveResult,
   type ProgressState,
   type ScoreRecord,
+  type Difficulty,
 } from '../../src/progression/index';
 
 class RecordingRepository implements ProgressRepository {
@@ -66,9 +74,14 @@ async function flushSaveQueue(): Promise<void> {
   await Promise.resolve();
 }
 
-function progressUnlockedThrough(floor: 1 | 2 | 3 | 4 | 5): ProgressState {
+function progressUnlockedThrough(
+  floor: 1 | 2 | 3 | 4 | 5,
+  difficulty: Difficulty = 'easy',
+): ProgressState {
   const progress = cloneProgressState(DEFAULT_PROGRESS);
-  progress.difficultyProgress.easy = {
+  progress.selectedDifficulty = difficulty;
+  progress.unlockedDifficulties[difficulty] = true;
+  progress.difficultyProgress[difficulty] = {
     highestUnlockedFloor: floor,
     clearedFloors: {
       1: floor > 1,
@@ -80,6 +93,49 @@ function progressUnlockedThrough(floor: 1 | 2 | 3 | 4 | 5): ProgressState {
     owlDefeated: false,
   };
   return progress;
+}
+
+function expectValidOpponentCommand(
+  commands: readonly TimedCommand[],
+  tick: number,
+): void {
+  expect(commands).toHaveLength(1);
+  const timed = commands[0]!;
+  expect(timed.tick).toBe(tick);
+  expect(timed.side).toBe('opponent');
+  expect([
+    'move',
+    'rotate-clockwise',
+    'soft-drop',
+    'hard-drop',
+    'use-row-clear',
+    'use-freeze',
+    'use-queue-swap',
+  ]).toContain(timed.command.type);
+  if (timed.command.type === 'move') {
+    expect([-1, 1]).toContain(timed.command.dx);
+  } else if (timed.command.type === 'soft-drop') {
+    expect(timed.command.active).toEqual(expect.any(Boolean));
+  } else if (timed.command.type === 'use-row-clear') {
+    expect(timed.command.row).toEqual(expect.any(Number));
+  }
+}
+
+function advanceToPlayingOpponent(match: MatchState): {
+  readonly observation: AiObservation;
+  readonly tick: number;
+} {
+  let state = match;
+  for (let steps = 0; steps < 1_000; steps += 1) {
+    if (state.status === 'playing' && state.sides.opponent.phase === 'active') {
+      return {
+        observation: createAiObservation(state, 'opponent'),
+        tick: state.tick,
+      };
+    }
+    state = stepMatch(state, []).state;
+  }
+  throw new Error('match did not reach a playable opponent state within 1,000 ticks');
 }
 
 function activeProgress(progress: ProgressState) {
@@ -406,6 +462,26 @@ describe('tower controller', () => {
     expect(controller.route).toBe('MATCH');
   });
 
+  it('runs Hard floor 1 at the level-11 reaction boundary', () => {
+    const controller = new TowerController(
+      progressUnlockedThrough(1, 'hard'),
+      new RecordingRepository(),
+    );
+    const started = controller.startFloor(1, 101);
+    if (!started.ok) throw new Error('Hard floor 1 should start');
+    const ai = controller.ai;
+    if (ai === null) throw new Error('Hard floor 1 should create an AI controller');
+    const { observation, tick: playingTick } = advanceToPlayingOpponent(controller.match!);
+
+    for (let eligibleTick = 1; eligibleTick < 14; eligibleTick += 1) {
+      expect(ai.update(observation, playingTick + eligibleTick)).toEqual([]);
+    }
+    expectValidOpponentCommand(
+      ai.update(observation, playingTick + 14),
+      playingTick + 14,
+    );
+  });
+
   it('rejects duplicate floor starts without replacing the live match', () => {
     const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
     const started = controller.startFloor(1, 10);
@@ -573,6 +649,37 @@ describe('tower controller', () => {
     expect(controller.progress.unlockedDifficulties.normal).toBe(true);
   });
 
+  it('runs the hidden Hard owl at the level-15 reaction boundary', async () => {
+    const controller = new TowerController(
+      progressUnlockedThrough(5, 'hard'),
+      new RecordingRepository(),
+    );
+    const started = controller.startFloor(5, 50);
+    if (!started.ok) throw new Error('Hard floor 5 should start');
+
+    for (let index = 0; index < 3; index += 1) {
+      if (index > 0) {
+        const next = controller.startEncounter(50 + index);
+        if (!next.ok) throw new Error('next Hard floor 5 encounter should start');
+      }
+      await controller.completeEncounter('WIN');
+    }
+
+    const owl = controller.startOwlMatch(77);
+    if (!owl.ok) throw new Error('hidden Hard owl should start');
+    const ai = controller.ai;
+    if (ai === null) throw new Error('hidden Hard owl should create an AI controller');
+    const { observation, tick: playingTick } = advanceToPlayingOpponent(controller.match!);
+
+    for (let eligibleTick = 1; eligibleTick < 6; eligibleTick += 1) {
+      expect(ai.update(observation, playingTick + eligibleTick)).toEqual([]);
+    }
+    expectValidOpponentCommand(
+      ai.update(observation, playingTick + 6),
+      playingTick + 6,
+    );
+  });
+
   it.each([
     { floor: 3 as const, result: 'LOSS' as const, route: 'RESULT_LOSS' as const },
     { floor: 3 as const, result: 'DRAW' as const, route: 'RESULT_DRAW' as const },
@@ -627,6 +734,33 @@ describe('tower controller', () => {
     expect(controller.match).toBeNull();
     expect(controller.ai).toBeNull();
     expect(repository.saved).toEqual([]);
+  });
+
+  it('resets a suspended battle in memory without changing or saving progress', async () => {
+    const repository = new RecordingRepository();
+    const controller = new TowerController(DEFAULT_PROGRESS, repository);
+    controller.startFloor(1, 10);
+    await controller.completeEncounter('WIN');
+    controller.startEncounter(11);
+    controller.abandonMatch();
+    const progressBeforeReset = controller.progress;
+
+    expect(controller.resetBattleSession()).toBe(true);
+    expect(controller.route).toBe('TOWER');
+    expect(controller.selectedFloor).toBeNull();
+    expect(controller.currentSeries).toBeNull();
+    expect(controller.suspendedBattle).toBeNull();
+    expect(controller.progress).toEqual(progressBeforeReset);
+    expect(repository.saved).toEqual([]);
+  });
+
+  it('refuses to reset transient state during a live match', () => {
+    const controller = new TowerController(DEFAULT_PROGRESS, new RecordingRepository());
+    controller.startFloor(1, 10);
+
+    expect(controller.resetBattleSession()).toBe(false);
+    expect(controller.match).not.toBeNull();
+    expect(controller.selectedFloor).toBe(1);
   });
 
   it('returns detached suspension snapshots and consumes one on a fresh restart', async () => {

@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommonAssets, LoadedImageRef } from '../../assets';
-import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
+import { cloneProgressState, createDevClearedProgress, DEFAULT_PROGRESS } from '../../progression';
 import { TowerScreen } from './TowerScreen';
 
 afterEach(cleanup);
@@ -108,6 +108,9 @@ describe('TowerScreen', () => {
 
     const route = screen.getByTestId('tower-route');
     expect(route).toHaveClass('tower-route--ascending');
+    expect(route).toHaveClass('tower-route--scrollable');
+    expect(route).toHaveAttribute('tabindex', '0');
+    expect(route.querySelector('.tower-route__content')).toBeInTheDocument();
     expect(route.querySelector('.tower-route__shaft')).toBeInTheDocument();
     expect([...route.querySelectorAll<HTMLElement>('[data-floor]')].map((node) => node.dataset.floor))
       .toEqual(['1', '2', '3', '4', '5']);
@@ -216,6 +219,77 @@ describe('TowerScreen', () => {
     expect(screen.getByText('잠김')).toBeInTheDocument();
   });
 
+  it('keeps every cleared floor and difficulty selectable in administrator mode', () => {
+    const cleared = createDevClearedProgress();
+
+    render(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={null}
+        difficultySelectionLocked
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={1}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 모든 층 선택 가능',
+    );
+    for (const floor of [1, 2, 3, 4, 5]) {
+      const button = screen.getByRole('button', { name: `${floor}층 선택` });
+      expect(button).toBeEnabled();
+      expect(button).toHaveTextContent('클리어 완료 · 재도전 가능');
+    }
+    for (const difficulty of ['easy', 'normal', 'hard']) {
+      expect(document.querySelector<HTMLButtonElement>(
+        `.difficulty-selector__option[data-difficulty="${difficulty}"]`,
+      )).toBeEnabled();
+    }
+    expect(screen.queryByText(/진행 순서 잠김/)).not.toBeInTheDocument();
+  });
+
+  it('labels suspended administrator sessions without changing floor availability', () => {
+    const cleared = createDevClearedProgress();
+    const { rerender } = render(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={{ kind: 'floor', floor: 2, encounterIndex: 1 }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={2}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
+
+    rerender(
+      <TowerScreen
+        administratorFreeSelection
+        continuation={{ kind: 'owl' }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={cleared}
+        requiredFloor={5}
+        runActive
+        runScore={0}
+      />,
+    );
+
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능',
+    );
+  });
+
   it('highlights and labels the exact suspended opponent', () => {
     const floorTwoProgress = cloneProgressState(progress);
     floorTwoProgress.difficultyProgress.easy.highestUnlockedFloor = 2;
@@ -240,5 +314,47 @@ describe('TowerScreen', () => {
     const floorTwo = screen.getByTestId('tower-route').querySelector('[data-floor="2"]');
     expect(floorTwo?.querySelector('[data-encounter-index="1"]'))
       .toHaveAttribute('data-encounter-state', 'active');
+  });
+
+  it('aligns the route to floor five when an owl battle is suspended', () => {
+    const { rerender } = render(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={null}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive
+        runScore={15_000}
+      />,
+    );
+
+    const route = screen.getByTestId('tower-route');
+    const floorFive = route.querySelector<HTMLElement>('[data-floor="5"]');
+    expect(floorFive).not.toBeNull();
+    Object.defineProperties(route, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 1_000 },
+    });
+    Object.defineProperties(floorFive!, {
+      offsetHeight: { configurable: true, value: 100 },
+      offsetTop: { configurable: true, value: 600 },
+    });
+
+    rerender(
+      <TowerScreen
+        commonAssets={commonAssets}
+        continuation={{ kind: 'owl' }}
+        notice={null}
+        onSelectFloor={() => undefined}
+        progress={progress}
+        requiredFloor={1}
+        runActive
+        runScore={15_000}
+      />,
+    );
+
+    expect(route.scrollTop).toBe(500);
   });
 });

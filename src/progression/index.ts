@@ -9,6 +9,7 @@ export type {
   PendingLeaderboardSubmissions,
 } from './schema';
 export { DEFAULT_PROGRESS, cloneProgressState, parsePersistedProgress, parseProgressState } from './schema';
+export { createDevClearedProgress } from './devClearedProgress';
 export {
   canSelectDifficulty,
   createDifficultyProgressMap,
@@ -31,6 +32,10 @@ export {
   progressStorageKeyForIdentity,
   type ProgressRepositoryFactory,
 } from './progressRepositoryFactory';
+export {
+  createDevClearedProgressRepositoryFactory,
+  devClearedProgressStorageKeyForIdentity,
+} from './devClearedProgressRepositoryFactory';
 export type { ClearedFloors, Floor } from './floors';
 export { FINAL_FLOOR, FLOORS, isFinalFloor, isFloor } from './floors';
 export type { FloorResult } from './tower';

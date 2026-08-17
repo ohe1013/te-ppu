@@ -8,6 +8,7 @@ import {
   EventAnimationQueue,
   effectsForCommandFeedback,
   effectsForEvents,
+  garbageRiseOffsetRows,
   type AnimationEffect,
 } from './event-animation-queue';
 
@@ -18,6 +19,12 @@ const lineClear: GameEvent = {
 };
 
 const queueView = createPublicMatchView(createMatch({ matchSeed: 13 }));
+const garbageEvent: GameEvent = {
+  amount: 3,
+  holeColumns: [3, 2, 4],
+  side: 'player',
+  type: 'garbage-raised',
+};
 
 function effect(
   id: string,
@@ -43,8 +50,9 @@ describe('EventAnimationQueue', () => {
       }),
       effect('garbage-1', 'critical', {
         amount: 1,
+        holeColumns: [6],
         side: 'opponent',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       }),
     ]);
 
@@ -68,11 +76,11 @@ describe('EventAnimationQueue', () => {
     expect(queue.shiftCritical()).toBeNull();
   });
 
-  it('creates one ordered critical cue per core event plus optional decoration', () => {
+  it('prioritizes a garbage rise while keeping attack projectiles out of the event queue', () => {
     const events: readonly GameEvent[] = [
       lineClear,
       { amount: 2, side: 'player', type: 'attack-sent' },
-      { amount: 1, side: 'opponent', type: 'garbage-landed' },
+      { amount: 1, holeColumns: [6], side: 'opponent', type: 'garbage-raised' },
     ];
 
     const view = createPublicMatchView(createMatch({ matchSeed: 42 }));
@@ -81,14 +89,47 @@ describe('EventAnimationQueue', () => {
     expect(
       effects.filter(({ priority }) => priority === 'critical').map(({ id }) => id),
     ).toEqual([
-      'tick-42:0:line-clear',
-      'tick-42:1:attack-shot',
       'tick-42:2:garbage-land',
+      'tick-42:0:line-clear',
     ]);
     expect(
       effects.filter(({ priority }) => priority === 'decorative').map(({ id }) => id),
     ).toEqual([]);
     expect(effects.every((effect) => effect.tick === 42 && effect.view === view)).toBe(true);
+  });
+
+  it('keeps lock, clear, and item presentation order when no garbage batch is present', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 42 }));
+    const effects = effectsForEvents([
+      { side: 'player', type: 'piece-locked' },
+      lineClear,
+      { item: 'freeze', side: 'player', type: 'item-acquired' },
+    ], 42, view);
+
+    expect(effects.filter(({ priority }) => priority === 'critical').map(({ group }) => group))
+      .toEqual(['land-impact', 'line-clear', 'item-acquire']);
+  });
+
+  it('maps one garbage batch to one ordered landing effect', () => {
+    expect(effectsForEvents([garbageEvent], 9, queueView).map(({ group }) => group))
+      .toEqual(['garbage-land']);
+  });
+
+  it.each([
+    { offset: 3, progress: 0 },
+    { offset: 1.5, progress: 0.5 },
+    { offset: 0, progress: 1 },
+  ])('moves one three-row batch together at $progress', ({ progress, offset }) => {
+    expect(garbageRiseOffsetRows({
+      event: garbageEvent,
+      group: 'garbage-land',
+      id: 'garbage-9',
+      presentationProgress: progress,
+      priority: 'critical',
+      side: 'player',
+      tick: 9,
+      view: queueView,
+    }, 'player', 0)).toBe(offset);
   });
 
   it('maps command cues and combo snapshots without inventing effects for unrelated commands', () => {

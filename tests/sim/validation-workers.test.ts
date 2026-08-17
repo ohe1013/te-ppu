@@ -8,6 +8,7 @@ import {
   assertExactValidationTaskCoverage,
   assertFinalWorkerSnapshotCountersMatchResults,
   buildSelectedValidationTasks,
+  formatAiDifficultyReport,
   parseValidationArguments,
   recordValidationWorkerTasksDone,
   runValidation,
@@ -15,8 +16,48 @@ import {
   updateWorkerCounters,
   type ValidationCheckpoint,
 } from '../../scripts/validate-ai-simulations';
+import { AI_DIFFICULTY_COMPARISONS } from '../../src/sim/aiDifficultyCalibration';
 
 describe('AI validation workers', () => {
+  it('formats a difficulty report with rounded higher share and sign-test p-value', () => {
+    expect(formatAiDifficultyReport({
+      comparison: AI_DIFFICULTY_COMPARISONS[0]!,
+      seedPairs: 128,
+      games: 256,
+      higherPoints: 153,
+      higherShare: 153 / 256,
+      pairedWins: 80,
+      pairedLosses: 40,
+      pairedTies: 8,
+      oneSidedPValue: .0002,
+      rejectedCommands: 0,
+      cappedMatches: 0,
+    })).toBe('easy5-normal1: higher=59.8%; pairs=80/40/8; p=0.000200');
+  });
+
+  it('keeps a successful filtered diagnostic free of calibration output', () => {
+    const script = fileURLToPath(new URL(
+      '../../scripts/validate-ai-simulations.ts',
+      import.meta.url,
+    ));
+    const child = spawnSync(process.execPath, [
+      '--expose-gc',
+      '--import',
+      'tsx',
+      script,
+      '--floor',
+      '5',
+      '--seed-from',
+      '1',
+      '--seed-to',
+      '1',
+    ], { encoding: 'utf8', timeout: 15_000 });
+
+    expect(child.status).toBe(0);
+    expect(child.stdout).toContain('filtered matches=1; floor=5; seeds=1-1; rejected=0; capped=0');
+    expect(child.stdout).not.toContain('easy5-normal1:');
+  }, 20_000);
+
   it('publish the final GC checkpoint and exit without a second shutdown barrier', async () => {
     const checkpoints: ValidationCheckpoint[] = [];
     const report = await runValidation(

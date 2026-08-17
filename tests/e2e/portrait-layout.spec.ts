@@ -78,16 +78,30 @@ for (const { viewport } of PORTRAITS) {
     const floorCards = page.getByRole('button', { name: /층 선택/ });
     await expect(floorCards).toHaveCount(5);
     const appShell = page.getByTestId('app-shell');
-    const towerMetrics = await appShell.evaluate((node) => ({
+    const towerRoute = page.getByTestId('tower-route');
+    const appMetrics = await appShell.evaluate((node) => ({
+      clientHeight: node.clientHeight,
       clientWidth: node.clientWidth,
       overflowY: getComputedStyle(node).overflowY,
+      scrollHeight: node.scrollHeight,
       scrollWidth: node.scrollWidth,
       rootClientWidth: document.documentElement.clientWidth,
       rootWidth: document.documentElement.scrollWidth,
     }));
-    expect(towerMetrics.scrollWidth).toBeLessThanOrEqual(towerMetrics.clientWidth);
-    expect(towerMetrics.rootWidth).toBeLessThanOrEqual(towerMetrics.rootClientWidth);
-    expect(towerMetrics.overflowY).toBe('auto');
+    const routeMetrics = await towerRoute.evaluate((node) => ({
+      clientHeight: node.clientHeight,
+      clientWidth: node.clientWidth,
+      overflowY: getComputedStyle(node).overflowY,
+      scrollHeight: node.scrollHeight,
+      scrollWidth: node.scrollWidth,
+    }));
+    expect(appMetrics.scrollWidth).toBeLessThanOrEqual(appMetrics.clientWidth);
+    expect(appMetrics.scrollHeight).toBeLessThanOrEqual(appMetrics.clientHeight);
+    expect(appMetrics.rootWidth).toBeLessThanOrEqual(appMetrics.rootClientWidth);
+    expect(appMetrics.overflowY).toBe('auto');
+    expect(routeMetrics.scrollWidth).toBeLessThanOrEqual(routeMetrics.clientWidth);
+    expect(routeMetrics.scrollHeight).toBeGreaterThan(routeMetrics.clientHeight);
+    expect(routeMetrics.overflowY).toBe('auto');
 
     const towerHeaderMetrics = await page.locator('.tower-screen__header').evaluate((header) => {
       const mascot = header.querySelector<HTMLElement>('.tower-screen__mascot');
@@ -147,34 +161,43 @@ for (const { viewport } of PORTRAITS) {
 
     const firstFloor = floorCards.first();
     const lastFloor = floorCards.last();
-    await expectInsideViewport(lastFloor, viewport, 'top floor card');
+    await expectInsideViewport(firstFloor, viewport, 'floor 1 at tower entry');
     const lastFloorBeforeScroll = await lastFloor.boundingBox();
     expect(lastFloorBeforeScroll, 'last floor card should have a bounding box').not.toBeNull();
     expect(lastFloorBeforeScroll!.x).toBeGreaterThanOrEqual(-0.5);
     expect(lastFloorBeforeScroll!.x + lastFloorBeforeScroll!.width)
       .toBeLessThanOrEqual(viewport.width + 0.5);
-    const scrollTopBefore = await appShell.evaluate((node) => node.scrollTop);
+    const appScrollTopBefore = await appShell.evaluate((node) => node.scrollTop);
+    const routeScrollTopBefore = await towerRoute.evaluate((node) => node.scrollTop);
+    expect(routeScrollTopBefore, 'floor 1 alignment should start above scroll origin')
+      .toBeGreaterThan(0);
     await lastFloor.scrollIntoViewIfNeeded();
-    const scrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
+    const appScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
+    const routeScrollTopAfter = await towerRoute.evaluate((node) => node.scrollTop);
+    expect(routeScrollTopAfter, 'floor 5 should never scroll downward within the tower route')
+      .toBeLessThanOrEqual(routeScrollTopBefore);
+    expect(appScrollTopAfter, 'floor 5 should not scroll the app shell')
+      .toBe(appScrollTopBefore);
+    await expectInsideViewport(lastFloor, viewport, 'last floor card after scrolling');
     if (viewport.width === 360 && viewport.height === 640) {
-      expect(scrollTopAfter, 'floor 5 should remain reachable in the compact tower scroll')
-        .toBeGreaterThanOrEqual(scrollTopBefore);
-
       await page.setViewportSize({ width: viewport.width, height: 480 });
-      const constrainedBefore = await appShell.evaluate((node) => ({
+      const constrainedBefore = await towerRoute.evaluate((node) => ({
         clientHeight: node.clientHeight,
         scrollHeight: node.scrollHeight,
         scrollTop: node.scrollTop,
       }));
-      expect(constrainedBefore.scrollHeight, 'the constrained tower should overflow app-shell')
+      expect(constrainedBefore.scrollHeight, 'the constrained tower route should remain scrollable')
         .toBeGreaterThan(constrainedBefore.clientHeight);
+      const constrainedAppScrollTopBefore = await appShell.evaluate((node) => node.scrollTop);
       await firstFloor.scrollIntoViewIfNeeded();
-      const constrainedScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
-      expect(constrainedScrollTopAfter, 'floor 1 should scroll the constrained app-shell')
+      const constrainedRouteScrollTopAfter = await towerRoute.evaluate((node) => node.scrollTop);
+      const constrainedAppScrollTopAfter = await appShell.evaluate((node) => node.scrollTop);
+      expect(constrainedRouteScrollTopAfter, 'floor 1 should scroll down within the tower route')
         .toBeGreaterThan(constrainedBefore.scrollTop);
+      expect(constrainedAppScrollTopAfter, 'floor 1 should not scroll the constrained app shell')
+        .toBe(constrainedAppScrollTopBefore);
       await page.setViewportSize(viewport);
     }
-    await expectInsideViewport(lastFloor, viewport, 'last floor card after scrolling');
 
     await openFloorOneMatch(page);
 

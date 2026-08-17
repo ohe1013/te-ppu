@@ -5,7 +5,7 @@ import {
   shouldUseQueueSwap,
   shouldUseTacticalRowClear,
 } from '../../src/ai/items';
-import { AI_FLOOR_PROFILES } from '../../src/ai/profiles';
+import { getAiFloorProfile } from '../../src/ai/profiles';
 import {
   BOARD_WIDTH,
   HIDDEN_ROWS,
@@ -25,11 +25,10 @@ import {
   type TimedCommand,
 } from '../../src/core/index';
 
-const FLOOR_1 = AI_FLOOR_PROFILES[0]!;
-const FLOOR_2 = AI_FLOOR_PROFILES[1]!;
-const FLOOR_3 = AI_FLOOR_PROFILES[2]!;
-const FLOOR_4 = AI_FLOOR_PROFILES[3]!;
-const FLOOR_5 = AI_FLOOR_PROFILES[4]!;
+const FIRST_VALID = getAiFloorProfile(1, 'easy');
+const RISK_AWARE = getAiFloorProfile(1, 'normal');
+const TACTICAL_ONE_PREVIEW = getAiFloorProfile(5, 'normal');
+const TACTICAL_TWO_PREVIEWS = getAiFloorProfile(1, 'hard');
 const VISIBLE_ROWS = 20;
 
 function emptyBoard(): (Cell | null)[] {
@@ -125,7 +124,7 @@ function patchSide(
 
 describe('AI item eligibility and priority', () => {
   it('never emits without acquired inventory', () => {
-    expect(planItemCommands(observation(), FLOOR_3)).toEqual([]);
+    expect(planItemCommands(observation(), RISK_AWARE)).toEqual([]);
   });
 
   it.each([
@@ -138,7 +137,7 @@ describe('AI item eligibility and priority', () => {
       board,
       inventory: { rowClear: 1, freeze: 1, queueSwap: 1 },
       ...patch,
-    }), FLOOR_1)).toEqual([]);
+    }), FIRST_VALID)).toEqual([]);
   });
 
   it('uses deterministic row-clear, freeze, then queue-swap priority', () => {
@@ -149,32 +148,32 @@ describe('AI item eligibility and priority', () => {
     });
     const noRow = observation({ inventory: { freeze: 1, queueSwap: 1 } });
 
-    expect(planItemCommands(allItems, FLOOR_1)).toEqual([
+    expect(planItemCommands(allItems, FIRST_VALID)).toEqual([
       { type: 'use-row-clear', row: 19 },
     ]);
-    expect(planItemCommands(noRow, FLOOR_1)).toEqual([{ type: 'use-freeze' }]);
+    expect(planItemCommands(noRow, FIRST_VALID)).toEqual([{ type: 'use-freeze' }]);
   });
 
   it('does not emit row-clear for an empty field or swap without a charge', () => {
-    expect(planItemCommands(observation({ inventory: { rowClear: 1 } }), FLOOR_1)).toEqual([]);
-    expect(planItemCommands(observation({ inventory: { queueSwap: 0 } }), FLOOR_3)).toEqual([]);
+    expect(planItemCommands(observation({ inventory: { rowClear: 1 } }), FIRST_VALID)).toEqual([]);
+    expect(planItemCommands(observation({ inventory: { queueSwap: 0 } }), RISK_AWARE)).toEqual([]);
   });
 });
 
 describe('floor-specific AI item policies', () => {
-  it('floor 1 clears the lowest non-empty visible row and uses either other item immediately', () => {
+  it('FIRST_VALID clears the lowest non-empty visible row and uses either other item immediately', () => {
     let board = withCell(emptyBoard(), 0, 4);
     board = withCell(board, 9, 17);
 
-    expect(planItemCommands(observation({ board, inventory: { rowClear: 1 } }), FLOOR_1))
+    expect(planItemCommands(observation({ board, inventory: { rowClear: 1 } }), FIRST_VALID))
       .toEqual([{ type: 'use-row-clear', row: 17 }]);
-    expect(planItemCommands(observation({ inventory: { freeze: 1 } }), FLOOR_1))
+    expect(planItemCommands(observation({ inventory: { freeze: 1 } }), FIRST_VALID))
       .toEqual([{ type: 'use-freeze' }]);
-    expect(planItemCommands(observation({ inventory: { queueSwap: 1 } }), FLOOR_1))
+    expect(planItemCommands(observation({ inventory: { queueSwap: 1 } }), FIRST_VALID))
       .toEqual([{ type: 'use-queue-swap' }]);
   });
 
-  it('floor 2 selects the row maximizing holes removed times two plus occupied cells', () => {
+  it('RISK_AWARE selects the row maximizing holes removed times two plus occupied cells', () => {
     let board = withCell(emptyBoard(), 0, 10);
     for (let x = 1; x <= 5; x += 1) board = withCell(board, x, 19);
 
@@ -182,10 +181,10 @@ describe('floor-specific AI item policies', () => {
       board,
       incoming: 6,
       inventory: { rowClear: 1 },
-    }), FLOOR_2)).toEqual([{ type: 'use-row-clear', row: 10 }]);
+    }), RISK_AWARE)).toEqual([{ type: 'use-row-clear', row: 10 }]);
   });
 
-  it('floor 2 resolves equal row ranks toward the lower visible row', () => {
+  it('RISK_AWARE resolves equal row ranks toward the lower visible row', () => {
     let board = withFullRow(emptyBoard(), 18);
     board = withFullRow(board, 19);
 
@@ -193,10 +192,10 @@ describe('floor-specific AI item policies', () => {
       board,
       incoming: 6,
       inventory: { rowClear: 1 },
-    }), FLOOR_2)).toEqual([{ type: 'use-row-clear', row: 19 }]);
+    }), RISK_AWARE)).toEqual([{ type: 'use-row-clear', row: 19 }]);
   });
 
-  it('floor 2 gates row-clear at the exact height, hole, and incoming thresholds', () => {
+  it('RISK_AWARE gates row-clear at the exact height, hole, and incoming thresholds', () => {
     let height13: readonly (Cell | null)[] = emptyBoard();
     let height14: readonly (Cell | null)[] = emptyBoard();
     for (let row = 7; row < VISIBLE_ROWS; row += 1) height13 = withCell(height13, 0, row);
@@ -206,22 +205,22 @@ describe('floor-specific AI item policies', () => {
     holes5 = withCell(holes5, 0, 19);
     holes6 = withCell(holes6, 0, 19);
 
-    expect(planItemCommands(observation({ board: height13, inventory: { rowClear: 1 } }), FLOOR_2))
+    expect(planItemCommands(observation({ board: height13, inventory: { rowClear: 1 } }), RISK_AWARE))
       .toEqual([]);
-    expect(planItemCommands(observation({ board: height14, inventory: { rowClear: 1 } }), FLOOR_2)[0]?.type)
+    expect(planItemCommands(observation({ board: height14, inventory: { rowClear: 1 } }), RISK_AWARE)[0]?.type)
       .toBe('use-row-clear');
-    expect(planItemCommands(observation({ board: holes5, inventory: { rowClear: 1 } }), FLOOR_2))
+    expect(planItemCommands(observation({ board: holes5, inventory: { rowClear: 1 } }), RISK_AWARE))
       .toEqual([]);
-    expect(planItemCommands(observation({ board: holes6, inventory: { rowClear: 1 } }), FLOOR_2)[0]?.type)
+    expect(planItemCommands(observation({ board: holes6, inventory: { rowClear: 1 } }), RISK_AWARE)[0]?.type)
       .toBe('use-row-clear');
     expect(planItemCommands(observation({
       board: withCell(emptyBoard(), 0, 19),
       incoming: 6,
       inventory: { rowClear: 1 },
-    }), FLOOR_2)[0]?.type).toBe('use-row-clear');
+    }), RISK_AWARE)[0]?.type).toBe('use-row-clear');
   });
 
-  it('floor 2 freezes only at opponent height 14 or combo 2', () => {
+  it('RISK_AWARE freezes only at opponent height 14 or combo 2', () => {
     const height13 = withCell(emptyBoard(), 0, 7);
     const height14 = withCell(emptyBoard(), 0, 6);
 
@@ -229,22 +228,22 @@ describe('floor-specific AI item policies', () => {
       opponentBoard: height13,
       opponentCombo: 1,
       inventory: { freeze: 1 },
-    }), FLOOR_2)).toEqual([]);
+    }), RISK_AWARE)).toEqual([]);
     expect(planItemCommands(observation({
       opponentBoard: height14,
       inventory: { freeze: 1 },
-    }), FLOOR_2)).toEqual([{ type: 'use-freeze' }]);
+    }), RISK_AWARE)).toEqual([{ type: 'use-freeze' }]);
     expect(planItemCommands(observation({
       opponentCombo: 2,
       inventory: { freeze: 1 },
-    }), FLOOR_2)).toEqual([{ type: 'use-freeze' }]);
+    }), RISK_AWARE)).toEqual([{ type: 'use-freeze' }]);
   });
 
-  it('floor 4 and 5 apply the tactical freeze policy at own combo 2 or opponent height 13', () => {
+  it('tactical profiles apply the tactical freeze policy at own combo 2 or opponent height 13', () => {
     const height12 = withCell(emptyBoard(), 0, 8);
     const height13 = withCell(emptyBoard(), 0, 7);
 
-    for (const profile of [FLOOR_4, FLOOR_5]) {
+    for (const profile of [TACTICAL_ONE_PREVIEW, TACTICAL_TWO_PREVIEWS]) {
       expect(planItemCommands(observation({
         combo: 1,
         opponentBoard: height12,
@@ -268,7 +267,7 @@ describe('floor-specific AI item policies', () => {
     expect(shouldUseTacticalRowClear(10, 9, 1)).toBe(true);
   });
 
-  it('floor 5 simulates valid visible deletes and resolves equal scores to the lower row', () => {
+  it('TACTICAL_ONE_PREVIEW simulates valid visible deletes and resolves equal scores to the lower row', () => {
     let board = withFullRow(emptyBoard(), 18);
     board = withFullRow(board, 19);
 
@@ -276,7 +275,7 @@ describe('floor-specific AI item policies', () => {
       board,
       incoming: 1,
       inventory: { rowClear: 1 },
-    }), FLOOR_5)).toEqual([{ type: 'use-row-clear', row: 19 }]);
+    }), TACTICAL_ONE_PREVIEW)).toEqual([{ type: 'use-row-clear', row: 19 }]);
   });
 
   it('projects the same minimum active lift and one-line incoming offset as the real core', () => {
@@ -337,10 +336,10 @@ describe('floor-specific AI item policies', () => {
       inventory: acquireMarkers(state.sides.opponent.inventory, ['row-clear']),
     });
     const zeroWeights = {
-      ...FLOOR_5,
+      ...TACTICAL_ONE_PREVIEW,
       weights: Object.fromEntries(
-        Object.keys(FLOOR_5.weights).map((name) => [name, 0]),
-      ) as typeof FLOOR_5.weights,
+        Object.keys(TACTICAL_ONE_PREVIEW.weights).map((name) => [name, 0]),
+      ) as typeof TACTICAL_ONE_PREVIEW.weights,
     };
 
     expect(planItemCommands(createAiObservation(state, 'opponent'), zeroWeights)).toEqual([
@@ -348,26 +347,26 @@ describe('floor-specific AI item policies', () => {
     ]);
   }, 10_000);
 
-  it('applies exact floor 2 and floor 5 queue-swap score-gap boundaries', () => {
-    expect(shouldUseQueueSwap(FLOOR_2, 10, 12.999)).toBe(false);
-    expect(shouldUseQueueSwap(FLOOR_2, 10, 13)).toBe(true);
-    expect(shouldUseQueueSwap(FLOOR_5, 10, 12.499)).toBe(false);
-    expect(shouldUseQueueSwap(FLOOR_5, 10, 12.5)).toBe(true);
+  it('applies exact RISK_AWARE and TACTICAL_ONE_PREVIEW queue-swap score-gap boundaries', () => {
+    expect(shouldUseQueueSwap(RISK_AWARE, 10, 12.999)).toBe(false);
+    expect(shouldUseQueueSwap(RISK_AWARE, 10, 13)).toBe(true);
+    expect(shouldUseQueueSwap(TACTICAL_ONE_PREVIEW, 10, 12.499)).toBe(false);
+    expect(shouldUseQueueSwap(TACTICAL_ONE_PREVIEW, 10, 12.5)).toBe(true);
   });
 
-  it('uses only visible projected survival for floor 5 and does not add it to floor 2', () => {
-    expect(shouldUseQueueSwap(FLOOR_2, Number.NEGATIVE_INFINITY, -100)).toBe(false);
-    expect(shouldUseQueueSwap(FLOOR_5, Number.NEGATIVE_INFINITY, -100)).toBe(true);
-    expect(shouldUseQueueSwap(FLOOR_5, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY))
+  it('uses only visible projected survival for TACTICAL_ONE_PREVIEW and not RISK_AWARE', () => {
+    expect(shouldUseQueueSwap(RISK_AWARE, Number.NEGATIVE_INFINITY, -100)).toBe(false);
+    expect(shouldUseQueueSwap(TACTICAL_ONE_PREVIEW, Number.NEGATIVE_INFINITY, -100)).toBe(true);
+    expect(shouldUseQueueSwap(TACTICAL_ONE_PREVIEW, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY))
       .toBe(false);
   });
 
-  it('integrates the real one-preview evaluator for a beneficial and harmful floor-3 swap', () => {
+  it('integrates the real one-preview evaluator for a beneficial and harmful RISK_AWARE swap', () => {
     const previewWeighted = {
-      ...FLOOR_3,
+      ...RISK_AWARE,
       weights: Object.fromEntries(
-        Object.entries(FLOOR_3.weights).map(([name, weight]) => [name, weight * 6]),
-      ) as typeof FLOOR_3.weights,
+        Object.entries(RISK_AWARE.weights).map(([name, weight]) => [name, weight * 30]),
+      ) as typeof RISK_AWARE.weights,
     };
     const beneficial = observation({
       inventory: { queueSwap: 1 },
@@ -399,8 +398,8 @@ describe('floor-specific AI item policies', () => {
       };
     };
 
-    expect(planItemCommands(withThird('Z'), FLOOR_5))
-      .toEqual(planItemCommands(withThird('S'), FLOOR_5));
+    expect(planItemCommands(withThird('Z'), TACTICAL_TWO_PREVIEWS))
+      .toEqual(planItemCommands(withThird('S'), TACTICAL_TWO_PREVIEWS));
   });
 
   it('ignores non-contract hidden fields and plans from the sanitized observation only', () => {
@@ -415,7 +414,8 @@ describe('floor-specific AI item policies', () => {
       hiddenBoard: Array(BOARD_WIDTH * HIDDEN_ROWS).fill({ kind: 'Z' }),
     } as AiObservation;
 
-    expect(planItemCommands(view, FLOOR_5)).toEqual(planItemCommands(hiddenVariant, FLOOR_5));
+    expect(planItemCommands(view, TACTICAL_TWO_PREVIEWS))
+      .toEqual(planItemCommands(hiddenVariant, TACTICAL_TWO_PREVIEWS));
   });
 });
 
@@ -429,7 +429,7 @@ describe('AI item commands through the real core', () => {
       board: { cells },
       inventory: acquireMarkers(state.sides.opponent.inventory, ['row-clear']),
     });
-    const command = planItemCommands(createAiObservation(state, 'opponent'), FLOOR_1)[0]!;
+    const command = planItemCommands(createAiObservation(state, 'opponent'), FIRST_VALID)[0]!;
     const step = stepMatch(state, [{ tick: 1, side: 'opponent', command }]);
 
     expect(command).toEqual({ type: 'use-row-clear', row: 19 });
@@ -451,7 +451,7 @@ describe('AI item commands through the real core', () => {
     const swaps: TimedCommand[] = [];
 
     for (let tick = 1; tick <= 4; tick += 1) {
-      const command = planItemCommands(createAiObservation(state, 'opponent'), FLOOR_1)[0];
+      const command = planItemCommands(createAiObservation(state, 'opponent'), FIRST_VALID)[0];
       const timed = command === undefined ? [] : [{ tick, side: 'opponent' as const, command }];
       if (command?.type === 'use-queue-swap') swaps.push(...timed);
       state = stepMatch(state, timed).state;
@@ -472,7 +472,7 @@ describe('AI item commands through the real core', () => {
     const commands: TimedCommand[] = (['player', 'opponent'] as const).map((side) => ({
       tick: 1,
       side,
-      command: planItemCommands(createAiObservation(state, side), FLOOR_1)[0]!,
+      command: planItemCommands(createAiObservation(state, side), FIRST_VALID)[0]!,
     }));
     const step = stepMatch(state, commands);
 

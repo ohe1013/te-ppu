@@ -5,7 +5,7 @@ export type NameKey =
   | 'G' | 'H' | 'I' | 'J' | 'K' | 'L'
   | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R'
   | 'S' | 'T' | 'U' | 'V' | 'W' | 'X'
-  | 'Y' | 'Z' | 'DEL' | 'END';
+  | 'Y' | 'Z' | 'DEL';
 
 export interface NameKeyLayout {
   readonly key: NameKey;
@@ -37,8 +37,7 @@ export const NAME_KEY_ROWS: readonly (readonly NameKeyLayout[])[] = [
   [
     { key: 'Y', columnStart: 0, columnEnd: 0 },
     { key: 'Z', columnStart: 1, columnEnd: 1 },
-    { key: 'DEL', columnStart: 2, columnEnd: 3 },
-    { key: 'END', columnStart: 4, columnEnd: 5 },
+    { key: 'DEL', columnStart: 2, columnEnd: 5 },
   ],
 ] as const;
 

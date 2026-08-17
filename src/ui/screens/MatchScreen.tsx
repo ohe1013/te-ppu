@@ -31,6 +31,7 @@ import type {
 } from '../../core/index';
 import { createAppLifecycleCoordinator } from '../../platform/app-lifecycle';
 import type { AudioPort } from '../../platform/audio-port';
+import { usePlatformBack } from '../../platform/back-request';
 import type { HapticType, PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
 import type { ProgressState } from '../../progression/index';
@@ -43,11 +44,16 @@ import {
 } from '../../progression/index';
 import { BattleCanvas } from '../../render/BattleCanvas';
 import { BattleHud } from '../match/BattleHud';
+import type {
+  AttackFeedbackCue,
+  AttackFeedbackPresentation,
+} from '../match/attack-feedback';
 import { AssetIcon } from '../match/AssetIcon';
 import {
   createPortraitMemory,
   createPortraitPresentation,
   mapOwlPortraitUrls,
+  portraitStateWithAttackFeedback,
   reducePortraitBatches,
   resolvePortraitState,
   type PortraitMemory,
@@ -62,7 +68,15 @@ import { ResumeCountdown } from '../match/ResumeCountdown';
 import { RotateButton } from '../match/RotateButton';
 import { RowSelector } from '../match/RowSelector';
 import { SettingsPanel } from '../match/SettingsPanel';
-import { soundFeedbackForEvents } from '../match/sound-feedback';
+import {
+  attackSoundFeedback,
+  soundFeedbackForEvents,
+} from '../match/sound-feedback';
+import {
+  useAttackFeedback,
+  type UseAttackFeedbackOptions,
+} from '../match/use-attack-feedback';
+import { useReducedMotion } from '../match/use-reduced-motion';
 import '../match/match-layout.css';
 
 const MATCH_STATUS_LABELS: Readonly<Record<MatchStatus, string>> = {
@@ -101,9 +115,13 @@ export interface MatchScreenProps {
   readonly commonAssets?: CommonAssets | null;
   readonly floorAssets?: FloorAssetBundle | null;
   readonly runScore?: number;
+  readonly useAttackFeedbackImpl?: AttackFeedbackHook;
   readonly useMatchLoopImpl?: MatchLoopHook;
 }
 
+export type AttackFeedbackHook = (
+  options: UseAttackFeedbackOptions,
+) => AttackFeedbackPresentation | null;
 export type MatchLoopHook = (options: UseMatchLoopOptions) => MatchLoopView;
 
 function portraitUrls(records: object | undefined): Partial<Record<PortraitState, string>> {
@@ -117,7 +135,6 @@ function portraitUrls(records: object | undefined): Partial<Record<PortraitState
 function hapticForEvent(event: GameEvent, status: MatchStatus): HapticType | null {
   if (event.type === 'piece-locked' && event.side === 'player') return 'tickWeak';
   if (event.type === 'lines-cleared' && event.side === 'player') return 'tap';
-  if (event.type === 'attack-sent') return event.side === 'player' ? 'success' : 'error';
   if (event.type === 'item-acquired' || event.type === 'item-used') {
     return event.side === 'player' ? 'tap' : null;
   }
@@ -146,12 +163,14 @@ function portraitRoleFor(side: 'player' | 'opponent', characterId: CharacterId):
 function presentationFor(
   memory: PortraitMemory,
   {
+    feedback,
     floor,
     role,
     side,
     sources,
     view,
   }: {
+    readonly feedback: AttackFeedbackPresentation | null;
     readonly floor: Floor;
     readonly role: PortraitRole;
     readonly side: 'player' | 'opponent';
@@ -159,11 +178,17 @@ function presentationFor(
     readonly view: PublicMatchView;
   },
 ): PortraitPresentation {
-  const state = resolvePortraitState({
+  const baseState = resolvePortraitState({
     ...memory,
     dangerState: role === 'demon-king' || role === 'owl' ? 'rage' : 'panic',
     tick: view.tick,
   });
+  const state = portraitStateWithAttackFeedback(
+    baseState,
+    side,
+    memory.terminal !== null,
+    feedback,
+  );
   return createPortraitPresentation(
     state,
     sources?.[side],
@@ -177,6 +202,7 @@ function usePortraitPresentations(
   playerCharacterId: CharacterId,
   match: Pick<MatchLoopView, 'eventBatches' | 'view'>,
   sources: MatchScreenProps['portraitSources'],
+  feedback: AttackFeedbackPresentation | null,
 ): { readonly player: PortraitPresentation; readonly opponent: PortraitPresentation } {
   const memoriesRef = useRef<{
     readonly floor: Floor;
@@ -221,6 +247,7 @@ function usePortraitPresentations(
   };
   return {
     player: presentationFor(player, {
+      feedback,
       floor,
       role: playerRole,
       side: 'player',
@@ -228,6 +255,7 @@ function usePortraitPresentations(
       view: match.view,
     }),
     opponent: presentationFor(opponent, {
+      feedback,
       floor,
       role: opponentRole,
       side: 'opponent',
@@ -258,6 +286,7 @@ export function MatchScreen({
   settings,
   settingsSaveFailed,
   specialEncounter,
+  useAttackFeedbackImpl = useAttackFeedback,
   useMatchLoopImpl = useMatchLoop,
 }: MatchScreenProps) {
   const encounter: FloorEncounter | OwlEncounter = specialEncounter
@@ -269,6 +298,7 @@ export function MatchScreen({
     title: encounter.title,
   };
   const resetBus = useMemo(() => new InputResetBus(), []);
+  const reducedMotion = useReducedMotion();
   const audio = audioPort;
   const feedbackRef = useRef({ audio, onScoreEvents, platform, settings });
   feedbackRef.current = { audio, onScoreEvents, platform, settings };
@@ -299,6 +329,21 @@ export function MatchScreen({
     }
     feedback.onScoreEvents?.(events);
   }, []);
+  const handleAttackImpact = useCallback((cue: AttackFeedbackCue) => {
+    const feedback = feedbackRef.current;
+    if (feedback.settings.soundEnabled) {
+      const sound = attackSoundFeedback(cue.amount);
+      try {
+        feedback.audio.play(sound.cue, sound.options);
+      } catch {
+        // Optional audio feedback cannot own the match or presentation clock.
+      }
+    }
+    if (feedback.settings.hapticsEnabled) {
+      const haptic = cue.source === 'player' ? 'success' : 'error';
+      ignoreEffect(() => feedback.platform.haptic(haptic));
+    }
+  }, []);
   const ai = useMemo(
     () => createAiController(getAiFloorProfile(floor, difficulty), seed),
     [difficulty, floor, seed],
@@ -308,6 +353,11 @@ export function MatchScreen({
     config: { matchSeed: seed },
     onEvents: handleMatchEvents,
     onFinished,
+  });
+  const attackFeedback = useAttackFeedbackImpl({
+    eventBatches: match.eventBatches,
+    onImpact: handleAttackImpact,
+    reducedMotion,
   });
   const resolvedPortraitSources = useMemo(() => {
     const opponent = {
@@ -339,6 +389,7 @@ export function MatchScreen({
     playerCharacter.id,
     match,
     resolvedPortraitSources,
+    attackFeedback,
   );
   const skin = useMemo(() => {
     if (commonAssets === null || commonAssets === undefined) return undefined;
@@ -415,6 +466,8 @@ export function MatchScreen({
     match.setPaused('exit-confirmation', false);
   }
 
+  usePlatformBack(openExitConfirmation, { enabled: !exitOpen, priority: 10 });
+
   return (
     <section
       className="screen-shell match-screen"
@@ -473,6 +526,7 @@ export function MatchScreen({
       <div className="battle-hud-pair">
         <BattleHud
           character={playerCharacter}
+          feedback={attackFeedback}
           items={commonAssets?.items}
           model={match.view.sides.player}
           portrait={portraits.player}
@@ -481,6 +535,7 @@ export function MatchScreen({
         />
         <BattleHud
           character={rivalCharacter}
+          feedback={attackFeedback}
           items={commonAssets?.items}
           model={match.view.sides.opponent}
           portrait={portraits.opponent}
@@ -491,6 +546,7 @@ export function MatchScreen({
 
       <div className="battle-stage">
         <BattleCanvas
+          attackFeedback={attackFeedback}
           atlas={commonAssets?.atlas}
           commandFeedback={match.commandFeedback}
           eventBatches={match.eventBatches}
@@ -502,6 +558,7 @@ export function MatchScreen({
               onSelectedRowChange={setSelectedRow}
             />
           ) : undefined}
+          reducedMotion={reducedMotion}
           selectedRow={selectedRow}
           skin={skin}
           view={match.view}

@@ -35,6 +35,7 @@ import type { AssetManager, PlayerCharacterAssets } from '../assets';
 import { useFloorAssets } from '../assets/use-floor-assets';
 import { createAppLifecycleCoordinator } from '../platform/app-lifecycle';
 import type { AudioPort } from '../platform/audio-port';
+import { usePlatformBack } from '../platform/back-request';
 import type { ProgressState, ScoreRecord } from '../progression/index';
 import {
   DEFAULT_PROGRESS,
@@ -96,6 +97,7 @@ export interface MatchRouteViewProps {
 export interface AppRootProps {
   readonly services: AppServices;
   readonly createMatchSeed?: () => number;
+  readonly devClearedMode?: boolean;
   readonly nowIso?: () => string;
   readonly renderMatch?: (props: MatchRouteViewProps) => ReactNode;
 }
@@ -210,6 +212,7 @@ interface RankedMatchIdentity {
 
 export function AppRoot({
   createMatchSeed = createDefaultMatchSeed,
+  devClearedMode = false,
   nowIso = currentIso,
   renderMatch = (props) => <MatchScreen {...props} />,
   services,
@@ -398,6 +401,20 @@ export function AppRoot({
     if (controller === null) return;
     matchIdentityRef.current = null;
     scoreRunRef.current = ScoreRunController.start(controller.progress.selectedDifficulty);
+    completionPendingRef.current = false;
+    completionTokenRef.current += 1;
+    setResultSavePending(false);
+    setResultSaveFailed(false);
+    refreshControllerView();
+  }
+
+  function startScoreRunAtFloor(floor: Floor): void {
+    if (controller === null) return;
+    matchIdentityRef.current = null;
+    scoreRunRef.current = ScoreRunController.startAtFloor(
+      controller.progress.selectedDifficulty,
+      floor,
+    );
     completionPendingRef.current = false;
     completionTokenRef.current += 1;
     setResultSavePending(false);
@@ -594,8 +611,9 @@ export function AppRoot({
     difficulty: ProgressState['selectedDifficulty'],
   ): Promise<boolean> {
     if (controller === null) return false;
+    if (devClearedMode && controller.progress.selectedDifficulty === difficulty) return true;
     const activeRun = scoreRunRef.current;
-    if (activeRun !== null && !isPristineRun(activeRun.snapshot)) return false;
+    if (!devClearedMode && activeRun !== null && !isPristineRun(activeRun.snapshot)) return false;
     const save = controller.selectDifficulty(difficulty);
     if (controller.progress.selectedDifficulty === difficulty && activeRun !== null) {
       scoreRunRef.current = ScoreRunController.start(difficulty);
@@ -683,6 +701,43 @@ export function AppRoot({
     else clearScoreRun();
     dispatchRoute({ type: 'character-selected' });
   }
+
+  function handleRouteBack(): void {
+    switch (route.name) {
+      case 'name-entry':
+      case 'ranking':
+      case 'tower':
+        showTitle();
+        return;
+      case 'character-select':
+        if (profileSaveStatus === 'idle') showTitle();
+        return;
+      case 'floor-intro':
+        if (route.encounterIndex === 0) {
+          dispatchRoute({ type: 'return-to-tower' });
+        }
+        return;
+      case 'ending':
+        finishRunAndShowTitle();
+        return;
+      case 'boot':
+      case 'title':
+      case 'match':
+      case 'owl-match':
+      case 'result':
+      case 'owl-reveal':
+      case 'owl-result':
+        return;
+    }
+  }
+
+  usePlatformBack(handleRouteBack, {
+    enabled: route.name !== 'boot'
+      && route.name !== 'title'
+      && route.name !== 'match'
+      && route.name !== 'owl-match',
+    priority: 10,
+  });
 
   let content: ReactNode;
   if (boot.status !== 'ready' || controller === null || route.name === 'boot') {
@@ -828,20 +883,26 @@ export function AppRoot({
               : suspendedBattle?.kind === 'owl'
                 ? { kind: 'owl' }
                 : null}
-            difficultySelectionLocked={scoreRunSnapshot !== null
+            administratorFreeSelection={devClearedMode}
+            difficultySelectionLocked={!devClearedMode
+              && scoreRunSnapshot !== null
               && !isPristineRun(scoreRunSnapshot)}
             notice={boot.notice}
             onBack={showTitle}
             progress={controller.progress}
             onSelectDifficulty={(difficulty) => { void selectDifficulty(difficulty); }}
             onSelectFloor={(floor) => {
-              if (scoreRunRef.current?.canSelectFloor(floor) !== true) return;
+              if (!devClearedMode && scoreRunRef.current?.canSelectFloor(floor) !== true) return;
               const suspended = suspendedBattle;
               if (suspended?.kind === 'floor' && suspended.series.floor === floor) {
                 dispatchRoute({ type: 'resume-floor', series: suspended.series });
               } else if (suspended?.kind === 'owl' && floor === FINAL_FLOOR) {
                 dispatchRoute({ type: 'resume-owl' });
               } else {
+                if (devClearedMode) {
+                  if (!controller.resetBattleSession()) return;
+                  startScoreRunAtFloor(floor);
+                }
                 dispatchRoute({ type: 'select-floor', floor });
               }
             }}
@@ -1027,6 +1088,7 @@ export function AppRoot({
     <main
       className="app-shell"
       data-difficulty={controller?.progress.selectedDifficulty ?? 'easy'}
+      data-run-score={scoreRunSnapshot?.score ?? 0}
       data-runtime-mode={services.platform.kind}
       data-testid="app-shell"
       id="app-shell"

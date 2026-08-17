@@ -15,8 +15,9 @@ import {
   createAiController,
   getAiFloorProfile,
   type AiController,
+  type AiFloorProfile,
 } from '../ai/index';
-import type { Floor } from '../progression/index';
+import type { Difficulty, Floor } from '../progression/index';
 
 export const MAX_SIMULATION_TICKS = 36_000;
 export const AI_SIMULATION_BENCHMARK_FLOOR = 3 as const;
@@ -39,6 +40,7 @@ export interface SimulationSummary {
 export interface AiSimulationOptions {
   readonly seed: number;
   readonly floor: Floor;
+  readonly difficulty?: Difficulty;
   readonly tickLimit?: number;
   readonly controllers?: Readonly<Record<SideId, SimulationController>>;
 }
@@ -83,6 +85,14 @@ function deriveControllerSeed(matchSeed: number, side: SideId): number {
   );
 }
 
+export function createSimulationController(
+  profile: AiFloorProfile,
+  matchSeed: number,
+  side: SideId,
+): SimulationController {
+  return createAiController(profile, deriveControllerSeed(matchSeed, side), side);
+}
+
 export function createBenchmarkController(
   base: SimulationController,
 ): SimulationController {
@@ -111,17 +121,18 @@ export function createBenchmarkController(
 function defaultControllers(
   matchSeed: number,
   testedFloor: Floor,
+  testedDifficulty: Difficulty,
 ): Readonly<Record<SideId, SimulationController>> {
   return {
-    player: createAiController(
-      getAiFloorProfile(testedFloor),
-      deriveControllerSeed(matchSeed, 'player'),
+    player: createSimulationController(
+      getAiFloorProfile(testedFloor, testedDifficulty),
+      matchSeed,
       'player',
     ),
     opponent: createBenchmarkController(
-      createAiController(
-        getAiFloorProfile(AI_SIMULATION_BENCHMARK_FLOOR),
-        deriveControllerSeed(matchSeed, 'opponent'),
+      createSimulationController(
+        getAiFloorProfile(AI_SIMULATION_BENCHMARK_FLOOR, 'easy'),
+        matchSeed,
         'opponent',
       ),
     ),
@@ -233,7 +244,11 @@ function outcomeFor(state: MatchState): SimulationSummary['outcome'] {
 
 export function runAiSimulation(options: AiSimulationOptions): SimulationSummary {
   const tickLimit = normalizeTickLimit(options.tickLimit);
-  const controllers = options.controllers ?? defaultControllers(options.seed, options.floor);
+  const controllers = options.controllers ?? defaultControllers(
+    options.seed,
+    options.floor,
+    options.difficulty ?? 'easy',
+  );
   let state = createMatch({ matchSeed: options.seed, countdownTicks: 0 });
   let rejectedCommands = 0;
   const eventHash = createHash('sha256');

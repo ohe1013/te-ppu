@@ -1,15 +1,18 @@
 import type { ItemType, PieceKind, PublicSideView, SideId } from '../../core/index';
 import type { LoadedImageRef } from '../../assets';
+import type { CSSProperties } from 'react';
 import { AssetImage } from './AssetImage';
 import {
   createCharacterPlateModel,
   type CharacterPlateCharacter,
 } from './character-plate';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 import { PiecePreview } from './piece-preview';
 import type { PortraitPresentation } from './portrait-state';
 
 export interface BattleHudProps {
   readonly character: CharacterPlateCharacter;
+  readonly feedback?: AttackFeedbackPresentation | null;
   readonly model: PublicSideView;
   readonly portrait?: PortraitPresentation;
   readonly side: SideId;
@@ -23,8 +26,45 @@ const ITEM_LABELS: Readonly<Record<ItemType, string>> = {
   'queue-swap': '교체',
 };
 
+type BattleHudFeedbackStyle = CSSProperties & {
+  readonly '--battle-hud-feedback-offset-x': string;
+  readonly '--battle-hud-feedback-outline-opacity': string;
+};
+
+function roundedFrameValue(value: number): number {
+  return Math.round(value * 1_000) / 1_000;
+}
+
+function feedbackStyleFor(
+  feedback: AttackFeedbackPresentation | null,
+  side: SideId,
+): BattleHudFeedbackStyle | undefined {
+  if (feedback === null) return undefined;
+
+  const progress = Math.min(1, Math.max(0, feedback.phaseProgress));
+  const isSourceLaunch = feedback.phase === 'launch' && feedback.source === side;
+  const isTargetImpact = feedback.phase === 'impact' && feedback.target === side;
+  let offsetX = 0;
+
+  if (!feedback.reducedMotion && isSourceLaunch) {
+    const direction = side === 'player' ? 1 : -1;
+    offsetX = Math.min(feedback.displacementPx, 2) * progress * direction;
+  } else if (!feedback.reducedMotion && isTargetImpact) {
+    const direction = side === 'player' ? -1 : 1;
+    const dampedFrame = Math.sin(progress * Math.PI * 2) * (1 - progress);
+    offsetX = feedback.displacementPx * dampedFrame * direction;
+  }
+
+  const outlineOpacity = isTargetImpact ? Math.sin(progress * Math.PI) : 0;
+  return {
+    '--battle-hud-feedback-offset-x': `${roundedFrameValue(offsetX)}px`,
+    '--battle-hud-feedback-outline-opacity': `${roundedFrameValue(outlineOpacity)}`,
+  };
+}
+
 export function BattleHud({
   character,
+  feedback = null,
   items,
   model,
   portrait,
@@ -36,15 +76,29 @@ export function BattleHud({
     state: 'idle' as const,
   };
   const plate = createCharacterPlateModel(character, side, presentation, model);
+  const attackRole = feedback === null
+    ? undefined
+    : feedback.source === side ? 'source' : 'target';
+  const feedbackStyle = feedbackStyleFor(feedback, side);
   return (
     <section
       aria-label={`${character.name} 대전 상태`}
       className="battle-hud"
+      data-attack-phase={feedback?.phase}
+      data-attack-role={attackRole}
       data-character-id={plate.characterId}
       data-danger={plate.danger ? 'true' : 'false'}
+      data-impact-intensity={feedback?.intensity}
+      data-reduced-motion={feedback?.reducedMotion ? 'true' : 'false'}
       data-side={side}
       role="region"
+      style={feedbackStyle}
     >
+      {feedback?.source === side && feedback.comboLabel !== null ? (
+        <output className="battle-hud__combo-pop" key={feedback.id}>
+          {feedback.comboLabel}!
+        </output>
+      ) : null}
       <header className="battle-hud__header">
         <span
           className="battle-hud__portrait battle-hud__portrait--plate"

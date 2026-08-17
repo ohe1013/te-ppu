@@ -50,6 +50,33 @@ describe('ScoreRunController', () => {
     expect(run.snapshot.phase).toBe('ended');
   });
 
+  it('starts an administrator run at the requested floor without changing normal starts', () => {
+    const administrator = ScoreRunController.startAtFloor('hard', 5);
+
+    expect(administrator.snapshot).toMatchObject({
+      difficulty: 'hard',
+      requiredFloor: 5,
+      score: 0,
+      encountersWon: 0,
+      phase: 'active',
+    });
+    expect(administrator.canSelectFloor(5)).toBe(true);
+    expect(administrator.canSelectFloor(1)).toBe(false);
+
+    const resolution = complete(administrator, {
+      floor: 5,
+      encounterIndex: 0,
+      isOwl: false,
+      result: 'win',
+      durationTicks: 120,
+    });
+    expect(resolution).toMatchObject({
+      kind: 'continued',
+      snapshot: { requiredFloor: 5, encountersWon: 1 },
+    });
+    expect(ScoreRunController.start('hard').snapshot.requiredFloor).toBe(1);
+  });
+
   it('awards the normal win and owl bonuses and records all sixteen victories', () => {
     const run = ScoreRunController.start('easy');
     for (const floor of [1, 2, 3, 4, 5] as const) {

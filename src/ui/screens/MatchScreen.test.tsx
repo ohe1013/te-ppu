@@ -7,12 +7,43 @@ import type { CommonAssets, PlayerCharacterAssets } from '../../assets';
 import { createMatch, createPublicMatchView, type GameEvent } from '../../core/index';
 import type { MatchLoopView } from '../../app/use-match-loop';
 import type { AudioPort } from '../../platform/audio-port';
+import { PlatformBackProvider } from '../../platform/back-request';
+import type { PlatformPort } from '../../platform/platform-port';
 import type { PlayerCharacterDefinition } from '../../player';
+import type { AttackFeedbackPresentation } from '../match/attack-feedback';
+import type { UseAttackFeedbackOptions } from '../match/use-attack-feedback';
 import type { MatchScreenProps } from './MatchScreen';
 import { MatchScreen } from './MatchScreen';
 
 const useMatchLoopMock = vi.hoisted(() => vi.fn());
 const canvasPropsSpy = vi.hoisted(() => vi.fn());
+const hudPropsSpy = vi.hoisted(() => vi.fn());
+const useReducedMotionMock = vi.hoisted(() => vi.fn(() => false));
+
+function createBackPlatform() {
+  let listener: (() => void) | undefined;
+  const platform: PlatformPort = {
+    close: async () => undefined,
+    getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
+    getInitialSafeArea: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+    haptic: async () => undefined,
+    kind: 'android',
+    lockPortrait: async () => undefined,
+    subscribeBackRequest(nextListener) {
+      listener = nextListener;
+      return () => {
+        listener = undefined;
+      };
+    },
+    subscribeSafeArea: () => () => undefined,
+  };
+  return {
+    platform,
+    emitBack() {
+      listener?.();
+    },
+  };
+}
 
 const lifecycleProps: Pick<
   MatchScreenProps,
@@ -73,19 +104,45 @@ vi.mock('../../app/use-match-loop', () => ({
   useMatchLoop: useMatchLoopMock,
 }));
 
+vi.mock('../match/BattleHud', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../match/BattleHud')>();
+  return {
+    ...actual,
+    BattleHud: (props: Parameters<typeof actual.BattleHud>[0]) => {
+      hudPropsSpy(props);
+      return actual.BattleHud(props);
+    },
+  };
+});
+
+vi.mock('../match/use-reduced-motion', () => ({
+  useReducedMotion: useReducedMotionMock,
+}));
+
 vi.mock('../../render/BattleCanvas', () => ({
   BattleCanvas: ({
+    attackFeedback,
     commandFeedback,
     eventBatches,
     playerBoardOverlay,
+    reducedMotion,
     selectedRow,
   }: {
+    readonly attackFeedback?: AttackFeedbackPresentation | null;
     readonly commandFeedback: readonly { readonly tick: number }[];
     readonly eventBatches?: readonly { readonly tick: number }[];
     readonly playerBoardOverlay?: ReactNode;
+    readonly reducedMotion?: boolean;
     readonly selectedRow: number | null;
   }) => {
-    canvasPropsSpy({ commandFeedback, eventBatches, playerBoardOverlay, selectedRow });
+    canvasPropsSpy({
+      attackFeedback,
+      commandFeedback,
+      eventBatches,
+      playerBoardOverlay,
+      reducedMotion,
+      selectedRow,
+    });
     return (
       <div
         data-event-batches={eventBatches?.map(({ tick }) => tick).join(',') ?? 'missing'}
@@ -181,7 +238,7 @@ function portraitLoop(
       },
     },
   };
-  const eventBatches = event === null ? [] : [{ events: [event], tick: 10, view }];
+  const eventBatches = event === null ? [] : [{ events: [event], sequence: 10, tick: 10, view }];
   return {
     ...loop,
     eventBatches,
@@ -195,9 +252,9 @@ function owlPortraitLoop(
 ): MatchLoopView {
   const loop = activeLoop();
   const event = state === 'attack'
-    ? { amount: 2, side: 'opponent' as const, type: 'attack-sent' as const }
+    ? { item: 'queue-swap' as const, side: 'opponent' as const, type: 'item-used' as const }
     : state === 'hit'
-      ? { amount: 2, side: 'opponent' as const, type: 'garbage-landed' as const }
+      ? { item: 'freeze' as const, side: 'opponent' as const, type: 'freeze-applied' as const }
       : null;
   const view = {
     ...loop.view,
@@ -213,13 +270,14 @@ function owlPortraitLoop(
   };
   return {
     ...loop,
-    eventBatches: event === null ? [] : [{ events: [event], tick: 10, view }],
+    eventBatches: event === null ? [] : [{ events: [event], sequence: 10, tick: 10, view }],
     events: event === null ? [] : [event],
     view,
   };
 }
 
 beforeEach(() => {
+  useReducedMotionMock.mockReturnValue(false);
   const loop: MatchLoopView = {
     dispatch: vi.fn(),
     commandFeedback: [],
@@ -238,6 +296,36 @@ afterEach(() => {
 });
 
 describe('MatchScreen', () => {
+  it('opens and cancels battle abandon with native back while restoring controls', () => {
+    const back = createBackPlatform();
+    const loop = activeLoop();
+    const onAbandon = vi.fn();
+    useMatchLoopMock.mockReturnValue(loop);
+    render(
+      <PlatformBackProvider platform={back.platform}>
+        <MatchScreen
+          {...lifecycleProps}
+          floor={2}
+          onAbandon={onAbandon}
+          onFinished={vi.fn()}
+          platform={back.platform}
+          seed={17}
+        />
+      </PlatformBackProvider>,
+    );
+
+    act(() => back.emitBack());
+    expect(screen.getByRole('dialog', { name: '현재 전투를 포기할까요?' })).toBeVisible();
+    expect(screen.getByTestId('match-screen').querySelector('fieldset')).toBeDisabled();
+    expect(loop.setPaused).toHaveBeenLastCalledWith('exit-confirmation', true);
+
+    act(() => back.emitBack());
+    expect(screen.queryByRole('dialog', { name: '현재 전투를 포기할까요?' })).toBeNull();
+    expect(screen.getByTestId('match-screen').querySelector('fieldset')).not.toBeDisabled();
+    expect(loop.setPaused).toHaveBeenLastCalledWith('exit-confirmation', false);
+    expect(onAbandon).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['countdown', '대전 준비'],
     ['playing', '대전 진행 중'],
@@ -352,8 +440,8 @@ describe('MatchScreen', () => {
   it.each([
     ['idle', null, 'playing', '/cloud-courier/portrait-idle.webp'],
     ['focus', { type: 'lines-cleared', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-focus.webp'],
-    ['attack', { type: 'attack-sent', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-attack.webp'],
-    ['hit', { type: 'garbage-landed', side: 'player', amount: 2 }, 'playing', '/cloud-courier/portrait-hit.webp'],
+    ['attack', { type: 'item-used', side: 'player', item: 'queue-swap' }, 'playing', '/cloud-courier/portrait-attack.webp'],
+    ['hit', { type: 'freeze-applied', side: 'player', item: 'freeze' }, 'playing', '/cloud-courier/portrait-hit.webp'],
     ['win', null, 'player-won', '/cloud-courier/portrait-win.webp'],
     ['loss', null, 'opponent-won', '/cloud-courier/portrait-loss.webp'],
   ] as const)('uses the selected player %s portrait source and identity', (
@@ -458,11 +546,18 @@ describe('MatchScreen', () => {
     const baseView = createPublicMatchView(createMatch({ countdownTicks: 0, matchSeed: 17 }));
     const first = {
       events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+      sequence: 18,
       tick: 18,
       view: { ...baseView, tick: 18 },
     };
     const second = {
-      events: [{ type: 'garbage-landed' as const, side: 'opponent' as const, amount: 1 }],
+      events: [{
+        type: 'garbage-raised' as const,
+        side: 'opponent' as const,
+        amount: 1,
+        holeColumns: [6],
+      }],
+      sequence: 19,
       tick: 19,
       view: { ...baseView, tick: 19 },
     };
@@ -497,50 +592,276 @@ describe('MatchScreen', () => {
     expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.commandFeedback).toBe(feedback);
   });
 
-  it('forwards each exact frame event list once after audiovisual feedback without replaying on rerender', () => {
+  it('shares one reduced-motion attack presentation across both HUDs, the canvas, and portraits', () => {
+    useReducedMotionMock.mockReturnValue(true);
+    const loop = activeLoop();
+    useMatchLoopMock.mockReturnValue(loop);
+    let presentation: AttackFeedbackPresentation = {
+      amount: 2,
+      combo: 2,
+      comboLabel: '2 COMBO',
+      displacementPx: 0,
+      id: 'attack:12:0',
+      intensity: 'medium',
+      phase: 'launch',
+      phaseProgress: 0.5,
+      reducedMotion: true,
+      source: 'player',
+      target: 'opponent',
+    };
+    let timelineOptions: UseAttackFeedbackOptions | undefined;
+    const useAttackFeedbackImpl = vi.fn((options: UseAttackFeedbackOptions) => {
+      timelineOptions = options;
+      return presentation;
+    });
+    const props = {
+      ...lifecycleProps,
+      floor: 2 as const,
+      onFinished: vi.fn(),
+      player: cloudCourier,
+      playerAssets: cloudCourierAssets,
+      seed: 17,
+      useAttackFeedbackImpl,
+    };
+
+    const rendered = render(<MatchScreen {...props} />);
+
+    expect(useReducedMotionMock).toHaveBeenCalledOnce();
+    expect(timelineOptions?.eventBatches).toBe(loop.eventBatches);
+    expect(timelineOptions?.reducedMotion).toBe(true);
+    expect(hudPropsSpy.mock.calls.at(-2)?.[0]?.feedback).toBe(presentation);
+    expect(hudPropsSpy.mock.calls.at(-1)?.[0]?.feedback).toBe(presentation);
+    expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.attackFeedback).toBe(presentation);
+    expect(canvasPropsSpy.mock.calls.at(-1)?.[0]?.reducedMotion).toBe(true);
+    const playerHud = document.querySelector('.battle-hud[data-side="player"]');
+    const opponentHud = document.querySelector('.battle-hud[data-side="opponent"]');
+    expect(playerHud).toHaveAttribute('data-attack-phase', 'launch');
+    expect(playerHud?.querySelector('[data-portrait-state]'))
+      .toHaveAttribute('data-portrait-state', 'attack');
+
+    presentation = { ...presentation, phase: 'impact' };
+    rendered.rerender(<MatchScreen {...props} />);
+    expect(opponentHud?.querySelector('[data-portrait-state]'))
+      .toHaveAttribute('data-portrait-state', 'hit');
+
+    useMatchLoopMock.mockReturnValue({
+      ...loop,
+      view: { ...loop.view, status: 'player-won' },
+    });
+    rendered.rerender(<MatchScreen {...props} />);
+    expect(playerHud?.querySelector('[data-portrait-state]'))
+      .toHaveAttribute('data-portrait-state', 'win');
+    expect(opponentHud?.querySelector('[data-portrait-state]'))
+      .toHaveAttribute('data-portrait-state', 'defeat');
+  });
+
+  it.each([
+    ['player', 'success'],
+    ['opponent', 'error'],
+  ] as const)('defers a %s attack sound and %s haptic until shared impact', (source, hapticType) => {
     const loop = activeLoop();
     const play = vi.fn();
     const audioPort = { ...createAudioPort(), play };
     const onScoreEvents = vi.fn();
+    const haptic = vi.fn(async () => undefined);
+    let timelineOptions: UseAttackFeedbackOptions | undefined;
     useMatchLoopMock.mockReturnValue(loop);
-    const rendered = render(
+    render(
       <MatchScreen
         {...lifecycleProps}
         audioPort={audioPort}
         floor={2}
         onFinished={vi.fn()}
         onScoreEvents={onScoreEvents}
+        platform={{ ...lifecycleProps.platform, haptic }}
         runScore={12_450}
         seed={17}
+        useAttackFeedbackImpl={(options) => {
+          timelineOptions = options;
+          return null;
+        }}
       />,
     );
     const options = useMatchLoopMock.mock.calls.at(-1)?.[0];
     const events = [
-      { type: 'lines-cleared' as const, side: 'player' as const, amount: 4, rows: [16, 17, 18, 19] },
-      { type: 'attack-sent' as const, side: 'player' as const, amount: 4 },
+      { type: 'lines-cleared' as const, side: 'opponent' as const, amount: 4, rows: [16, 17, 18, 19] },
+      { type: 'attack-sent' as const, side: source, amount: 4 },
     ] as const;
 
     act(() => options.onEvents(events, loop.view));
 
     expect(onScoreEvents).toHaveBeenCalledOnce();
     expect(onScoreEvents.mock.calls[0]?.[0]).toBe(events);
+    expect(play).toHaveBeenCalledTimes(1);
     expect(play).toHaveBeenCalledWith('clear', { intensity: 3, duckMusic: true });
-    expect(play).toHaveBeenCalledWith('attack', { intensity: 3, duckMusic: true });
+    expect(haptic).not.toHaveBeenCalled();
     expect(play.mock.invocationCallOrder[0])
       .toBeLessThan(onScoreEvents.mock.invocationCallOrder[0]!);
+
+    act(() => timelineOptions?.onImpact?.({
+      amount: 4,
+      combo: 0,
+      comboLabel: null,
+      id: `attack:12:${source}`,
+      intensity: 'strong',
+      source,
+      target: source === 'player' ? 'opponent' : 'player',
+    }));
+
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenLastCalledWith('attack', { intensity: 3, duckMusic: true });
+    expect(haptic).toHaveBeenCalledOnce();
+    expect(haptic).toHaveBeenCalledWith(hapticType);
+  });
+
+  it.each([
+    [false, true, 0, 1],
+    [true, false, 1, 0],
+  ] as const)('suppresses only the disabled impact channel', (
+    soundEnabled,
+    hapticsEnabled,
+    expectedSounds,
+    expectedHaptics,
+  ) => {
+    const play = vi.fn();
+    const haptic = vi.fn(async () => undefined);
+    let timelineOptions: UseAttackFeedbackOptions | undefined;
+    useMatchLoopMock.mockReturnValue(activeLoop());
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={{ ...createAudioPort(), play }}
+        floor={2}
+        onFinished={vi.fn()}
+        platform={{ ...lifecycleProps.platform, haptic }}
+        seed={17}
+        settings={{ ...lifecycleProps.settings, hapticsEnabled, soundEnabled }}
+        useAttackFeedbackImpl={(options) => {
+          timelineOptions = options;
+          return null;
+        }}
+      />,
+    );
+
+    act(() => timelineOptions?.onImpact?.({
+      amount: 2,
+      combo: 0,
+      comboLabel: null,
+      id: 'attack:12:0',
+      intensity: 'medium',
+      source: 'player',
+      target: 'opponent',
+    }));
+
+    expect(play).toHaveBeenCalledTimes(expectedSounds);
+    expect(haptic).toHaveBeenCalledTimes(expectedHaptics);
+  });
+
+  it('keeps score delivery and rendering isolated from rejected optional feedback ports', async () => {
+    const loop = activeLoop();
+    const play = vi.fn(() => {
+      throw new Error('audio unavailable');
+    });
+    const haptic = vi.fn(async () => {
+      throw new Error('haptics unavailable');
+    });
+    const onScoreEvents = vi.fn();
+    let timelineOptions: UseAttackFeedbackOptions | undefined;
+    useMatchLoopMock.mockReturnValue(loop);
+    render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={{ ...createAudioPort(), play }}
+        floor={2}
+        onFinished={vi.fn()}
+        onScoreEvents={onScoreEvents}
+        platform={{ ...lifecycleProps.platform, haptic }}
+        seed={17}
+        useAttackFeedbackImpl={(options) => {
+          timelineOptions = options;
+          return null;
+        }}
+      />,
+    );
+    const events = [
+      { type: 'lines-cleared' as const, side: 'opponent' as const, amount: 2 },
+      { type: 'attack-sent' as const, side: 'player' as const, amount: 2 },
+    ] as const;
+
+    expect(() => act(() => useMatchLoopMock.mock.calls.at(-1)?.[0].onEvents(
+      events,
+      loop.view,
+    ))).not.toThrow();
+    expect(onScoreEvents.mock.calls[0]?.[0]).toBe(events);
+
+    await act(async () => {
+      timelineOptions?.onImpact?.({
+        amount: 2,
+        combo: 0,
+        comboLabel: null,
+        id: 'attack:12:0',
+        intensity: 'medium',
+        source: 'player',
+        target: 'opponent',
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('match-screen')).toBeInTheDocument();
+    expect(haptic).toHaveBeenCalledWith('success');
+  });
+
+  it('keeps the impact callback stable while reading current settings and ports', () => {
+    const firstPlay = vi.fn();
+    const nextPlay = vi.fn();
+    const firstHaptic = vi.fn(async () => undefined);
+    const nextHaptic = vi.fn(async () => undefined);
+    const timelineCalls: UseAttackFeedbackOptions[] = [];
+    const useAttackFeedbackImpl = (options: UseAttackFeedbackOptions) => {
+      timelineCalls.push(options);
+      return null;
+    };
+    useMatchLoopMock.mockReturnValue(activeLoop());
+    const rendered = render(
+      <MatchScreen
+        {...lifecycleProps}
+        audioPort={{ ...createAudioPort(), play: firstPlay }}
+        floor={2}
+        onFinished={vi.fn()}
+        platform={{ ...lifecycleProps.platform, haptic: firstHaptic }}
+        seed={17}
+        settings={{ ...lifecycleProps.settings, hapticsEnabled: false, soundEnabled: false }}
+        useAttackFeedbackImpl={useAttackFeedbackImpl}
+      />,
+    );
+    const firstCallback = timelineCalls.at(-1)?.onImpact;
 
     rendered.rerender(
       <MatchScreen
         {...lifecycleProps}
-        audioPort={audioPort}
+        audioPort={{ ...createAudioPort(), play: nextPlay }}
         floor={2}
         onFinished={vi.fn()}
-        onScoreEvents={onScoreEvents}
-        runScore={12_450}
+        platform={{ ...lifecycleProps.platform, haptic: nextHaptic }}
         seed={17}
+        useAttackFeedbackImpl={useAttackFeedbackImpl}
       />,
     );
-    expect(onScoreEvents).toHaveBeenCalledOnce();
+
+    expect(timelineCalls.at(-1)?.onImpact).toBe(firstCallback);
+    act(() => firstCallback?.({
+      amount: 4,
+      combo: 0,
+      comboLabel: null,
+      id: 'attack:12:0',
+      intensity: 'strong',
+      source: 'opponent',
+      target: 'player',
+    }));
+    expect(firstPlay).not.toHaveBeenCalled();
+    expect(firstHaptic).not.toHaveBeenCalled();
+    expect(nextPlay).toHaveBeenCalledWith('attack', { intensity: 3, duckMusic: true });
+    expect(nextHaptic).toHaveBeenCalledWith('error');
   });
 
   it('adapts immediate volume previews and commits one SFX preview cue without owning audio', async () => {

@@ -5,11 +5,19 @@ import {
   createAppServices,
   type AppServiceOverrides,
 } from './app/app-services';
+import { isDevClearedProgressEnabled } from './app/dev-cleared-mode';
 import { resolveRuntimeMode } from './app/runtime-mode';
+import { PlatformBackProvider } from './platform/back-request';
 import { SafeAreaProvider } from './platform/safe-area-provider';
 import './styles/global.css';
 
 const runtimeMode = resolveRuntimeMode(import.meta.env.VITE_RUNTIME_MODE);
+const devClearedProgress = isDevClearedProgressEnabled({
+  isDev: import.meta.env.DEV,
+  mode: import.meta.env.MODE,
+  runtimeMode,
+  flag: import.meta.env.VITE_DEV_ALL_CLEARED,
+});
 const root = document.getElementById('root');
 
 if (root === null) {
@@ -31,13 +39,20 @@ async function mountApplication(): Promise<void> {
     runtimeMode,
     window.localStorage,
     serviceOverrides,
+    { devClearedProgress },
   );
 
   createRoot(rootElement).render(
     <StrictMode>
-      <SafeAreaProvider platform={services.platform}>
-        <AppRoot services={services} renderMatch={renderMatch} />
-      </SafeAreaProvider>
+      <PlatformBackProvider platform={services.platform}>
+        <SafeAreaProvider platform={services.platform}>
+          <AppRoot
+            devClearedMode={devClearedProgress}
+            services={services}
+            renderMatch={renderMatch}
+          />
+        </SafeAreaProvider>
+      </PlatformBackProvider>
     </StrictMode>,
   );
 }

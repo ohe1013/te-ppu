@@ -18,6 +18,7 @@ export interface PlatformPort {
   getIdentity(): Promise<UserIdentity>;
   getInitialSafeArea(): SafeArea;
   subscribeSafeArea(listener: (value: SafeArea) => void): () => void;
+  subscribeBackRequest?(listener: () => void): () => void;
   lockPortrait(): Promise<void>;
   haptic(type: HapticType): Promise<void>;
   close(): Promise<void>;

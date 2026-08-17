@@ -13,6 +13,7 @@ import type {
 import {
   DEFAULT_PROGRESS,
   cloneProgressState,
+  createDevClearedProgress,
   type ProgressLoadResult,
   type ProgressRepository,
   type ProgressRepositoryFactory,
@@ -23,6 +24,7 @@ import {
 } from '../progression/index';
 import { PlatformError } from '../platform/apps-in-toss-platform';
 import type { AudioPort } from '../platform/audio-port';
+import { PlatformBackProvider, usePlatformBack } from '../platform/back-request';
 import type { PlatformPort } from '../platform/platform-port';
 import {
   PLAYER_CHARACTER_IDS,
@@ -206,6 +208,31 @@ function createAssetManager(
   };
 }
 
+function createBackPlatform() {
+  let listener: (() => void) | undefined;
+  const platform: PlatformPort = {
+    ...createTestPlatform(),
+    kind: 'android',
+    subscribeBackRequest(nextListener) {
+      listener = nextListener;
+      return () => {
+        listener = undefined;
+      };
+    },
+  };
+  return {
+    platform,
+    emitBack() {
+      listener?.();
+    },
+  };
+}
+
+function BackFallback({ onBack }: { readonly onBack: () => void }) {
+  usePlatformBack(onBack, { priority: 1 });
+  return null;
+}
+
 function image(url: string): LoadedImageRef {
   return { url } as LoadedImageRef;
 }
@@ -290,6 +317,7 @@ function TestMatch({
   return (
     <section
       data-encounter-kind={specialEncounter === undefined ? 'floor' : 'owl'}
+      data-floor={floor}
       data-player-attack={selectedAssets?.portraits.attack?.url ?? 'missing'}
       data-player-focus={selectedAssets?.portraits.focus?.url ?? 'missing'}
       data-player-full-art={selectedAssets?.fullArt?.url ?? 'missing'}
@@ -364,6 +392,8 @@ function renderGame(
   nowIso: () => string = () => '2026-08-10T12:34:56.000Z',
   onRenderMatch: (props: MatchRouteViewProps) => void = () => undefined,
   leaderboard: LeaderboardRepository = createLocalLeaderboardRepository(),
+  onUnhandledBack?: () => void,
+  devClearedMode = false,
 ) {
   let seed = 100;
   const services: AppServices = {
@@ -374,15 +404,50 @@ function renderGame(
     leaderboardRepository: leaderboard,
   };
   return render(
-    <AppRoot
-      services={services}
-      createMatchSeed={() => seed++}
-      nowIso={nowIso}
-      renderMatch={(props) => {
-        onRenderMatch(props);
-        return <TestMatch {...props} />;
-      }}
-    />,
+    <PlatformBackProvider platform={platform}>
+      <AppRoot
+        services={services}
+        createMatchSeed={() => seed++}
+        devClearedMode={devClearedMode}
+        nowIso={nowIso}
+        renderMatch={(props) => {
+          onRenderMatch(props);
+          return <TestMatch {...props} />;
+        }}
+      />
+      {onUnhandledBack === undefined ? null : <BackFallback onBack={onUnhandledBack} />}
+    </PlatformBackProvider>,
+  );
+}
+
+function renderAdministratorGame(repository: ProgressRepository) {
+  return renderGame(
+    repository,
+    createTestPlatform(),
+    createAssetManager(),
+    createAudioPort(),
+    () => '2026-08-10T12:34:56.000Z',
+    () => undefined,
+    createLocalLeaderboardRepository(),
+    undefined,
+    true,
+  );
+}
+
+function renderGameWithNativeBack(
+  repository: ProgressRepository,
+  back: ReturnType<typeof createBackPlatform>,
+  onUnhandledBack: () => void = () => undefined,
+) {
+  return renderGame(
+    repository,
+    back.platform,
+    createAssetManager(),
+    createAudioPort(),
+    () => '2026-08-10T12:34:56.000Z',
+    () => undefined,
+    createLocalLeaderboardRepository(),
+    onUnhandledBack,
   );
 }
 
@@ -520,6 +585,104 @@ describe('AppRoot', () => {
 
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
     expect(screen.getByRole('button', { name: '도전 계속' })).toBeInTheDocument();
+  });
+
+  it('maps native back from ordinary setup, ranking, and tower routes to their visible back actions', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    renderGameWithNativeBack(new TestProgressRepository(floorOneProgress), back);
+    await screen.findByTestId('title-screen');
+
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await screen.findByTestId('name-entry-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '플레이어 변경' }));
+    await enterInitials(user, 'RVT');
+    await screen.findByTestId('character-select-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '랭킹' }));
+    await screen.findByTestId('ranking-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '도전 시작' }));
+    await screen.findByTestId('tower-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+  });
+
+  it('returns only a first encounter intro to the tower on native back', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    renderGameWithNativeBack(new TestProgressRepository(floorOneProgress), back);
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '1층 선택' }));
+    expect(await screen.findByTestId('floor-intro-screen')).toHaveAttribute(
+      'data-encounter-index',
+      '0',
+    );
+    act(() => back.emitBack());
+
+    expect(await screen.findByTestId('tower-screen')).toBeVisible();
+  });
+
+  it('consumes native back on a result and an intermediate intro without bypassing progression', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    const fallback = vi.fn();
+    renderGameWithNativeBack(
+      new TestProgressRepository(floorOneProgress),
+      back,
+      fallback,
+    );
+
+    await enterMatch(user, 1, 0);
+    await finishWin(user);
+    act(() => back.emitBack());
+    expect(screen.getByTestId('result-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '다음 상대' }));
+    const intro = await screen.findByTestId('floor-intro-screen');
+    expect(intro).toHaveAttribute('data-encounter-index', '1');
+    act(() => back.emitBack());
+    expect(screen.getByTestId('floor-intro-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('protects owl progression and uses native back from the ending to finish the run', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    const fallback = vi.fn();
+    renderGameWithNativeBack(
+      new TestProgressRepository(floorFiveProgress),
+      back,
+      fallback,
+    );
+
+    await reachOwlReveal(user);
+    act(() => back.emitBack());
+    expect(screen.getByTestId('owl-reveal-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    await user.click(screen.getByRole('button', { name: 'finish win' }));
+    await screen.findByTestId('owl-result-screen');
+    act(() => back.emitBack());
+    expect(screen.getByTestId('owl-result-screen')).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '엔딩 보기' }));
+    await screen.findByTestId('ending-screen');
+    act(() => back.emitBack());
+    expect(await screen.findByTestId('title-screen')).toBeVisible();
+    expect(screen.getByRole('button', { name: '도전 시작' })).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('shows title after boot and saves a first profile before entering the tower', async () => {
@@ -1328,6 +1491,157 @@ describe('AppRoot', () => {
     fireEvent.click(forbiddenFloor);
     expect(screen.getByTestId('tower-screen')).toBeInTheDocument();
     expect(screen.queryByTestId('floor-intro-screen')).not.toBeInTheDocument();
+  });
+
+  it('starts any selected administrator floor with a matching score run', async () => {
+    const user = userEvent.setup();
+    renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));
+
+    await enterTower(user);
+    expect(screen.getByRole('button', { name: '5층 선택' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '5층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-floor', '5');
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('0:0');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
+  });
+
+  it('replaces a suspended administrator floor without changing saved clears', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(createDevClearedProgress());
+    renderAdministratorGame(repository);
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '2층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+    await user.click(screen.getByRole('button', { name: '4층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-floor', '4');
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('0:0');
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+    expect(screen.getAllByText('클리어 완료 · 재도전 가능')).toHaveLength(5);
+    expect(repository.saves).toEqual([]);
+  });
+
+  it('resumes the same suspended administrator opponent', async () => {
+    const user = userEvent.setup();
+    renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '3층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await finishWin(user);
+    await user.click(within(screen.getByTestId('result-screen')).getByRole('button'));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('second-opponent checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+    await user.click(screen.getByRole('button', { name: /3층 2번째 상대부터 계속/ }));
+    expect(await screen.findByTestId('floor-intro-screen')).toHaveAttribute(
+      'data-encounter-index',
+      '1',
+    );
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-floor', '3');
+    expect(screen.getByTestId('match-encounter')).toHaveTextContent('1:1');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+  });
+
+  it('keeps a suspended administrator continuation when reselecting the current difficulty', async () => {
+    const user = userEvent.setup();
+    const repository = new TestProgressRepository(createDevClearedProgress());
+    renderAdministratorGame(repository);
+
+    await enterMatch(user, 2, 0);
+    await finishWin(user);
+    await user.click(within(screen.getByTestId('result-screen')).getByRole('button'));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 001000');
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+
+    const saveCount = repository.saves.length;
+    const currentDifficulty = screen.getByRole('button', { name: '어려움' });
+    expect(currentDifficulty).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /2층 2번째 상대부터 계속/ })).toBeEnabled();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+
+    await user.click(currentDifficulty);
+
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '1000');
+    expect(screen.getByRole('button', { name: /2층 2번째 상대부터 계속/ })).toBeEnabled();
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 2층 2번째 상대 이어하기 · 모든 층 선택 가능',
+    );
+    expect(repository.saves).toHaveLength(saveCount);
+  });
+
+  it('resumes the suspended administrator owl battle', async () => {
+    const user = userEvent.setup();
+    renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));
+
+    await enterTower(user);
+    await user.click(screen.getByRole('button', { name: '5층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await completeFloor(user, false);
+    await user.click(screen.getByRole('button', { name: '탑으로' }));
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    const confirmedScore = screen.getByTestId('run-score').textContent;
+    if (confirmedScore === null) throw new Error('owl score checkpoint was not rendered');
+
+    await user.click(screen.getByRole('button', { name: 'emit score events' }));
+    expect(screen.getByTestId('run-score')).not.toHaveTextContent(confirmedScore);
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+
+    expect(await screen.findByTestId('tower-screen')).toHaveTextContent(
+      '관리자 테스트 · 최종전 이어하기 · 모든 층 선택 가능',
+    );
+    await user.click(screen.getByRole('button', { name: '최종전 계속' }));
+    await screen.findByTestId('owl-reveal-screen');
+    await user.click(screen.getByRole('button', { name: '부엉이와 대결' }));
+    expect(await screen.findByTestId('match-screen')).toHaveAttribute('data-encounter-kind', 'owl');
+    expect(screen.getByTestId('run-score')).toHaveTextContent(confirmedScore);
+  });
+
+  it('switches administrator difficulty after progress and starts the next test at zero', async () => {
+    const user = userEvent.setup();
+    renderAdministratorGame(new TestProgressRepository(createDevClearedProgress()));
+
+    await enterMatch(user, 2, 0);
+    await finishWin(user);
+    await user.click(within(screen.getByTestId('result-screen')).getByRole('button'));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    await user.click(screen.getByRole('button', { name: '타워로 나가기' }));
+    await screen.findByTestId('tower-screen');
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '1000');
+    await user.click(screen.getByRole('button', { name: '쉬움' }));
+
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-difficulty', 'easy');
+    expect(screen.getByTestId('app-shell')).toHaveAttribute('data-run-score', '0');
+    expect(screen.getByTestId('tower-run-status')).toHaveTextContent(
+      '관리자 테스트 · 모든 층 선택 가능',
+    );
+    for (const floor of [1, 2, 3, 4, 5]) {
+      expect(screen.getByRole('button', { name: `${floor}층 선택` })).toBeEnabled();
+    }
+    await user.click(screen.getByRole('button', { name: '4층 선택' }));
+    await user.click(screen.getByRole('button', { name: '대전 시작' }));
+    expect(screen.getByTestId('run-score')).toHaveTextContent('점수 000000');
   });
 
   it('retains the final floor bundle through ending and releases it only after returning to title', async () => {

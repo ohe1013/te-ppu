@@ -15,6 +15,8 @@ export interface LocalProgressRepositoryOptions {
   readonly progressKey: string;
   readonly backupPrefix: string;
   readonly legacyReadKey?: string;
+  readonly initialState?: ProgressState;
+  readonly persistInitialStateWhenMissing?: boolean;
 }
 
 const READ_FAILED: ProgressError = {
@@ -30,10 +32,6 @@ const WRITE_FAILED: ProgressError = {
   message: 'Progress could not be saved.',
 };
 
-function defaults(): ProgressState {
-  return cloneProgressState(DEFAULT_PROGRESS);
-}
-
 function parseRaw(raw: string): ReturnType<typeof parsePersistedProgress> {
   try {
     return parsePersistedProgress(JSON.parse(raw));
@@ -47,6 +45,10 @@ export function createLocalProgressRepository(
   options: LocalProgressRepositoryOptions,
 ): ProgressRepository {
   const { progressKey, backupPrefix, legacyReadKey } = options;
+  const initialState = cloneProgressState(options.initialState ?? DEFAULT_PROGRESS);
+  function defaults(): ProgressState {
+    return cloneProgressState(initialState);
+  }
   if (progressKey.trim().length === 0) {
     throw new Error('Local progress repository requires a nonblank progress key.');
   }
@@ -60,6 +62,19 @@ export function createLocalProgressRepository(
     throw new Error('Local progress repository legacy read key must differ from the progress key.');
   }
 
+  function loadInitialState(): ProgressLoadResult {
+    const state = defaults();
+    if (!options.persistInitialStateWhenMissing) {
+      return { ok: true, state, recoveredFromCorruption: false };
+    }
+    try {
+      storage.setItem(progressKey, JSON.stringify(initialState));
+    } catch {
+      return { ok: false, state, error: WRITE_FAILED };
+    }
+    return { ok: true, state, recoveredFromCorruption: false };
+  }
+
   function recoverCorruptRaw(raw: string): ProgressLoadResult {
     try {
       storage.setItem(`${backupPrefix}${Date.now()}`, raw);
@@ -68,7 +83,7 @@ export function createLocalProgressRepository(
     }
 
     try {
-      storage.setItem(progressKey, JSON.stringify(DEFAULT_PROGRESS));
+      storage.setItem(progressKey, JSON.stringify(initialState));
     } catch {
       return { ok: false, state: defaults(), error: WRITE_FAILED };
     }
@@ -114,11 +129,7 @@ export function createLocalProgressRepository(
       }
 
       if (legacyReadKey === undefined) {
-        return {
-          ok: true,
-          state: defaults(),
-          recoveredFromCorruption: false,
-        };
+        return loadInitialState();
       }
 
       try {
@@ -128,11 +139,7 @@ export function createLocalProgressRepository(
       }
 
       if (raw === null) {
-        return {
-          ok: true,
-          state: defaults(),
-          recoveredFromCorruption: false,
-        };
+        return loadInitialState();
       }
 
       return loadRaw(raw, true);

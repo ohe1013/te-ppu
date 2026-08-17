@@ -45,12 +45,12 @@ export {
   canPlace,
   clearFullRows,
   deleteVisibleRow,
-  dropGarbageCell,
   emptyBoard,
   lockPiece,
   occupiedCells,
+  raiseGarbageRow,
 } from './board';
-export type { ClearResult, DeleteRowResult, GarbageResult } from './board';
+export type { ClearResult, DeleteRowResult, RaiseGarbageRowResult } from './board';
 export {
   advanceSideTick,
   applySideCommands,
@@ -67,7 +67,7 @@ export {
   useRowClear,
 } from './items';
 export type { ItemAction } from './items';
-export { dropGarbageBatch, resolveAttackExchange } from './attack';
+export { raiseGarbageBatch, resolveAttackExchange } from './attack';
 export type { AttackExchangeInput, AttackExchangeResult } from './attack';
 
 export {

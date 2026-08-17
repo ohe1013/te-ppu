@@ -1,12 +1,52 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PlatformBackProvider, usePlatformBack } from '../../platform/back-request';
+import type { PlatformPort } from '../../platform/platform-port';
 import { cloneProgressState, DEFAULT_PROGRESS } from '../../progression';
 import { TitleScreen } from './TitleScreen';
 
 afterEach(cleanup);
+
+function createBackPlatform() {
+  let listener: (() => void) | undefined;
+  const platform: PlatformPort = {
+    kind: 'android',
+    close: async () => undefined,
+    getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
+    getInitialSafeArea: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+    haptic: async () => undefined,
+    lockPortrait: async () => undefined,
+    subscribeBackRequest(nextListener) {
+      listener = nextListener;
+      return () => {
+        listener = undefined;
+      };
+    },
+    subscribeSafeArea: () => () => undefined,
+  };
+  return {
+    platform,
+    emitBack() {
+      listener?.();
+    },
+  };
+}
+
+function BackFallback({ onBack }: { readonly onBack: () => void }) {
+  usePlatformBack(onBack, { priority: 1 });
+  return null;
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
 
 describe('TitleScreen', () => {
   it('shows brand, owl, player summary, and exactly four primary actions', async () => {
@@ -91,6 +131,69 @@ describe('TitleScreen', () => {
     await user.click(screen.getByRole('button', { name: '게임 종료' }));
     await user.click(screen.getByRole('button', { name: '게임 종료 확인' }));
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it('opens and cancels the title exit confirmation with consecutive native back requests', () => {
+    const back = createBackPlatform();
+    const onExit = vi.fn(async () => undefined);
+    render(
+      <PlatformBackProvider platform={back.platform}>
+        <TitleScreen
+          commonAssets={null}
+          notice={null}
+          onChangePlayer={vi.fn()}
+          onExit={onExit}
+          onOpenRanking={vi.fn()}
+          onStartRun={vi.fn()}
+          progress={DEFAULT_PROGRESS}
+        />
+      </PlatformBackProvider>,
+    );
+
+    act(() => back.emitBack());
+    expect(screen.getByRole('dialog', { name: '게임을 종료할까요?' })).toBeVisible();
+    act(() => back.emitBack());
+
+    expect(screen.queryByRole('dialog', { name: '게임을 종료할까요?' })).toBeNull();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('consumes native back while a confirmed app close is pending or completed', async () => {
+    const user = userEvent.setup();
+    const back = createBackPlatform();
+    const close = deferred();
+    const fallback = vi.fn();
+    const onExit = vi.fn(() => close.promise);
+    render(
+      <PlatformBackProvider platform={back.platform}>
+        <TitleScreen
+          commonAssets={null}
+          notice={null}
+          onChangePlayer={vi.fn()}
+          onExit={onExit}
+          onOpenRanking={vi.fn()}
+          onStartRun={vi.fn()}
+          progress={DEFAULT_PROGRESS}
+        />
+        <BackFallback onBack={fallback} />
+      </PlatformBackProvider>,
+    );
+
+    act(() => back.emitBack());
+    await user.click(screen.getByRole('button', { name: '게임 종료 확인' }));
+    expect(onExit).toHaveBeenCalledOnce();
+    act(() => back.emitBack());
+    expect(screen.getByRole('dialog', { name: '게임을 종료할까요?' })).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
+
+    await act(async () => {
+      close.resolve();
+      await close.promise;
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('게임을 종료하는 중입니다.');
+    act(() => back.emitBack());
+    expect(screen.getByRole('dialog', { name: '게임을 종료할까요?' })).toBeVisible();
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('presents a first player without inventing a profile or score', () => {

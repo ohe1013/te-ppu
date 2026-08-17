@@ -6,9 +6,11 @@ import {
   type PublicMatchView,
   type SideId,
 } from '../../core/index';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 
 type EventBatch = {
   readonly events: readonly GameEvent[];
+  readonly sequence: number;
   readonly tick: number;
   readonly view: PublicMatchView;
 };
@@ -58,6 +60,65 @@ async function portraitRuntime() {
 }
 
 describe('portrait state', () => {
+  it('overrides only the active attack side and phase while preserving terminal portraits', async () => {
+    const { portraitStateWithAttackFeedback } = await portraitRuntime();
+    const launchFeedback: AttackFeedbackPresentation = {
+      amount: 2,
+      combo: 2,
+      comboLabel: '2 COMBO',
+      displacementPx: 4,
+      id: 'attack:12:0',
+      intensity: 'medium',
+      phase: 'launch',
+      phaseProgress: 0.5,
+      reducedMotion: false,
+      source: 'player',
+      target: 'opponent',
+    };
+    const impactFeedback: AttackFeedbackPresentation = {
+      ...launchFeedback,
+      phase: 'impact',
+    };
+
+    expect(portraitStateWithAttackFeedback(
+      'idle',
+      'player',
+      false,
+      launchFeedback,
+    )).toBe('attack');
+    expect(portraitStateWithAttackFeedback(
+      'smug',
+      'opponent',
+      false,
+      launchFeedback,
+    )).toBe('smug');
+    expect(portraitStateWithAttackFeedback(
+      'idle',
+      'opponent',
+      false,
+      impactFeedback,
+    )).toBe('hit');
+    expect(portraitStateWithAttackFeedback(
+      'focus',
+      'player',
+      false,
+      impactFeedback,
+    )).toBe('focus');
+    expect(portraitStateWithAttackFeedback(
+      'panic',
+      'opponent',
+      false,
+      { ...impactFeedback, phase: 'settle' },
+    )).toBe('hit');
+    expect(portraitStateWithAttackFeedback(
+      'defeat',
+      'opponent',
+      true,
+      impactFeedback,
+    )).toBe('defeat');
+    expect(portraitStateWithAttackFeedback('rage', 'opponent', false, null)).toBe('rage');
+  });
+
   it('resolves terminal, hit, attack, danger, focus, smug, and idle in priority order', async () => {
     const { resolvePortraitState } = await portraitRuntime();
 
@@ -125,6 +186,7 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const early: EventBatch = {
       events: [{ type: 'attack-sent', side: 'opponent', amount: 2 }],
+      sequence: 18,
       tick: 18,
       view: viewAt(18, { dangerFor: 'opponent' }),
     };
@@ -133,6 +195,7 @@ describe('portrait state', () => {
         { type: 'lines-cleared', side: 'player', amount: 2 },
         { type: 'freeze-applied', side: 'opponent', item: 'freeze' },
       ],
+      sequence: 19,
       tick: 19,
       view: viewAt(19, { combo: 2, comboFor: 'player' }),
     };
@@ -144,7 +207,7 @@ describe('portrait state', () => {
       role: 'lieutenant',
       side: 'opponent',
     });
-    expect(opponent.attackUntil).toBe(36);
+    expect(opponent.attackUntil).toBe(0);
     expect(opponent.hitUntil).toBe(44);
     expect(opponent.smugUntil).toBe(57);
     expect(resolvePortraitState({
@@ -170,6 +233,7 @@ describe('portrait state', () => {
     const terminal = reducePortraitBatches(opponent, {
       batches: [{
         events: [{ type: 'match-ended', side: 'player' }],
+        sequence: 45,
         tick: 45,
         view: viewAt(45, { status: 'player-won' }),
       }],
@@ -194,11 +258,13 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const earlierCombo: EventBatch = {
       events: [{ amount: 2, side: 'player', type: 'lines-cleared' }],
+      sequence: 18,
       tick: 18,
       view: viewAt(18, { combo: 2, comboFor: 'player' }),
     };
     const laterSingle: EventBatch = {
       events: [{ amount: 1, side: 'player', type: 'lines-cleared' }],
+      sequence: 19,
       tick: 19,
       view: viewAt(19, { combo: 1, comboFor: 'player' }),
     };
@@ -222,12 +288,15 @@ describe('portrait state', () => {
       reducePortraitBatches,
       resolvePortraitState,
     } = await portraitRuntime();
-    const hit = reducePortraitBatches(createPortraitMemory(), {
+    const raised = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
-        events: [
-          { amount: 1, side: 'player', type: 'garbage-landed' },
-          { item: 'freeze', side: 'player', type: 'freeze-applied' },
-        ],
+        events: [{
+          amount: 4,
+          holeColumns: [3, 2, 4, 3],
+          side: 'player',
+          type: 'garbage-raised',
+        }],
+        sequence: 10,
         tick: 10,
         view: viewAt(10),
       }],
@@ -236,9 +305,37 @@ describe('portrait state', () => {
       role: 'hero',
       side: 'player',
     });
-    expect(hit.hitUntil).toBe(35);
-    expect(resolvePortraitState({ ...hit, tick: 34 })).toBe('hit');
-    expect(resolvePortraitState({ ...hit, tick: 35 })).toBe('idle');
+    expect(raised.hitUntil).toBe(0);
+
+    const singleRaised = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [{ amount: 1, holeColumns: [6], side: 'player', type: 'garbage-raised' }],
+        sequence: 10,
+        tick: 10,
+        view: viewAt(10),
+      }],
+      floor: 1,
+      latestView: viewAt(10),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(singleRaised.hitUntil).toBe(0);
+
+    const frozen = reducePortraitBatches(createPortraitMemory(), {
+      batches: [{
+        events: [{ item: 'freeze', side: 'player', type: 'freeze-applied' }],
+        sequence: 10,
+        tick: 10,
+        view: viewAt(10),
+      }],
+      floor: 1,
+      latestView: viewAt(10),
+      role: 'hero',
+      side: 'player',
+    });
+    expect(frozen.hitUntil).toBe(35);
+    expect(resolvePortraitState({ ...frozen, tick: 34 })).toBe('hit');
+    expect(resolvePortraitState({ ...frozen, tick: 35 })).toBe('idle');
 
     const hero = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
@@ -246,6 +343,7 @@ describe('portrait state', () => {
           { item: 'row-clear', side: 'player', type: 'item-used' },
           { amount: 2, side: 'player', type: 'lines-cleared' },
         ],
+        sequence: 20,
         tick: 20,
         view: viewAt(20, { combo: 2, comboFor: 'player' }),
       }],
@@ -262,6 +360,7 @@ describe('portrait state', () => {
     const lieutenant = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ amount: 1, side: 'opponent', type: 'attack-sent' }],
+        sequence: 30,
         tick: 30,
         view: viewAt(30),
       }],
@@ -270,21 +369,22 @@ describe('portrait state', () => {
       role: 'lieutenant',
       side: 'opponent',
     });
-    expect(lieutenant.attackUntil).toBe(48);
+    expect(lieutenant.attackUntil).toBe(0);
     expect(lieutenant.smugUntil).toBe(69);
-    expect(resolvePortraitState({ ...lieutenant, tick: 47 })).toBe('attack');
-    expect(resolvePortraitState({ ...lieutenant, tick: 48 })).toBe('smug');
+    expect(resolvePortraitState({ ...lieutenant, tick: 30 })).toBe('smug');
     expect(resolvePortraitState({ ...lieutenant, tick: 69 })).toBe('idle');
 
     const safeLater = reducePortraitBatches(createPortraitMemory(), {
       batches: [
         {
           events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          sequence: 70,
           tick: 70,
           view: viewAt(70, { dangerFor: 'opponent' }),
         },
         {
           events: [{ item: 'queue-swap', side: 'opponent', type: 'item-used' }],
+          sequence: 71,
           tick: 70,
           view: viewAt(70),
         },
@@ -306,6 +406,7 @@ describe('portrait state', () => {
     } = await portraitRuntime();
     const dangerBatch: EventBatch = {
       events: [{ type: 'item-used', side: 'opponent', item: 'queue-swap' }],
+      sequence: 30,
       tick: 30,
       view: viewAt(30, { dangerFor: 'opponent' }),
     };
@@ -344,6 +445,7 @@ describe('portrait state', () => {
     const playerLoss = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ type: 'match-ended', side: 'opponent' }],
+        sequence: 50,
         tick: 50,
         view: viewAt(50, { status: 'opponent-won' }),
       }],
@@ -357,6 +459,7 @@ describe('portrait state', () => {
     const demonWin = reducePortraitBatches(createPortraitMemory(), {
       batches: [{
         events: [{ type: 'match-ended', side: 'opponent' }],
+        sequence: 50,
         tick: 50,
         view: viewAt(50, { status: 'opponent-won' }),
       }],

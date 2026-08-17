@@ -97,6 +97,22 @@ describe('headless AI simulation', () => {
     expect(first.exceededTickLimit).toBe(true);
   });
 
+  it('keeps omitted difficulty byte-for-byte equivalent to explicit Easy', () => {
+    expect(runAiSimulation({ seed: 91, floor: 1, tickLimit: 240 })).toEqual(
+      runAiSimulation({ seed: 91, floor: 1, difficulty: 'easy', tickLimit: 240 }),
+    );
+  });
+
+  it('runs Hard deterministically with a different tested-player profile', () => {
+    const easy = runAiSimulation({ seed: 91, floor: 1, difficulty: 'easy', tickLimit: 240 });
+    const firstHard = runAiSimulation({ seed: 91, floor: 1, difficulty: 'hard', tickLimit: 240 });
+    const secondHard = runAiSimulation({ seed: 91, floor: 1, difficulty: 'hard', tickLimit: 240 });
+
+    expect(secondHard).toEqual(firstHard);
+    expect(firstHard.stateHash).not.toBe(easy.stateHash);
+    expect(firstHard.rejectedCommands).toBe(0);
+  });
+
   it.each([4, 5] as const)('runs canonical floor %i deterministically', (floor) => {
     const first = runAiSimulation({ seed: 91, floor, tickLimit: 240 });
     const second = runAiSimulation({ seed: 91, floor, tickLimit: 240 });

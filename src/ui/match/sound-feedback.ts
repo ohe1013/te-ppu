@@ -15,9 +15,13 @@ function clampIntensity(value: number): CueIntensity {
 }
 
 function cueForEvent(event: GameEvent, view: PublicMatchView): SoundCue | null {
-  if (event.type === 'piece-locked' || event.type === 'garbage-landed') return 'land';
+  if (event.type === 'piece-locked') return 'land';
+  if (
+    event.type === 'garbage-raised'
+    && typeof event.amount === 'number'
+    && event.amount > 0
+  ) return 'land';
   if (event.type === 'lines-cleared') return 'clear';
-  if (event.type === 'attack-sent') return 'attack';
   if (event.type === 'item-acquired' || event.type === 'item-used' || event.type === 'freeze-applied') return 'item';
   if (event.type !== 'match-ended') return null;
   if (view.status === 'player-won') return 'win';
@@ -31,8 +35,15 @@ function intensityForEvent(event: GameEvent, view: PublicMatchView): CueIntensit
     const combo = view.sides[event.side].combo;
     return clampIntensity(Math.max(amount - 1, combo - 1));
   }
-  if (event.type === 'attack-sent') return clampIntensity((event.amount ?? 1) - 1);
   return 0;
+}
+
+export function attackSoundFeedback(amount: number): SoundFeedback {
+  const intensity = clampIntensity(amount - 1);
+  return {
+    cue: 'attack',
+    options: { intensity, duckMusic: intensity >= 2 },
+  };
 }
 
 export function soundFeedbackForEvents(
@@ -50,7 +61,7 @@ export function soundFeedbackForEvents(
       cue,
       options: {
         intensity,
-        duckMusic: (cue === 'clear' || cue === 'attack') && intensity >= 2,
+        duckMusic: cue === 'clear' && intensity >= 2,
       },
     });
   }

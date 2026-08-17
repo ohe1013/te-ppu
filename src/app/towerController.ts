@@ -411,6 +411,15 @@ export class TowerController {
       : suspended;
   }
 
+  resetBattleSession(): boolean {
+    if (this.currentMatch !== null || this.currentAi !== null) return false;
+    this.currentSelectedFloor = null;
+    this.currentSeriesState = null;
+    this.currentSuspendedBattle = null;
+    this.currentRoute = 'TOWER';
+    return true;
+  }
+
   async selectDifficulty(difficulty: ProgressState['selectedDifficulty']): Promise<TowerSaveResult> {
     if (!isDifficulty(difficulty) || !canSelectDifficulty(this.currentProgress, difficulty)) {
       return { ok: false, reason: 'LOCKED_DIFFICULTY', route: this.currentRoute };

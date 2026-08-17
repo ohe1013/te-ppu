@@ -22,7 +22,7 @@ vi.mock('pixi.js', () => ({
 
 afterEach(cleanup);
 
-const atlasFor = (group: 'land-impact' | 'line-clear') => Object.fromEntries(
+const atlasFor = (group: 'garbage-land' | 'land-impact' | 'line-clear') => Object.fromEntries(
   battleAnimationFrameNames(group).map((name) => [name, {}]),
 ) as never;
 
@@ -36,6 +36,167 @@ function drawCallback(element: Element): (graphics: unknown) => void {
 }
 
 describe('BoardScene textured effect placement', () => {
+  it('rises one garbage batch from its owning snapshot and clips it in the content layer', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
+    const snapshotBoard = view.sides.player.board.map((cell, index) => (
+      index === 19 * 10 ? { kind: 'O' as const, garbage: true as const } : cell
+    ));
+    const latestBoard = view.sides.player.board.map((cell, index) => (
+      index === 4 * 10 ? { kind: 'T' as const } : cell
+    ));
+    const snapshot = {
+      ...view,
+      sides: { ...view.sides, player: { ...view.sides.player, active: null, board: snapshotBoard } },
+    };
+    const effect = {
+      event: { amount: 3, holeColumns: [3, 2, 4], side: 'player' as const, type: 'garbage-raised' as const },
+      group: 'garbage-land' as const,
+      id: 'garbage-9',
+      presentationProgress: 0,
+      priority: 'critical' as const,
+      side: 'player' as const,
+      tick: 9,
+      view: snapshot,
+    };
+    const result = render(
+      <BoardScene
+        effectProgress={0}
+        effects={[effect]}
+        model={{ ...view.sides.player, active: null, board: latestBoard }}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    const content = document.querySelector('pixicontainer[data-content-offset-rows]');
+    expect(content).toHaveAttribute('data-content-offset-rows', '3');
+    expect(content).toHaveAttribute('y', '30');
+    expect(document.querySelector('[data-testid="board-content-mask"]')).not.toBeNull();
+    const contentGraphics = document.querySelector('[data-testid="board-content-graphics"]');
+    drawCallback(contentGraphics! as Element)({});
+    expect(drawBoardPrimitivesSpy).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.arrayContaining([expect.objectContaining({ garbage: true, role: 'fixed-cell', x: 0, y: 19 })]),
+      100,
+      200,
+    );
+    expect(drawBoardPrimitivesSpy.mock.calls.at(-1)?.[1]).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'T', role: 'fixed-cell', x: 0, y: 4 })]),
+    );
+
+    result.rerender(
+      <BoardScene
+        effectProgress={1}
+        effects={[{ ...effect, presentationProgress: 1 }]}
+        model={{ ...view.sides.player, active: null, board: latestBoard }}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        selectedRow={null}
+        side="player"
+      />,
+    );
+    expect(document.querySelector('pixicontainer[data-content-offset-rows]'))
+      .toHaveAttribute('data-content-offset-rows', '0');
+  });
+
+  it('restores content alpha without displacement when reduced motion is requested', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
+    const effect = {
+      event: { amount: 3, holeColumns: [3, 2, 4], side: 'player' as const, type: 'garbage-raised' as const },
+      group: 'garbage-land' as const,
+      id: 'garbage-9',
+      presentationProgress: 0,
+      priority: 'critical' as const,
+      side: 'player' as const,
+      tick: 9,
+      view,
+    };
+    const result = render(
+      <BoardScene
+        effectProgress={0}
+        effects={[effect]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        reducedMotion
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    expect(document.querySelector('pixicontainer[data-content-offset-rows]'))
+      .toHaveAttribute('data-content-offset-rows', '0');
+    expect(document.querySelector('pixicontainer[data-content-alpha]'))
+      .toHaveAttribute('data-content-alpha', '0.7');
+
+    result.rerender(
+      <BoardScene
+        effectProgress={1}
+        effects={[{ ...effect, presentationProgress: 1 }]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        reducedMotion
+        selectedRow={null}
+        side="player"
+      />,
+    );
+    expect(document.querySelector('pixicontainer[data-content-alpha]'))
+      .toHaveAttribute('data-content-alpha', '1');
+  });
+
+  it('renders an atlas-backed reduced-motion garbage impact as one static frame', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
+    const result = render(
+      <BoardScene
+        atlas={atlasFor('garbage-land')}
+        effectProgress={0.5}
+        effects={[{
+          event: { amount: 2, holeColumns: [3, 2], side: 'player', type: 'garbage-raised' },
+          group: 'garbage-land',
+          id: 'garbage-static',
+          presentationProgress: 0.5,
+          priority: 'critical',
+          side: 'player',
+          tick: 9,
+          view,
+        }]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        reducedMotion
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    expect(document.querySelector('pixianimatedsprite')).toBeNull();
+    expect(document.querySelector('[data-testid="reduced-motion-garbage-frame"]'))
+      .not.toBeNull();
+
+    result.rerender(
+      <BoardScene
+        atlas={atlasFor('garbage-land')}
+        effectProgress={0.5}
+        effects={[{
+          event: { amount: 2, holeColumns: [3, 2], side: 'player', type: 'garbage-raised' },
+          group: 'garbage-land',
+          id: 'garbage-static',
+          presentationProgress: 0.5,
+          priority: 'critical',
+          side: 'player',
+          tick: 9,
+          view,
+        }]}
+        model={view.sides.player}
+        rect={{ height: 200, width: 100, x: 0, y: 0 }}
+        selectedRow={null}
+        side="player"
+      />,
+    );
+
+    expect(document.querySelector('[data-testid="reduced-motion-garbage-frame"]'))
+      .toBeNull();
+    expect(document.querySelector('pixianimatedsprite')).toHaveAttribute('autoplay');
+  });
+
   it('uses every cleared row from the batch effect rather than one centered sprite', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 5 }));
     render(
@@ -135,7 +296,7 @@ describe('BoardScene textured effect placement', () => {
       'items/freeze.png', 'tiles/garbage.png', 'tiles/o.png',
     ]);
     expect(created.map((texture) => texture.source.scaleMode)).toEqual(['nearest', 'nearest', 'nearest']);
-    const graphics = document.querySelector('pixigraphics');
+    const graphics = document.querySelector('[data-testid="board-content-graphics"]');
     expect(graphics).not.toBeNull();
     const graphicsDouble = {};
     drawCallback(graphics!)(graphicsDouble);

@@ -648,11 +648,18 @@ describe('lifecycle UI', () => {
     const batches = [
       {
         events: [{ type: 'attack-sent' as const, side: 'player' as const, amount: 1 }],
+        sequence: 18,
         tick: 18,
         view: { ...view, tick: 18 },
       },
       {
-        events: [{ type: 'garbage-landed' as const, side: 'opponent' as const, amount: 1 }],
+        events: [{
+          type: 'garbage-raised' as const,
+          side: 'opponent' as const,
+          amount: 1,
+          holeColumns: [6],
+        }],
+        sequence: 19,
         tick: 19,
         view: { ...view, tick: 19 },
       },
@@ -722,8 +729,8 @@ describe('lifecycle UI', () => {
     act(() => loopOptions?.onEvents?.(events, loop.view));
     expect(audio.play).toHaveBeenCalledWith('land', { intensity: 0, duckMusic: false });
     expect(audio.play).toHaveBeenCalledWith('clear', { intensity: 0, duckMusic: false });
-    expect(audio.play).toHaveBeenCalledWith('attack', { intensity: 0, duckMusic: false });
     expect(audio.play).toHaveBeenCalledWith('item', { intensity: 0, duckMusic: false });
+    expect(audio.play).not.toHaveBeenCalledWith('attack', { intensity: 0, duckMusic: false });
     expect(platform.haptic).toHaveBeenCalled();
 
     vi.clearAllMocks();

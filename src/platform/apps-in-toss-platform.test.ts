@@ -138,8 +138,9 @@ describe('browser platform selection', () => {
     expect(port.closeRequestCount).toBe(1);
   });
 
-  it('selects the browser port only for browser runtime mode', () => {
+  it('selects a distinct platform port for every runtime mode', () => {
     expect(createPlatform('browser').kind).toBe('browser');
     expect(createPlatform('apps-in-toss').kind).toBe('apps-in-toss');
+    expect(createPlatform('android').kind).toBe('android');
   });
 });

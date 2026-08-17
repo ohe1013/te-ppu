@@ -1,7 +1,6 @@
-import { dropGarbageCell } from './board';
+import { raiseGarbageRow } from './board';
 import {
   BOARD_WIDTH,
-  HIDDEN_ROWS,
   type GameEvent,
   type SideId,
   type SideState,
@@ -56,45 +55,50 @@ function streamFor(recipient: SideId): RandomStream {
     : RandomStream.GARBAGE_TO_OPPONENT;
 }
 
-export function dropGarbageBatch(
+export function raiseGarbageBatch(
   side: SideState,
   seed: number,
   recipient: SideId,
 ): { readonly side: SideState; readonly events: readonly GameEvent[] } {
   let board = side.board;
   let drawIndex = side.garbageDrawIndex;
-  const events: GameEvent[] = [];
+  const holeColumns: number[] = [];
 
   for (let remaining = count(side.incoming); remaining > 0; remaining -= 1) {
-    const column = randomInt(seed, streamFor(recipient), drawIndex, BOARD_WIDTH);
-    drawIndex += 1;
-    const dropped = dropGarbageCell(board, column);
-    if (dropped.topOut || dropped.landedY === null) {
+    const hole = randomInt(seed, streamFor(recipient), drawIndex, BOARD_WIDTH);
+    const raised = raiseGarbageRow(board, hole);
+    if (raised.status !== 'raised') {
+      const raisedEvent: GameEvent[] = holeColumns.length === 0 ? [] : [{
+        type: 'garbage-raised',
+        side: recipient,
+        amount: holeColumns.length,
+        holeColumns,
+      }];
       return {
         side: {
           ...side,
-          board: dropped.board,
+          board,
           incoming: 0,
           garbageDrawIndex: drawIndex,
           phase: 'top-out',
           topOut: true,
         },
-        events: [...events, { type: 'top-out', side: recipient }],
+        events: [...raisedEvent, { type: 'top-out', side: recipient }],
       };
     }
 
-    board = dropped.board;
-    events.push({
-      type: 'garbage-landed',
-      side: recipient,
-      amount: 1,
-      column,
-      landingRow: dropped.landedY - HIDDEN_ROWS,
-    });
+    board = raised.board;
+    holeColumns.push(hole);
+    drawIndex += 1;
   }
 
   return {
     side: { ...side, board, incoming: 0, garbageDrawIndex: drawIndex },
-    events,
+    events: holeColumns.length === 0 ? [] : [{
+      type: 'garbage-raised',
+      side: recipient,
+      amount: holeColumns.length,
+      holeColumns,
+    }],
   };
 }

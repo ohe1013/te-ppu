@@ -99,11 +99,13 @@ describe('core consumer integration script', () => {
       { type: 'lines-cleared', side: 'opponent', amount: 1, rows: [19] },
     ]);
     expect(result.events).toContainEqual({ type: 'attack-sent', side: 'opponent', amount: 5 });
-    expect(result.events.filter(({ type, side }) => type === 'garbage-landed' && side === 'player'))
-      .toHaveLength(5);
+    expect(result.events).toContainEqual({
+      type: 'garbage-raised',
+      side: 'player',
+      amount: 5,
+      holeColumns: [3, 2, 4, 3, 7],
+    });
     expect(result.state.sides.player.garbageDrawIndex).toBe(5);
-    expect(result.state.sides.player.board.cells[22 * BOARD_WIDTH + 3]).not.toBeNull();
-    expect(result.state.sides.player.board.cells[23 * BOARD_WIDTH + 3]).not.toBeNull();
   });
 
   it('routes all three item commands and expires freeze after exactly 180 target ticks', () => {

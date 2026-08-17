@@ -7,6 +7,7 @@ import {
   type SideId,
 } from '../../core/index';
 import type { Floor } from '../../progression/index';
+import type { AttackFeedbackPresentation } from './attack-feedback';
 
 const HIT_TICKS = 25;
 const ATTACK_TICKS = 18;
@@ -101,20 +102,17 @@ function applyEvent(
 ): PortraitMemory {
   if (event.side !== side) return memory;
 
-  if (event.type === 'garbage-landed' || event.type === 'freeze-applied') {
+  if (event.type === 'freeze-applied') {
     return {
       ...memory,
       hitUntil: Math.max(memory.hitUntil, tick + HIT_TICKS),
     };
   }
   if (event.type === 'attack-sent') {
-    const attackUntil = Math.max(memory.attackUntil, tick + ATTACK_TICKS);
+    if (role !== 'lieutenant') return memory;
     return {
       ...memory,
-      attackUntil,
-      smugUntil: role === 'lieutenant'
-        ? Math.max(memory.smugUntil, attackUntil + SMUG_TICKS)
-        : memory.smugUntil,
+      smugUntil: Math.max(memory.smugUntil, tick + ATTACK_TICKS + SMUG_TICKS),
     };
   }
   if (event.type === 'item-used') {
@@ -188,6 +186,21 @@ export function resolvePortraitState({
   if (tick < focusUntil) return 'focus';
   if (tick < smugUntil) return 'smug';
   return 'idle';
+}
+
+export function portraitStateWithAttackFeedback(
+  base: PortraitState,
+  side: SideId,
+  terminal: boolean,
+  feedback: AttackFeedbackPresentation | null,
+): PortraitState {
+  if (terminal || feedback === null) return base;
+  if (feedback.phase === 'launch' && feedback.source === side) return 'attack';
+  if (
+    (feedback.phase === 'impact' || feedback.phase === 'settle')
+    && feedback.target === side
+  ) return 'hit';
+  return base;
 }
 
 function usableUrl(url: string | undefined): string | undefined {

@@ -10,11 +10,11 @@ function SafeAreaProbe() {
   return <output data-testid="safe-area-value">{JSON.stringify(safeArea)}</output>;
 }
 
-function fakePlatform(initial: SafeArea) {
+function fakePlatform(initial: SafeArea, kind: PlatformPort['kind'] = 'browser') {
   let listener: ((value: SafeArea) => void) | null = null;
   let cleanupCount = 0;
   const platform: PlatformPort = {
-    kind: 'browser',
+    kind,
     getIdentity: async () => ({ kind: 'local', key: 'local-browser' }),
     getInitialSafeArea: () => initial,
     subscribeSafeArea: (next) => {
@@ -66,5 +66,37 @@ describe('SafeAreaProvider', () => {
 
     unmount();
     expect(fake.cleanupCount).toBe(1);
+  });
+
+  it('maps Capacitor native inset variables into the existing Android layout contract', () => {
+    const fake = fakePlatform(
+      { top: 0, right: 0, bottom: 0, left: 0 },
+      'android',
+    );
+    render(
+      <SafeAreaProvider platform={fake.platform}>
+        <SafeAreaProbe />
+      </SafeAreaProvider>,
+    );
+    const host = screen.getByTestId('safe-area-value').parentElement;
+
+    expect(host?.style.getPropertyValue('--safe-area-top')).toBe(
+      'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))',
+    );
+    expect(host?.style.getPropertyValue('--safe-area-right')).toBe(
+      'var(--safe-area-inset-right, env(safe-area-inset-right, 0px))',
+    );
+    expect(host?.style.getPropertyValue('--safe-area-bottom')).toBe(
+      'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))',
+    );
+    expect(host?.style.getPropertyValue('--safe-area-left')).toBe(
+      'var(--safe-area-inset-left, env(safe-area-inset-left, 0px))',
+    );
+    expect(host?.style.getPropertyValue('--native-close-exclusion-top')).toBe(
+      'calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px)',
+    );
+    expect(host?.style.getPropertyValue('--native-close-exclusion-right')).toBe(
+      'calc(var(--safe-area-inset-right, env(safe-area-inset-right, 0px)) + 10px)',
+    );
   });
 });

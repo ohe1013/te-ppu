@@ -1,4 +1,4 @@
-import { dropGarbageBatch, resolveAttackExchange } from './attack';
+import { raiseGarbageBatch, resolveAttackExchange } from './attack';
 import { clearFullRows } from './board';
 import {
   advanceSideTick,
@@ -280,9 +280,9 @@ export function stepMatch(
   for (const side of SIDES) {
     if (!readyForGarbage[side]) continue;
     let current = sides[side];
-    const dropped = dropGarbageBatch(current, state.matchSeed, side);
-    current = dropped.side;
-    garbageEvents.push(...dropped.events);
+    const raised = raiseGarbageBatch(current, state.matchSeed, side);
+    current = raised.side;
+    garbageEvents.push(...raised.events);
 
     if (!current.topOut && current.phase === 'garbage-drop') {
       const spawned = spawnNextPiece(current, state.matchSeed).state;

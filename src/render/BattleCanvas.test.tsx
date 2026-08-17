@@ -4,13 +4,18 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  BOARD_ROWS,
+  BOARD_WIDTH,
   createMatch,
   createPublicMatchView,
+  stepMatch,
   type GameEvent,
   type SideId,
 } from '../core/index';
 import type { AnimationEffect } from './event-animation-queue';
 import { battleAnimationFrameNames } from './battle-animation-registry';
+import type { Rect } from './board-layout';
+import type { AttackFeedbackPresentation } from '../ui/match/attack-feedback';
 
 const pixiSpies = vi.hoisted(() => ({
   baseDestroy: vi.fn(),
@@ -63,14 +68,18 @@ vi.mock('./BoardScene', () => ({
     atlas,
     effectProgress,
     effects,
+    rect,
+    reducedMotion,
     side,
   }: {
     readonly atlas?: Readonly<Record<string, unknown>> | null;
     readonly effectProgress: number;
     readonly effects: readonly AnimationEffect[];
+    readonly rect: Rect;
+    readonly reducedMotion?: boolean;
     readonly side: SideId;
   }) => {
-    pixiSpies.boardScene({ atlas, effectProgress, effects, side });
+    pixiSpies.boardScene({ atlas, effectProgress, effects, rect, reducedMotion, side });
     return (
       <div
         data-effect-ids={effects.map(({ id }) => id).join(',')}
@@ -81,6 +90,9 @@ vi.mock('./BoardScene', () => ({
             'view' in effect ? effect.view.tick : 'missing'
           }`
         )).join(',')}
+        data-reduced-motion={String(reducedMotion ?? false)}
+        data-x={rect.x}
+        data-y={rect.y}
         data-testid={`${side}-board-scene`}
       />
     );
@@ -88,6 +100,26 @@ vi.mock('./BoardScene', () => ({
 }));
 
 import { BattleCanvas } from './BattleCanvas';
+
+const launchFeedback: AttackFeedbackPresentation = {
+  amount: 2,
+  combo: 0,
+  comboLabel: null,
+  displacementPx: 4,
+  id: 'attack:0:0',
+  intensity: 'medium',
+  phase: 'launch',
+  phaseProgress: 0.5,
+  reducedMotion: false,
+  source: 'player',
+  target: 'opponent',
+};
+
+const impactFeedback: AttackFeedbackPresentation = {
+  ...launchFeedback,
+  phase: 'impact',
+  phaseProgress: 0.25,
+};
 
 let notifyResize: ResizeObserverCallback;
 const disconnect = vi.fn();
@@ -258,23 +290,21 @@ describe('BattleCanvas', () => {
     expect(screen.getByTestId('player-board-overlay-content')).toBeVisible();
   });
 
-  it('animates queued garbage events one at a time in FIFO slots', () => {
+  it('animates queued garbage batches one at a time in FIFO slots', () => {
     const clock = new EffectClock();
     clock.install();
     const events: readonly GameEvent[] = [
       {
-        amount: 1,
-        column: 2,
-        landingRow: 12,
+        amount: 2,
+        holeColumns: [2, 4],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
       {
         amount: 1,
-        column: 7,
-        landingRow: 18,
+        holeColumns: [7],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
     ];
 
@@ -282,7 +312,7 @@ describe('BattleCanvas', () => {
     render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
@@ -317,43 +347,331 @@ describe('BattleCanvas', () => {
     expect(playerScene).toHaveAttribute('data-effect-progress', '0');
   });
 
-  it.each([
-    ['without an atlas', undefined],
-    ['with an incomplete atlas', { 'attack-shot/00.png': {} }],
-  ] as const)('keeps an attack visible through the board fallback %s', (_name, atlas) => {
-    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+  it('starts the garbage rise immediately for the real lock-clear-garbage event order', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const initial = createMatch({ countdownTicks: 0, matchSeed: 0 });
+    const cells = [...initial.sides.player.board.cells];
+    for (let x = 0; x < BOARD_WIDTH; x += 1) {
+      if (x < 3 || x > 6) cells[(BOARD_ROWS - 1) * BOARD_WIDTH + x] = { kind: 'O' };
+    }
+    const state = {
+      ...initial,
+      sides: {
+        ...initial.sides,
+        player: {
+          ...initial.sides.player,
+          active: {
+            token: { kind: 'I' as const, marker: null, serial: 90 },
+            rotation: 0 as const,
+            x: 3,
+            y: 2,
+          },
+          board: { cells },
+          incoming: 3,
+        },
+      },
+    };
+    const step = stepMatch(state, [{
+      command: { type: 'hard-drop' },
+      side: 'player',
+      tick: 1,
+    }]);
+    const view = createPublicMatchView(step.state);
+
+    expect(step.events.map(({ type }) => type)).toEqual([
+      'piece-locked',
+      'lines-cleared',
+      'garbage-raised',
+    ]);
+
     render(
       <BattleCanvas
-        atlas={atlas as never}
         commandFeedback={[]}
-        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], tick: 0, view }]}
+        eventBatches={[{ events: step.events, sequence: 0, tick: view.tick, view }]}
         selectedRow={null}
         view={view}
       />,
     );
 
     expect(screen.getByTestId('player-board-scene')).toHaveAttribute(
-      'data-effect-ids', '',
+      'data-effect-ids',
+      'tick-1:2:garbage-land',
     );
-    expect(screen.getByTestId('attack-ribbon')).toBeInTheDocument();
-    expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
   });
 
-  it('uses a root Pixi sprite only when every attack-shot frame exists', () => {
+  it('does not create a projectile from an attack-sent event alone', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
-    const atlas = Object.fromEntries(battleAnimationFrameNames('attack-shot').map((name) => [name, {}]));
     render(
       <BattleCanvas
-        atlas={atlas as never}
         commandFeedback={[]}
-        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], tick: 0, view }]}
+        eventBatches={[{ events: [{ amount: 1, side: 'player', type: 'attack-sent' }], sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
     );
 
-    expect(screen.getByTestId('attack-shot-sprite')).toBeInTheDocument();
-    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-effect-ids', '');
+    expect(screen.queryByTestId('attack-ribbon')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('attack-impact-ring')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['without an atlas', undefined],
+    ['with an incomplete atlas', { 'attack-shot/00.png': {} }],
+  ] as const)('renders exactly one procedural launch cue %s', (_name, atlas) => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={launchFeedback}
+        commandFeedback={[]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    expect(screen.getAllByTestId('attack-ribbon')).toHaveLength(1);
+    expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
+  });
+
+  it('renders exactly one atlas sprite for the shared launch cue', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const atlas = Object.fromEntries(battleAnimationFrameNames('attack-shot').map((name) => [name, {}]));
+    render(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={launchFeedback}
+        commandFeedback={[]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+
+    const projectile = screen.getByTestId('attack-shot-sprite');
+    expect(projectile.tagName).toBe('PIXIANIMATEDSPRITE');
+    expect(projectile).toHaveAttribute('autoplay');
+    expect(projectile).toHaveAttribute('loop');
+    expect(screen.queryByTestId('attack-ribbon')).not.toBeInTheDocument();
+  });
+
+  it('freezes an atlas-backed reduced-motion launch at the target with alpha-only change', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const atlas = Object.fromEntries(battleAnimationFrameNames('attack-shot').map((name) => [name, {}]));
+    const result = render(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.2,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+    act(() => notifyResize([], {} as ResizeObserver));
+    const first = screen.getByTestId('attack-shot-sprite');
+    const firstAlpha = Number(first.getAttribute('alpha'));
+
+    result.rerender(
+      <BattleCanvas
+        atlas={atlas as never}
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.8,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const second = screen.getByTestId('attack-shot-sprite');
+
+    expect(first.tagName).toBe('PIXISPRITE');
+    expect(first).not.toHaveAttribute('autoplay');
+    expect(first).not.toHaveAttribute('loop');
+    expect(first).toHaveAttribute('x', '248');
+    expect(second).toHaveAttribute('x', '248');
+    expect(Number(second.getAttribute('alpha'))).toBeGreaterThan(firstAlpha);
+  });
+
+  it('eases normal launch progress toward the target', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        attackFeedback={launchFeedback}
+        commandFeedback={[]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+
+    act(() => notifyResize([], {} as ResizeObserver));
+
+    expect(screen.getByTestId('attack-ribbon')).toHaveAttribute('x', '227');
+  });
+
+  it('keeps a reduced-motion launch cue at the target and changes only alpha', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    const result = render(
+      <BattleCanvas
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.2,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+    act(() => notifyResize([], {} as ResizeObserver));
+    const first = screen.getByTestId('attack-ribbon');
+    const firstAlpha = Number(first.getAttribute('alpha'));
+
+    result.rerender(
+      <BattleCanvas
+        attackFeedback={{
+          ...launchFeedback,
+          displacementPx: 0,
+          phaseProgress: 0.8,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const second = screen.getByTestId('attack-ribbon');
+
+    expect(first).toHaveAttribute('x', '248');
+    expect(second).toHaveAttribute('x', '248');
+    expect(Number(second.getAttribute('alpha'))).toBeGreaterThan(firstAlpha);
+  });
+
+  it('renders one impact ring and displaces only the target board', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        attackFeedback={impactFeedback}
+        commandFeedback={[]}
+        eventBatches={[]}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+
+    act(() => notifyResize([], {} as ResizeObserver));
+
+    expect(screen.queryByTestId('attack-shot-sprite')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('attack-ribbon')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('attack-impact-ring')).toHaveLength(1);
+    expect(screen.getByTestId('attack-impact-ring')).toHaveAttribute('x', '248');
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-x', '0');
+    expect(screen.getByTestId('opponent-board-scene')).toHaveAttribute('data-x', '171');
+  });
+
+  it('keeps the player overlay aligned with a player-target board nudge', () => {
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        attackFeedback={{
+          ...impactFeedback,
+          source: 'opponent',
+          target: 'player',
+        }}
+        commandFeedback={[]}
+        eventBatches={[]}
+        playerBoardOverlay={<div />}
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+
+    act(() => notifyResize([], {} as ResizeObserver));
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-x', '-3');
+    expect(screen.getByTestId('opponent-board-scene')).toHaveAttribute('data-x', '168');
+    expect(screen.getByTestId('player-board-overlay')).toHaveStyle({ left: '-3px' });
+  });
+
+  it('keeps both boards still and forwards reduced motion during garbage rise', () => {
+    const clock = new EffectClock();
+    clock.install();
+    const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
+    render(
+      <BattleCanvas
+        attackFeedback={{
+          ...impactFeedback,
+          displacementPx: 0,
+          reducedMotion: true,
+        }}
+        commandFeedback={[]}
+        eventBatches={[{
+          events: [{ amount: 2, holeColumns: [2, 4], side: 'opponent', type: 'garbage-raised' }],
+          sequence: 0,
+          tick: 0,
+          view,
+        }]}
+        reducedMotion
+        selectedRow={null}
+        view={view}
+      />,
+    );
+    const host = screen.getByTestId('battle-canvas');
+    vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+      bottom: 320, height: 320, left: 0, right: 328, toJSON: () => ({}),
+      top: 0, width: 328, x: 0, y: 0,
+    });
+
+    act(() => notifyResize([], {} as ResizeObserver));
+
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-x', '0');
+    expect(screen.getByTestId('opponent-board-scene')).toHaveAttribute('data-x', '168');
+    expect(screen.getByTestId('player-board-scene')).toHaveAttribute('data-reduced-motion', 'true');
+    expect(screen.getByTestId('opponent-board-scene')).toHaveAttribute('data-reduced-motion', 'true');
   });
 
   it('owns Pixi wrappers for consumed AtlasData generations and releases them on replacement and unmount', () => {
@@ -492,11 +810,13 @@ describe('BattleCanvas', () => {
         eventBatches={[
           {
             events: [{ type: 'attack-sent', side: 'player', amount: 1 }],
+            sequence: 18,
             tick: 18,
             view: firstView,
           },
           {
             events: [{ type: 'item-used', side: 'opponent', item: 'queue-swap' }],
+            sequence: 19,
             tick: 19,
             view: secondView,
           },
@@ -508,7 +828,7 @@ describe('BattleCanvas', () => {
     const playerScene = screen.getByTestId('player-board-scene');
 
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
-    expect(screen.getByTestId('attack-ribbon')).toBeInTheDocument();
+    expect(screen.queryByTestId('attack-ribbon')).not.toBeInTheDocument();
     expect(playerScene).toHaveAttribute('data-effect-snapshots', '');
     clock.advanceBy(300);
     expect(playerScene).toHaveAttribute('data-effect-ids', '');
@@ -523,15 +843,14 @@ describe('BattleCanvas', () => {
     const view = createPublicMatchView(createMatch({ matchSeed: 7 }));
     const events: readonly GameEvent[] = [{
       amount: 1,
-      column: 4,
-      landingRow: 18,
+      holeColumns: [4],
       side: 'player',
-      type: 'garbage-landed',
+      type: 'garbage-raised',
     }];
     const result = render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
@@ -553,18 +872,16 @@ describe('BattleCanvas', () => {
     clock.install();
     const events: readonly GameEvent[] = [
       {
-        amount: 1,
-        column: 2,
-        landingRow: 12,
+        amount: 2,
+        holeColumns: [2, 4],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
       {
         amount: 1,
-        column: 7,
-        landingRow: 18,
+        holeColumns: [7],
         side: 'player',
-        type: 'garbage-landed',
+        type: 'garbage-raised',
       },
     ];
 
@@ -572,7 +889,7 @@ describe('BattleCanvas', () => {
     render(
       <BattleCanvas
         commandFeedback={[]}
-        eventBatches={[{ events, tick: 0, view }]}
+        eventBatches={[{ events, sequence: 0, tick: 0, view }]}
         selectedRow={null}
         view={view}
       />,
