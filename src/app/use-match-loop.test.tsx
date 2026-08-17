@@ -124,6 +124,32 @@ function fakeAi(commands: readonly TimedCommand[] = []): AiController & {
   };
 }
 
+function expectValidOpponentCommand(
+  commands: readonly TimedCommand[],
+  tick: number,
+): void {
+  expect(commands).toHaveLength(1);
+  const timed = commands[0]!;
+  expect(timed.tick).toBe(tick);
+  expect(timed.side).toBe('opponent');
+  expect([
+    'move',
+    'rotate-clockwise',
+    'soft-drop',
+    'hard-drop',
+    'use-row-clear',
+    'use-freeze',
+    'use-queue-swap',
+  ]).toContain(timed.command.type);
+  if (timed.command.type === 'move') {
+    expect([-1, 1]).toContain(timed.command.dx);
+  } else if (timed.command.type === 'soft-drop') {
+    expect(timed.command.active).toEqual(expect.any(Boolean));
+  } else if (timed.command.type === 'use-row-clear') {
+    expect(timed.command.row).toEqual(expect.any(Number));
+  }
+}
+
 function renderLoop({
   ai = fakeAi(),
   config = { matchSeed: 17, countdownTicks: 0 },
@@ -522,6 +548,7 @@ describe('MatchScreen', () => {
     const { unmount } = render(
       <MatchScreen
         audioPort={borrowedAudioPort}
+        difficulty="hard"
         floor={2}
         onAbandon={vi.fn()}
         onFinished={vi.fn()}
@@ -552,7 +579,17 @@ describe('MatchScreen', () => {
       />,
     );
 
-    expect(aiSpies.createAiController).toHaveBeenCalledWith(AI_FLOOR_PROFILES[1], 73);
+    const ai = aiSpies.createAiController.mock.results.find(({ type }) => type === 'return')
+      ?.value as AiController | undefined;
+    if (ai === undefined) throw new Error('MatchScreen should return a real AI controller');
+    const observation = createAiObservation(
+      createMatch({ matchSeed: 73, countdownTicks: 0 }),
+      'opponent',
+    );
+    for (let tick = 1; tick < 12; tick += 1) {
+      expect(ai.update(observation, tick)).toEqual([]);
+    }
+    expectValidOpponentCommand(ai.update(observation, 12), 12);
     expect(screen.getByTestId('match-screen')).toHaveAttribute('data-floor', '2');
     expect(screen.getByTestId('match-tick')).toHaveTextContent('0');
     expect(screen.getByTestId('match-status')).toHaveTextContent('대전 준비');
